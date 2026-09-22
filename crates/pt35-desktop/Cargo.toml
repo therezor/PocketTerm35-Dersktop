@@ -27,12 +27,14 @@ bar, the menu/launcher, the session daemon and a keyboard-driven mouse."""
 depends = "sway, foot, seatd, greetd, keyd, libc6, fonts-dejavu-core"
 recommends = "pipewire, wireplumber, pipewire-pulse, xdg-desktop-portal-wlr, wl-clipboard, grim, xwayland, i2c-tools"
 suggests = "helix, imv, zathura, mpv, network-manager, bluez"
+# cargo-deb rewrites a leading "target/release/" to the real (workspace) target
+# directory; everything else is relative to this package.
 assets = [
-    ["../../target/release/pt35d", "usr/bin/", "755"],
-    ["../../target/release/pt35ctl", "usr/bin/", "755"],
-    ["../../target/release/pt35-bar", "usr/bin/", "755"],
-    ["../../target/release/pt35-menu", "usr/bin/", "755"],
-    ["../../target/release/pt35-pointer", "usr/bin/", "755"],
+    ["target/release/pt35d", "usr/bin/", "755"],
+    ["target/release/pt35ctl", "usr/bin/", "755"],
+    ["target/release/pt35-bar", "usr/bin/", "755"],
+    ["target/release/pt35-menu", "usr/bin/", "755"],
+    ["target/release/pt35-pointer", "usr/bin/", "755"],
     ["../../scripts/pt35-session", "usr/bin/", "755"],
     ["../../scripts/pt35-cpu-profile", "usr/lib/pt35/", "755"],
     ["../../scripts/pt35-probe.sh", "usr/share/pt35-desktop/", "755"],

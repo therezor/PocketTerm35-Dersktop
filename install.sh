@@ -112,16 +112,22 @@ install_from_release() {
 
 install_from_source() {
   local src="$1"
-  command -v cargo >/dev/null || die "cargo is not installed; use the release path or install rustup first"
-  msg "building (this takes a while on a Pi)"
-  run "su '$TARGET_USER' -c 'cd \"$src\" && cargo build --release --workspace'"
 
+  # Runtime packages first, then the build dependencies: smithay-client-toolkit
+  # needs libxkbcommon through pkg-config, so building before this fails.
   msg "installing dependencies"
   run "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         sway xwayland foot seatd greetd keyd \
         pipewire pipewire-alsa pipewire-pulse wireplumber \
         xdg-desktop-portal-wlr wl-clipboard grim \
-        fonts-dejavu-core i2c-tools evtest"
+        fonts-dejavu-core i2c-tools evtest \
+        build-essential pkg-config libxkbcommon-dev"
+
+  # cargo usually lives in the user's ~/.cargo/bin, which root's PATH misses.
+  su "$TARGET_USER" -c 'command -v cargo >/dev/null' \
+    || die "cargo is not installed for '$TARGET_USER'; install rustup, or drop --from-source to use a release build"
+  msg "building (10-40 minutes on a Pi 4)"
+  run "su '$TARGET_USER' -c 'cd \"$src\" && cargo build --release --workspace'"
 
   msg "installing files"
   for binary in pt35d pt35ctl pt35-bar pt35-menu pt35-pointer; do

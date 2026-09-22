@@ -77,6 +77,16 @@ impl Session {
         }
     }
 
+    /// The output scale a workspace wants, from the app profile that owns it.
+    /// Workspaces nothing claims go back to the panel's native 640x480.
+    pub fn scale_for_workspace(apps: &AppTable, workspace: u8) -> f32 {
+        apps.apps
+            .values()
+            .find(|app| app.workspace == workspace)
+            .map(|app| app.scale)
+            .unwrap_or(1.0)
+    }
+
     /// Re-read the sampled hardware values into `status`.
     pub fn refresh(&mut self) {
         self.status.battery_percent = self.hw.battery_percent();
@@ -87,10 +97,32 @@ impl Session {
         self.status.muted = muted;
         self.status.network = self.hw.network();
         if let Ok((workspace, app)) = self.sway().and_then(|s| s.focus()) {
+            let moved = workspace != self.status.workspace;
             self.status.workspace = workspace;
             self.status.app = app;
+            // sway scales the whole output, not one window, so the profile has
+            // to follow the focused workspace: leave the browser's workspace and
+            // the panel goes back to native 640x480 instead of staying at 0.75.
+            if moved {
+                let wanted = Self::scale_for_workspace(&self.apps, workspace);
+                if (wanted - self.status.scale).abs() > f32::EPSILON {
+                    if let Err(e) = self.sway_command(&format!("output * scale {wanted}")) {
+                        log::warn!("switching scale to {wanted}: {e}");
+                    } else {
+                        self.status.scale = wanted;
+                    }
+                }
+            }
         } else {
             self.sway = None;
+        }
+        // pt35-pointer exits on its own (Escape), so the flag has to be observed
+        // rather than remembered.
+        if self.status.pointer_armed
+            && !matches!(self.pointer_proc.as_mut().map(|c| c.try_wait()), Some(Ok(None)))
+        {
+            self.pointer_proc = None;
+            self.status.pointer_armed = false;
         }
         self.low_battery_hook();
     }
@@ -421,6 +453,31 @@ mod tests {
         assert_eq!(next_scale(0.75), 0.6);
         assert_eq!(next_scale(0.6), 1.0);
         assert_eq!(next_scale(1.37), 1.0, "an unknown scale returns to native");
+    }
+
+    #[test]
+    fn a_workspace_takes_the_scale_of_the_app_that_owns_it() {
+        let apps: AppTable = toml::from_str(
+            r#"
+[app.term]
+exec = "foot"
+workspace = 1
+scale = 1.0
+
+[app.browser]
+exec = "chromium"
+workspace = 8
+scale = 0.75
+"#,
+        )
+        .unwrap();
+        assert_eq!(Session::scale_for_workspace(&apps, 8), 0.75);
+        assert_eq!(Session::scale_for_workspace(&apps, 1), 1.0);
+        assert_eq!(
+            Session::scale_for_workspace(&apps, 5),
+            1.0,
+            "an unclaimed workspace returns to native"
+        );
     }
 
     #[test]

@@ -37,6 +37,9 @@ fn now(theme: &Theme) -> String {
 }
 
 impl App for Bar {
+    // Deliberately the *alt* background: the strip should read as a separate
+    // surface from the app filling the rest of the panel.
+    #[allow(clippy::misnamed_getters)]
     fn background(&self) -> pt35_common::theme::Rgb {
         self.theme.color.background_alt
     }
