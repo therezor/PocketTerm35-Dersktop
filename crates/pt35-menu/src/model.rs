@@ -4,7 +4,7 @@
 //! navigation model — including "what happens when you confirm a shutdown" —
 //! is unit-testable.
 
-use pt35_common::menu::{Adjust, Builtin, Kind, Layout, MenuTree};
+use pt35_common::menu::{Adjust, Builtin, Kind, Layout, MenuTree, StateField};
 use pt35_common::theme::Rgb;
 use pt35_ui::keys::Key;
 use pt35_ui::list::{ListState, Outcome};
@@ -16,6 +16,8 @@ pub struct Row {
     pub note: String,
     /// A quick setting the D-pad changes in place.
     pub adjust: Option<Adjust>,
+    /// A value read out on the right of the row.
+    pub state: Option<StateField>,
     /// Set when the row opens a builtin screen, so the UI can replace `note`
     /// with live state.
     pub builtin: Option<Builtin>,
@@ -142,6 +144,7 @@ impl Model {
                     note: entry.map(|e| e.note.clone()).unwrap_or_default(),
                     builtin: entry.and_then(|e| e.builtin),
                     adjust: entry.and_then(|e| e.adjust),
+                    state: entry.and_then(|e| e.state),
                     glyph: entry
                         .map(|e| e.glyph.clone())
                         .filter(|g| !g.is_empty())

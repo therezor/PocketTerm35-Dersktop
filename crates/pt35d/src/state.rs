@@ -23,8 +23,6 @@ pub struct Session {
     sway: Option<Sway>,
     menu_proc: Option<Child>,
     pointer_proc: Option<Child>,
-    /// Output scale to go back to once the menu closes.
-    scale_before_menu: Option<f32>,
     /// Whether button mode was on before the menu took the keyboard.
     buttons_before_menu: bool,
 }
@@ -45,7 +43,6 @@ impl Session {
             sway: None,
             menu_proc: None,
             pointer_proc: None,
-            scale_before_menu: None,
             buttons_before_menu: false,
         };
         if let Err(e) = session.menu.validate() {
@@ -111,24 +108,15 @@ impl Session {
         }
     }
 
-    /// The output scale a workspace wants, from the app profile that owns it.
-    /// Workspaces nothing claims go back to the panel's native 640x480.
-    pub fn scale_for_workspace(apps: &AppTable, workspace: u8) -> f32 {
-        apps.apps
-            .values()
-            .find(|app| app.workspace == workspace)
-            .map(|app| app.scale)
-            .unwrap_or(1.0)
-    }
-
-    /// Whether the face buttons act as buttons on this workspace. A terminal
-    /// needs the letters; a viewer is better with buttons.
+    /// Whether the face buttons act as buttons on this workspace. They do
+    /// everywhere except in an app you type into, so an unclaimed workspace
+    /// keeps them.
     pub fn buttons_for_workspace(apps: &AppTable, workspace: u8) -> bool {
         apps.apps
             .values()
             .find(|app| app.workspace == workspace)
             .map(|app| app.buttons)
-            .unwrap_or(false)
+            .unwrap_or(true)
     }
 
     /// True once sway has gone. The daemon must not outlive it: a stale pt35d
@@ -153,26 +141,16 @@ impl Session {
         self.status.muted = muted;
         self.status.network = self.hw.network();
         self.status.windows = self.window_list();
+        self.spread_windows();
         if let Ok((workspace, app)) = self.sway().and_then(|s| s.focus()) {
             let moved = workspace != self.status.workspace;
             self.status.workspace = workspace;
             self.status.app = app;
-            // sway scales the whole output, not one window, so the profile has
-            // to follow the focused workspace: leave the browser's workspace and
-            // the panel goes back to native 640x480 instead of staying at 0.75.
-            if moved {
+            if moved && self.menu_proc.is_none() {
                 let buttons = Self::buttons_for_workspace(&self.apps, workspace);
                 if buttons != self.status.button_mode {
                     if let Err(e) = self.set_button_mode(buttons) {
                         log::warn!("button mode: {e}");
-                    }
-                }
-                let wanted = Self::scale_for_workspace(&self.apps, workspace);
-                if (wanted - self.status.scale).abs() > f32::EPSILON {
-                    if let Err(e) = self.sway_command(&format!("output * scale {wanted}")) {
-                        log::warn!("switching scale to {wanted}: {e}");
-                    } else {
-                        self.status.scale = wanted;
                     }
                 }
             }
@@ -184,7 +162,6 @@ impl Session {
         if let Some(child) = self.menu_proc.as_mut() {
             if matches!(child.try_wait(), Ok(Some(_))) {
                 self.menu_proc = None;
-                self.restore_scale();
                 self.restore_buttons();
             }
         }
@@ -215,8 +192,22 @@ impl Session {
                 app: w.app,
                 title: w.title,
                 focused: w.focused,
+                floating: w.floating,
             })
             .collect()
+    }
+
+    /// Give every tiled window its own workspace. Without this, a second
+    /// window on one workspace splits the screen down the middle.
+    fn spread_windows(&mut self) {
+        for (id, workspace) in overflow_moves(&self.status.windows) {
+            let cmd = format!("[con_id={id}] move container to workspace number {workspace}");
+            if let Err(e) = self.sway_command(&cmd) {
+                log::warn!("{cmd}: {e}");
+            } else if let Some(w) = self.status.windows.iter_mut().find(|w| w.id == id) {
+                w.workspace = workspace;
+            }
+        }
     }
 
     fn low_battery_hook(&mut self) {
@@ -303,13 +294,22 @@ impl Session {
             }
 
             Request::Window { action } => {
-                let command = match action {
-                    WindowAction::Close => "kill",
-                    WindowAction::Next => "focus next",
-                    WindowAction::Previous => "focus prev",
-                    WindowAction::Fullscreen => "fullscreen toggle",
-                };
-                self.sway_command(command)?;
+                match action {
+                    // `focus next` stays inside one workspace, and every app
+                    // owns its own, so it does nothing here. Walk the same list
+                    // the dock draws instead.
+                    WindowAction::Next | WindowAction::Previous => {
+                        let _ = self.toggle_menu(Toggle::Off, None);
+                        self.status.windows = self.window_list();
+                        let forward = action == WindowAction::Next;
+                        match next_window(&self.status.windows, forward) {
+                            Some(id) => self.sway_command(&format!("[con_id={id}] focus"))?,
+                            None => return Ok(Response::Ok),
+                        }
+                    }
+                    WindowAction::Close => self.sway_command("kill")?,
+                    WindowAction::Fullscreen => self.sway_command("fullscreen toggle")?,
+                }
                 Ok(Response::Ok)
             }
 
@@ -387,18 +387,9 @@ impl Session {
                 let _ = child.kill();
                 let _ = child.wait();
             }
-            self.restore_scale();
             self.restore_buttons();
         }
         if want_open {
-            // The shell's own UI is drawn for 640x480. An app profile may have
-            // left the output at 0.75, which would shrink the menu with it.
-            if (self.status.scale - 1.0).abs() > f32::EPSILON {
-                self.scale_before_menu = Some(self.status.scale);
-                if self.sway_command("output * scale 1").is_ok() {
-                    self.status.scale = 1.0;
-                }
-            }
             // The menu reads the letters itself, so the compositor must not
             // be holding them while it is up.
             if self.status.button_mode {
@@ -432,18 +423,6 @@ impl Session {
         if self.buttons_before_menu {
             self.buttons_before_menu = false;
             let _ = self.set_button_mode(true);
-        }
-    }
-
-    fn restore_scale(&mut self) {
-        let Some(scale) = self.scale_before_menu.take() else {
-            return;
-        };
-        if self
-            .sway_command(&format!("output * scale {scale}"))
-            .is_ok()
-        {
-            self.status.scale = scale;
         }
     }
 
@@ -503,10 +482,6 @@ impl Session {
         if app.workspace > 0 {
             self.sway_command(&format!("workspace number {}", app.workspace))?;
         }
-        if (app.scale - self.status.scale).abs() > f32::EPSILON {
-            self.sway_command(&format!("output * scale {}", app.scale))?;
-            self.status.scale = app.scale;
-        }
         if app.fullscreen {
             for criteria in app.sway_criteria_list() {
                 let _ = self.sway_command(&format!("for_window {criteria} fullscreen enable"));
@@ -515,6 +490,9 @@ impl Session {
 
         let mut cmd = Command::new("sh");
         cmd.arg("-c").arg(&app.exec).stdin(Stdio::null());
+        for (key, value) in app.toolkit_env() {
+            cmd.env(key, value);
+        }
         for (key, value) in &app.env {
             cmd.env(key, value);
         }
@@ -607,6 +585,69 @@ fn on_path(binary: &str) -> bool {
     std::env::split_paths(&path).any(|dir| dir.join(binary).exists())
 }
 
+/// The window to focus when the user asks for the next or previous app.
+///
+/// `windows` is the dock's order. Wraps, and picks the first window when
+/// nothing is focused.
+pub fn next_window(windows: &[pt35_common::ipc::WindowInfo], forward: bool) -> Option<i64> {
+    if windows.is_empty() {
+        return None;
+    }
+    let Some(current) = windows.iter().position(|w| w.focused) else {
+        return Some(windows[0].id);
+    };
+    if windows.len() == 1 {
+        return None;
+    }
+    let len = windows.len();
+    let next = if forward {
+        (current + 1) % len
+    } else {
+        (current + len - 1) % len
+    };
+    Some(windows[next].id)
+}
+
+/// Windows that have to move so no workspace holds two tiled windows.
+///
+/// 640x480 splits into two unusable halves, so one window owns the screen and
+/// the others wait on their own workspace. The focused window keeps its place;
+/// floating windows are dialogs and are left alone.
+pub fn overflow_moves(windows: &[pt35_common::ipc::WindowInfo]) -> Vec<(i64, u8)> {
+    let tiled: Vec<&pt35_common::ipc::WindowInfo> = windows
+        .iter()
+        .filter(|w| !w.floating && w.workspace > 0)
+        .collect();
+    let mut occupied: Vec<u8> = Vec::new();
+    let mut movers: Vec<i64> = Vec::new();
+    for workspace in 1..=9u8 {
+        let here: Vec<&pt35_common::ipc::WindowInfo> = tiled
+            .iter()
+            .copied()
+            .filter(|w| w.workspace == workspace)
+            .collect();
+        if here.is_empty() {
+            continue;
+        }
+        occupied.push(workspace);
+        let keeper = here
+            .iter()
+            .find(|w| w.focused)
+            .map(|w| w.id)
+            .unwrap_or(here[0].id);
+        movers.extend(here.iter().map(|w| w.id).filter(|id| *id != keeper));
+    }
+    let mut moves = Vec::new();
+    for id in movers {
+        let Some(free) = (1..=9u8).find(|n| !occupied.contains(n)) else {
+            break;
+        };
+        occupied.push(free);
+        moves.push((id, free));
+    }
+    moves
+}
+
 /// The scales worth cycling through on a 640x480 panel: native, then the two
 /// that GUI apps need (853x640 and 1067x800 logical).
 pub fn next_scale(current: f32) -> f32 {
@@ -653,37 +694,69 @@ mod tests {
     #[test]
     fn a_workspace_takes_the_button_mode_of_the_app_that_owns_it() {
         let apps: AppTable = toml::from_str(
-            "[app.term]\nexec = \"foot\"\nworkspace = 1\n[app.pix]\nexec = \"imv\"\nworkspace = 6\nbuttons = true\n",
+            "[app.term]\nexec = \"foot\"\nworkspace = 1\nbuttons = false\n[app.pix]\nexec = \"imv\"\nworkspace = 6\n",
         )
         .unwrap();
         assert!(!Session::buttons_for_workspace(&apps, 1));
         assert!(Session::buttons_for_workspace(&apps, 6));
-        assert!(!Session::buttons_for_workspace(&apps, 4));
+        assert!(
+            Session::buttons_for_workspace(&apps, 4),
+            "an unclaimed workspace keeps the buttons"
+        );
+    }
+
+    fn window(id: i64, workspace: u8, focused: bool) -> pt35_common::ipc::WindowInfo {
+        pt35_common::ipc::WindowInfo {
+            id,
+            workspace,
+            app: "app".into(),
+            title: "title".into(),
+            focused,
+            floating: false,
+        }
     }
 
     #[test]
-    fn a_workspace_takes_the_scale_of_the_app_that_owns_it() {
-        let apps: AppTable = toml::from_str(
-            r#"
-[app.term]
-exec = "foot"
-workspace = 1
-scale = 1.0
-
-[app.browser]
-exec = "chromium"
-workspace = 8
-scale = 0.75
-"#,
-        )
-        .unwrap();
-        assert_eq!(Session::scale_for_workspace(&apps, 8), 0.75);
-        assert_eq!(Session::scale_for_workspace(&apps, 1), 1.0);
+    fn next_window_wraps_around_the_dock() {
+        let list = [window(1, 1, false), window(2, 2, true), window(3, 3, false)];
+        assert_eq!(next_window(&list, true), Some(3));
+        assert_eq!(next_window(&list, false), Some(1));
+        let last = [window(1, 1, false), window(2, 2, true)];
+        assert_eq!(next_window(&last, true), Some(1));
+        assert_eq!(next_window(&[], true), None);
+        assert_eq!(next_window(&[window(9, 1, true)], true), None);
         assert_eq!(
-            Session::scale_for_workspace(&apps, 5),
-            1.0,
-            "an unclaimed workspace returns to native"
+            next_window(&[window(9, 1, false)], true),
+            Some(9),
+            "nothing focused means focus something"
         );
+    }
+
+    #[test]
+    fn a_second_window_on_a_workspace_moves_to_a_free_one() {
+        let list = [window(1, 2, true), window(2, 2, false), window(3, 3, false)];
+        assert_eq!(overflow_moves(&list), vec![(2, 1)]);
+    }
+
+    #[test]
+    fn the_focused_window_is_the_one_that_stays() {
+        let list = [window(1, 2, false), window(2, 2, true)];
+        assert_eq!(overflow_moves(&list), vec![(1, 1)]);
+    }
+
+    #[test]
+    fn dialogs_and_single_windows_are_left_alone() {
+        let mut floating = window(2, 2, false);
+        floating.floating = true;
+        let list = [window(1, 2, true), floating, window(3, 3, false)];
+        assert!(overflow_moves(&list).is_empty());
+    }
+
+    #[test]
+    fn nothing_moves_when_every_workspace_is_taken() {
+        let mut list: Vec<_> = (1..=9).map(|n| window(n as i64, n, false)).collect();
+        list.push(window(99, 1, false));
+        assert!(overflow_moves(&list).is_empty());
     }
 
     #[test]

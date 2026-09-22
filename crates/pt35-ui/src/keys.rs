@@ -14,7 +14,8 @@
 //! Six of the twelve are therefore typeable, which forces a modal design: in
 //! [`Mode::Nav`] letters act as buttons, in [`Mode::Filter`] they type. Start
 //! and Select carry no character, so they are the only two controls that mean
-//! the same thing in both modes — they are the universal confirm/back pair.
+//! the same thing in both modes. Both leave the menu: Start opened it and
+//! closes it again, Select switches app. Confirm is A or Enter.
 
 /// A key press, as the Wayland keyboard reports it (xkb keysym + printable text).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,9 +154,9 @@ pub enum Navigation {
     PageDown,
     First,
     Last,
-    /// A / Start / Enter — open the thing under the cursor.
+    /// A / Enter — open the thing under the cursor.
     Activate,
-    /// Select / Escape — leave the screen entirely.
+    /// Start / Select / Escape — leave the menu entirely.
     Cancel,
     /// B / Left / Backspace on an empty filter — up one level.
     Back,
@@ -177,8 +178,7 @@ pub fn navigate(key: &Key, mode: Mode) -> Navigation {
     // Start and Select first: they are the only controls that survive both
     // modes, so nothing else is allowed to shadow them.
     match button(key, mode) {
-        Some(Button::Start) => return Navigation::Activate,
-        Some(Button::Select) => return Navigation::Cancel,
+        Some(Button::Start) | Some(Button::Select) => return Navigation::Cancel,
         Some(Button::Up) => return Navigation::Up,
         Some(Button::Down) => return Navigation::Down,
         Some(Button::Right) => return Navigation::Right,
@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn start_and_select_mean_the_same_in_both_modes() {
         for mode in [Mode::Nav, Mode::Filter] {
-            assert_eq!(navigate(&Key::new(sym::PAUSE), mode), Navigation::Activate);
+            assert_eq!(navigate(&Key::new(sym::PAUSE), mode), Navigation::Cancel);
             assert_eq!(navigate(&Key::new(sym::PRINT), mode), Navigation::Cancel);
             assert_eq!(navigate(&Key::new(sym::SYS_REQ), mode), Navigation::Cancel);
         }

@@ -55,6 +55,9 @@ pub struct Entry {
     /// Makes this row a quick setting: the D-pad changes the value in place
     /// instead of opening anything. One of volume, brightness, scale.
     pub adjust: Option<Adjust>,
+    /// Draws the current value on the right of the row. A toggle without one
+    /// is a button that gives no clue whether it is on.
+    pub state: Option<StateField>,
     /// Ask before running (used for reboot / shut down).
     pub confirm: bool,
     pub goto: Option<String>,
@@ -82,6 +85,18 @@ impl Adjust {
             Adjust::Scale => vec![arg("scale"), arg("cycle")],
         }
     }
+}
+
+/// A value from the daemon's status, drawn at the end of a row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StateField {
+    Buttons,
+    Pointer,
+    Volume,
+    Brightness,
+    Network,
+    Scale,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

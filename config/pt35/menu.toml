@@ -14,6 +14,9 @@
 #
 # Tiles also take `glyph` (1-2 characters), `tint` (#rrggbb) and `note`.
 # `layout = "grid"` draws tiles, the default draws rows.
+#
+# `state = "buttons" | "pointer" | "volume" | "brightness" | "network" | "scale"`
+# draws that value at the end of the row, so a toggle says which way it is set.
 
 root = "main"
 
@@ -21,15 +24,15 @@ root = "main"
 title = "Main"
 layout = "grid"
 entries = [
-  { label = "Apps",      goto = "apps",         glyph = "A",  tint = "#3ddc97", note = "launcher" },
-  { label = "Windows",   builtin = "windows",   glyph = "W",  tint = "#5fd0e8", note = "running" },
-  { label = "Wi-Fi",     builtin = "wifi",      glyph = "≈", tint = "#5fd0e8", note = "networks" },
-  { label = "Bluetooth", builtin = "bluetooth", glyph = "B", tint = "#9ad9c0", note = "devices" },
-  { label = "Volume",    builtin = "audio",     glyph = "V",  tint = "#e8c468", note = "level" },
-  { label = "Settings",  goto = "settings",     glyph = "S",  tint = "#7aa48e", note = "system" },
-  { label = "Files",     app = "files",         glyph = "F",  tint = "#9ad9c0", note = "browse" },
-  { label = "Terminal",  app = "terminal",      glyph = ">_", tint = "#3ddc97", note = "shell" },
-  { label = "Power",     goto = "power",        glyph = "P",  tint = "#ef6b73", note = "off" },
+  { label = "Apps",     goto = "apps",       glyph = "A",  tint = "#3ddc97", note = "launcher" },
+  { label = "Windows",  builtin = "windows", glyph = "W",  tint = "#5fd0e8", note = "running" },
+  { label = "Quick",    goto = "quick",      glyph = "Q",  tint = "#e8c468", note = "toggles" },
+  { label = "Terminal", app = "terminal",    glyph = ">_", tint = "#3ddc97", note = "shell" },
+  { label = "Files",    app = "files",       glyph = "F",  tint = "#9ad9c0", note = "browse" },
+  { label = "Wi-Fi",    builtin = "wifi",    glyph = "≈",  tint = "#5fd0e8", note = "networks" },
+  { label = "Volume",   builtin = "audio",   glyph = "V",  tint = "#e8c468", note = "level" },
+  { label = "Settings", goto = "settings",   glyph = "S",  tint = "#7aa48e", note = "system" },
+  { label = "Power",    goto = "power",      glyph = "P",  tint = "#ef6b73", note = "off" },
 ]
 
 [menu.apps]
@@ -48,20 +51,28 @@ entries = [
   { label = "All apps", builtin = "desktop_entries", glyph = "…", tint = "#7aa48e" },
 ]
 
-# Quick settings: the D-pad changes a value in place, no submenu, no round trip.
-[menu.settings]
-title = "Quick settings"
+# Quick settings: one press, no submenu. The D-pad changes a value in place and
+# every toggle reads out its own state.
+[menu.quick]
+title = "Quick"
 entries = [
-  { label = "Volume",       adjust = "volume" },
-  { label = "Brightness",   adjust = "brightness" },
-  { label = "Screen scale", adjust = "scale" },
-  { label = "Buttons",      action = "buttons toggle" },
-  { label = "Pointer",      action = "pointer toggle" },
-  { label = "Touchscreen",  action = "touch toggle" },
-  { label = "CPU profile",  goto = "cpu" },
-  { label = "Screenshot",   action = "screenshot" },
+  { label = "Buttons",     action = "buttons toggle", state = "buttons" },
+  { label = "Mouse",       action = "pointer toggle", state = "pointer" },
+  { label = "Volume",      adjust = "volume" },
+  { label = "Brightness",  adjust = "brightness" },
+  { label = "Touchscreen", action = "touch toggle" },
+  { label = "Screenshot",  action = "screenshot" },
+]
+
+[menu.settings]
+title = "Settings"
+entries = [
+  { label = "Wi-Fi",       builtin = "wifi",      state = "network" },
+  { label = "Bluetooth",   builtin = "bluetooth" },
+  { label = "Display",     builtin = "display" },
+  { label = "CPU profile", goto = "cpu" },
   { label = "Reload shell", action = "reload" },
-  { label = "About",        builtin = "about" },
+  { label = "About",       builtin = "about" },
 ]
 
 [menu.cpu]

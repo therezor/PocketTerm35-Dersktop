@@ -115,11 +115,14 @@ pub struct Window {
     pub app: String,
     pub title: String,
     pub focused: bool,
+    /// Floating windows are dialogs. They never tile, so the shell leaves them
+    /// where they are.
+    pub floating: bool,
 }
 
 /// Flatten a sway tree into the windows it holds, in workspace order.
 pub fn windows(node: &serde_json::Value) -> Vec<Window> {
-    fn walk(node: &serde_json::Value, workspace: u8, out: &mut Vec<Window>) {
+    fn walk(node: &serde_json::Value, workspace: u8, floating: bool, out: &mut Vec<Window>) {
         let kind = node["type"].as_str().unwrap_or("");
         let workspace = if kind == "workspace" {
             node["num"].as_i64().unwrap_or(0).clamp(0, 9) as u8
@@ -141,20 +144,22 @@ pub fn windows(node: &serde_json::Value) -> Vec<Window> {
                         .to_string(),
                     title: node["name"].as_str().unwrap_or("").to_string(),
                     focused: node["focused"].as_bool() == Some(true),
+                    floating,
                 });
             }
         }
         for key in ["nodes", "floating_nodes"] {
             if let Some(children) = node[key].as_array() {
+                let floating = floating || key == "floating_nodes";
                 for child in children {
-                    walk(child, workspace, out);
+                    walk(child, workspace, floating, out);
                 }
             }
         }
     }
 
     let mut out = Vec::new();
-    walk(node, 0, &mut out);
+    walk(node, 0, false, &mut out);
     out.sort_by_key(|w| (w.workspace, w.id));
     out
 }

@@ -4,7 +4,7 @@
 //! answer to why you opened the menu.
 
 use pt35_common::ipc::{Request, Response, Status};
-use pt35_common::menu::{Adjust, Builtin};
+use pt35_common::menu::{Adjust, Builtin, StateField};
 use pt35_common::paths;
 use std::io::{BufRead, BufReader, Write};
 
@@ -85,6 +85,21 @@ pub fn value(adjust: Adjust, status: Option<&Status>) -> String {
     }
 }
 
+/// A toggle that does not say whether it is on is a guess. Read it out.
+pub fn state_value(field: StateField, status: Option<&Status>) -> String {
+    let Some(status) = status else {
+        return "--".into();
+    };
+    match field {
+        StateField::Buttons => if status.button_mode { "BTN" } else { "TEXT" }.into(),
+        StateField::Pointer => if status.pointer_armed { "ON" } else { "OFF" }.into(),
+        StateField::Volume => value(Adjust::Volume, Some(status)),
+        StateField::Brightness => value(Adjust::Brightness, Some(status)),
+        StateField::Scale => value(Adjust::Scale, Some(status)),
+        StateField::Network => status.network.clone().unwrap_or_else(|| "offline".into()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,6 +150,17 @@ mod tests {
         assert_eq!(value(Adjust::Scale, Some(&s)), "1.00x");
         assert_eq!(value(Adjust::Brightness, Some(&s)), "n/a");
         assert_eq!(value(Adjust::Volume, None), "--");
+    }
+
+    #[test]
+    fn a_toggle_says_which_way_it_is_set() {
+        let s = Status {
+            button_mode: true,
+            ..status()
+        };
+        assert_eq!(state_value(StateField::Buttons, Some(&s)), "BTN");
+        assert_eq!(state_value(StateField::Pointer, Some(&s)), "OFF");
+        assert_eq!(state_value(StateField::Buttons, None), "--");
     }
 
     #[test]

@@ -311,9 +311,9 @@ mod tests {
     }
 
     #[test]
-    fn start_confirms_and_select_cancels() {
+    fn start_and_select_both_leave() {
         let mut list = list();
-        assert_eq!(list.handle(&Key::new(sym::PAUSE)), Outcome::Activate(0));
+        assert_eq!(list.handle(&Key::new(sym::PAUSE)), Outcome::Cancel);
         assert_eq!(list.handle(&Key::new(sym::PRINT)), Outcome::Cancel);
     }
 

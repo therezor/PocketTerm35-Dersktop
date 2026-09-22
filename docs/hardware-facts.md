@@ -38,6 +38,20 @@ itself over the Pi's USB OTG port, which is why `dtoverlay=dwc2,dr_mode=host` is
 required. The same MCU drives brightness and volume, so those may never appear
 in `/sys/class/backlight`.
 
+`1209:0001` ("My Company My Custom Pico") declares five interfaces: CDC ACM
+(`/dev/ttyACM0`, silent), one HID, and two audio. Linux sees:
+
+```
+event1  My Company My Custom Pico Keyboard   sysrq kbd leds
+event3  My Company My Custom Pico Mouse      5 buttons
+```
+
+**There is no gamepad.** Everything with a key on it arrives on `event1`: the
+67-key QWERTY, the D-pad and the face buttons, one device, one keymap. The A
+button and the `a` key send the same `KEY_A`, so no remapper (keyd included) can
+separate them: keyd binds per device, and this is one device. Making A mean
+Enter while `a` still types needs different keycodes out of the RP2040 firmware.
+
 ### Boot configuration
 ```
 dtparam=i2c_arm=on
@@ -56,8 +70,8 @@ PipeWire is installed by the installer.
 
 | question | how to answer | why it matters |
 |---|---|---|
-| Exact keycode of every key and Fn combination | `sudo evtest` on each `/dev/input/event*` | `config/keyd/pocketterm35.conf` is guesswork until then |
-| **Do the D-pad and gaming buttons report as a keyboard or as a gamepad?** | `evtest`: `KEY_UP` vs `ABS_HAT0X`/`BTN_SOUTH` | a gamepad is invisible to sway *and* keyd; it would need an evdev→uinput remapper |
+| Exact keycode of every Fn combination | `sudo evtest /dev/input/event1` | `config/keyd/pocketterm35.conf` is guesswork until then |
+| Which physical key could become Super | `sudo keyd monitor` | the sway config still needs Alt fallbacks without one |
 | Is there a `/sys/class/backlight` device? | `ls /sys/class/backlight` | if not, brightness control is RP2040-only and `pt35ctl brightness` must say so |
 | Is a battery gauge on I²C? | `sudo i2cdetect -y 1` (INA219 @0x41/0x43, MAX17048 @0x36) | decides whether the bar shows a battery at all |
 | Where does audio come out? | `aplay -l`, `wpctl status` | HDMI audio through the panel board vs a separate DAC |

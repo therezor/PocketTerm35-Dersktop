@@ -54,7 +54,9 @@ input type:touch {
 
 ### ------------------------------------------------------- window management
 # Every app owns a workspace and is the only window on it: no tiling splits,
-# no stacking to get lost in. Workspace 1 is always a terminal.
+# no stacking to get lost in. 640x480 splits into two unusable halves, so pt35d
+# moves any second window on a workspace to a free one instead of letting sway
+# tile it. Workspace 1 is always a terminal.
 workspace_layout default
 for_window [shell=".*"] inhibit_idle fullscreen
 
@@ -79,22 +81,22 @@ exec --no-startup-id foot
 # (see /etc/keyd/pocketterm35.conf) to Mod4. keyd only ever emits standard
 # keysyms — all shell behaviour is bound here, never in keyd.
 
-# The menu is the hub: one key opens launcher / switcher / settings / power.
-#
-# Select (KEY_SYSRQ) is the global menu key. It carries no character, so it is
-# safe to grab even while typing. Start is deliberately NOT grabbed here: the
-# menu needs it as Confirm, and a compositor binding would eat it first.
+# Start (KEY_PAUSE) is the menu: launcher, windows, quick settings, power.
+# Select (KEY_SYSRQ) switches to the next open app. Neither carries a character,
+# so both are safe to grab while typing. A sway binding beats any surface, so
+# Start closes the menu again and Select switches out of it.
+bindsym Pause       exec $menu
 bindsym $mod+space  exec $menu
 bindsym Menu        exec $menu
-bindsym Print       exec $menu
-bindsym Sys_Req     exec $menu
 
-# Start toggles button mode: A B X Y L R stop typing and act as buttons.
-bindsym Pause       exec $ctl buttons toggle
+bindsym Print       exec $ctl window next
+bindsym Sys_Req     exec $ctl window next
+bindsym $mod+b      exec $ctl buttons toggle
 
 # Fallbacks on Alt, in case this unit has no physical Super key: without them a
 # missing Mod4 would leave the session with no way to open anything.
 bindsym Mod1+space  exec $menu
+bindsym Mod1+grave  exec $ctl window next
 bindsym Mod1+Return exec $term
 bindsym Mod1+Tab    workspace next_on_output
 

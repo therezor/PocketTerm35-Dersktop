@@ -13,9 +13,10 @@ Twelve physical controls. Six of them are letters, so the shell is modal.
 
 | control | action |
 |---|---|
-| Select | open or close the menu, from anywhere |
-| Start | toggle button mode |
+| Start | open or close the menu, from anywhere |
+| Select | switch to the next open app |
 | Super + Space, Menu key | open the menu |
+| Super + b | button mode on or off |
 | Super + Enter | terminal |
 | Super + q | close the window |
 | Super + w | window switcher |
@@ -27,7 +28,8 @@ Twelve physical controls. Six of them are letters, so the shell is modal.
 | Super + s | screenshot |
 | power button | power menu (long press still cuts power) |
 
-There is no tiling. Every window opens fullscreen and owns the screen.
+There is no tiling. One window owns the screen and the rest wait on their own
+workspace: pt35d moves a second window off a workspace that already has one.
 
 ## Button mode
 
@@ -42,23 +44,29 @@ makes the compositor grab them instead:
 | Y | fullscreen toggle |
 | L / R | previous / next workspace |
 
-Start toggles it and the bar shows `BTN` or `TXT`. Each app profile sets its own
-default in `apps.toml` (`buttons = true`): viewers start in button mode, the
-terminal and the editor start in text mode. The menu drops the grab while it is
-open, because it reads the letters itself.
+It is on everywhere except the terminal and the editor, which need the letters.
+An app profile sets its own default with `buttons = false`, the bar shows `BTN`
+or `TXT`, and Super+b or the Quick menu flips it. The menu drops the grab while
+it is open, because it reads the letters itself.
+
+The RP2040 sends the same keycode for the A button and for the `a` key on the
+keyboard, from the same USB HID device, so nothing below the compositor can tell
+them apart. Button mode is therefore all-or-nothing per app. Separating them for
+good needs different keycodes from the keyboard firmware.
 
 ## Menu
 
 | control | action |
 |---|---|
 | D-pad | move |
-| A, Start, Enter | open |
+| A, Enter | open |
 | B, Backspace | back |
 | X | search, then letters type |
 | Y | back to the top menu |
 | L / R | page |
 | 1-9 | pick that visible row |
-| Select, Escape | close |
+| Start, Escape | close |
+| Select | close and switch app |
 | touch | tap a tile, a row or a legend pill |
 
 On the window switcher, Y closes the highlighted window. On a quick setting, the

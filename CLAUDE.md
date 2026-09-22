@@ -37,18 +37,25 @@ In the menu: nav mode (A opens, B back, X search, Y home, L/R page, 1-9 pick a
 row) and filter mode (letters type). Start and Select work in both.
 
 In apps: button mode grabs a b x y l r at the compositor and turns them into
-Enter, Escape, Tab, fullscreen and workspace prev/next. Start toggles it, the
-bar shows BTN or TXT, and each app profile sets its default with
-`buttons = true`. The menu drops the grab while it is open.
+Enter, Escape, Tab, fullscreen and workspace prev/next. It is on everywhere
+except the terminal and the editor (`buttons = false`), the bar shows BTN or
+TXT, and Super+b or the Quick menu flips it. The menu drops the grab while it
+is open.
 
-Select opens and closes the menu from anywhere. Start is never bound while the
-menu is up, because the menu uses it as Confirm.
+Start opens and closes the menu from anywhere. Select switches to the next open
+app, and closes the menu on the way. Both are sway bindings, so they beat any
+surface, and the menu never sees them: Confirm in the menu is A or Enter.
+
+The A button and the `a` key are one keycode on one HID device (`event1`).
+Nothing above the firmware can tell them apart, so button mode is per app, not
+per key.
 
 ## Layout
 
 640x480 leaves no room for chrome that is not earning its place.
 
-- No tiling. Every window opens fullscreen: `for_window [shell=".*"] fullscreen enable`.
+- No tiling. One window owns the screen; pt35d moves a second window on a
+  workspace to a free one. Not sway `fullscreen`, which would hide the dock.
 - The top bar is a dock: one slot per open window, tap to focus, menu button
   left, close button right.
 - Bar 34px, menu header 46px, hint bar 46px, list rows 50px, tiles 86px.
@@ -57,6 +64,8 @@ menu is up, because the menu uses it as Confirm.
   live in `config/pt35/theme.toml`. Do not hardcode either in a widget.
 - An app profile's workspace is applied with a sway `assign` rule at startup, not
   by switching workspace before spawning: that is a race a slow app loses.
+- The output stays at scale 1. A profile's `scale` goes to the app as
+  `GDK_DPI_SCALE` / `QT_SCALE_FACTOR`, so the shell never shrinks with it.
 
 ## Build and test
 

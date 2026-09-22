@@ -24,16 +24,18 @@ pub struct AppProfile {
     pub match_: Match,
     /// Workspace the app owns. 0 = next free.
     pub workspace: u8,
-    /// sway OUTPUT scale to switch to while this app has focus.
-    /// 1.0 = native 640x480; 0.75 = 853x640 logical for GUI apps that will not
-    /// shrink. This is global to the panel, hence "while focused".
+    /// How much the app should shrink its own UI. 1.0 leaves it alone.
+    ///
+    /// This is a toolkit scale, not the sway output scale: the panel stays at
+    /// native 640x480 so the bar and the menu never change size. Qt and
+    /// Chromium shrink everything, GTK3 shrinks only its text.
     pub scale: f32,
     /// Open true-fullscreen (hides our bar) — for video and games.
     pub fullscreen: bool,
     /// Whether the keyboard-driven pointer arms itself for this app.
     pub pointer: PointerPolicy,
-    /// True when the face buttons should act as buttons in this app. A terminal
-    /// or an editor needs the letters, a viewer does not.
+    /// True when the face buttons act as buttons in this app. Default. Only an
+    /// app you type into (terminal, editor) sets it false.
     pub buttons: bool,
     /// Extra environment for the child process.
     pub env: BTreeMap<String, String>,
@@ -69,7 +71,7 @@ impl Default for AppProfile {
             scale: 1.0,
             fullscreen: false,
             pointer: PointerPolicy::Off,
-            buttons: false,
+            buttons: true,
             env: BTreeMap::new(),
         }
     }
@@ -107,6 +109,29 @@ impl AppProfile {
             parts.push(format!("title=\"{v}\""));
         }
         format!("[{}]", parts.join(" "))
+    }
+
+    /// Environment that asks the toolkit to shrink the app's own UI.
+    ///
+    /// The output stays at 640x480, so the shell never changes size with the
+    /// app. Qt takes a fractional factor and shrinks everything; GTK3 has no
+    /// fractional scale at all, so `GDK_DPI_SCALE` shrinks its text and its
+    /// widgets stay put. A key already in `env` wins.
+    pub fn toolkit_env(&self) -> Vec<(String, String)> {
+        if (self.scale - 1.0).abs() < f32::EPSILON {
+            return Vec::new();
+        }
+        let scale = format!("{}", self.scale);
+        [
+            ("GDK_DPI_SCALE", scale.clone()),
+            ("QT_SCALE_FACTOR", scale),
+            ("QT_AUTO_SCREEN_SCALE_FACTOR", "0".to_string()),
+            ("QT_ENABLE_HIGHDPI_SCALING", "0".to_string()),
+        ]
+        .into_iter()
+        .filter(|(key, _)| !self.env.contains_key(*key))
+        .map(|(key, value)| (key.to_string(), value))
+        .collect()
     }
 
     /// Sanity limits: a scale outside this range makes the panel unusable.
@@ -187,12 +212,32 @@ env = { FOO = "bar" }
     }
 
     #[test]
-    fn buttons_are_off_unless_a_profile_asks() {
+    fn buttons_are_on_unless_a_profile_opts_out() {
         let table: AppTable =
-            toml::from_str("[app.x]\nexec = \"true\"\n[app.y]\nexec = \"true\"\nbuttons = true\n")
+            toml::from_str("[app.x]\nexec = \"true\"\n[app.y]\nexec = \"true\"\nbuttons = false\n")
                 .unwrap();
-        assert!(!table.get("x").unwrap().buttons);
-        assert!(table.get("y").unwrap().buttons);
+        assert!(table.get("x").unwrap().buttons);
+        assert!(!table.get("y").unwrap().buttons);
+    }
+
+    #[test]
+    fn a_scaled_profile_asks_the_toolkit_not_the_compositor() {
+        let table: AppTable = toml::from_str(
+            "[app.x]\nexec = \"true\"\nscale = 0.75\nenv = { QT_SCALE_FACTOR = \"0.5\" }\n",
+        )
+        .unwrap();
+        let env = table.get("x").unwrap().toolkit_env();
+        assert!(env.contains(&("GDK_DPI_SCALE".to_string(), "0.75".to_string())));
+        assert!(
+            !env.iter().any(|(k, _)| k == "QT_SCALE_FACTOR"),
+            "an explicit env entry wins"
+        );
+    }
+
+    #[test]
+    fn an_unscaled_profile_sets_nothing() {
+        let table: AppTable = toml::from_str("[app.x]\nexec = \"true\"\n").unwrap();
+        assert!(table.get("x").unwrap().toolkit_env().is_empty());
     }
 
     #[test]

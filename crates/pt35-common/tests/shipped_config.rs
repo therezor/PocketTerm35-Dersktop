@@ -57,18 +57,32 @@ fn every_menu_app_entry_exists_in_apps_toml() {
 }
 
 #[test]
-fn gui_apps_that_need_room_ask_for_a_smaller_scale() {
-    // The 640x480 panel only fits GTK/Qt dialogs at a fractional output scale.
-    // Anything launching a known-big GUI app must say so in its profile.
+fn gui_apps_that_need_room_shrink_themselves() {
+    // A big GTK/Qt app has to shrink its own UI, because the panel never does:
+    // either a profile scale (which becomes GDK_DPI_SCALE / QT_SCALE_FACTOR) or
+    // a scale flag of its own on the command line.
     let apps: AppTable = load("apps.toml");
     for id in ["browser", "files"] {
         let app = apps
             .get(id)
             .unwrap_or_else(|| panic!("missing app profile {id:?}"));
         assert!(
-            app.scale < 1.0,
-            "{id} should request a fractional scale, got {}",
-            app.scale
+            !app.toolkit_env().is_empty() || app.exec.contains("scale-factor"),
+            "{id} should shrink itself, got scale {} and exec {:?}",
+            app.scale,
+            app.exec
+        );
+    }
+}
+
+#[test]
+fn only_the_apps_you_type_into_give_up_the_buttons() {
+    let apps: AppTable = load("apps.toml");
+    for (id, app) in &apps.apps {
+        assert_eq!(
+            app.buttons,
+            !matches!(id.as_str(), "terminal" | "editor"),
+            "app {id:?} has the wrong button default"
         );
     }
 }

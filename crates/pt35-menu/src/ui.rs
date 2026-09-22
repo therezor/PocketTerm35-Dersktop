@@ -45,7 +45,7 @@ const NAV_HINTS: &[Hint] = &[
         action: "Page",
     },
     Hint {
-        button: "Sel",
+        button: "Start",
         action: "Close",
     },
 ];
@@ -64,8 +64,8 @@ const WINDOW_HINTS: &[Hint] = &[
         action: "Close",
     },
     Hint {
-        button: "Sel",
-        action: "Exit",
+        button: "Start",
+        action: "Close",
     },
 ];
 
@@ -83,19 +83,19 @@ const QUICK_HINTS: &[Hint] = &[
         action: "Home",
     },
     Hint {
-        button: "Sel",
+        button: "Start",
         action: "Close",
     },
 ];
 
 const FILTER_HINTS: &[Hint] = &[
     Hint {
-        button: "Start",
+        button: "Enter",
         action: "Open",
     },
     Hint {
-        button: "Sel",
-        action: "Cancel",
+        button: "Start",
+        action: "Close",
     },
     Hint {
         button: "^v",
@@ -140,7 +140,7 @@ impl Menu {
             "X" => Key::with_text('x' as u32, 'x'),
             "Y" => Key::with_text('y' as u32, 'y'),
             "Start" => Key::new(pt35_ui::keys::sym::PAUSE),
-            "Sel" => Key::new(pt35_ui::keys::sym::PRINT),
+            "Enter" => Key::new(pt35_ui::keys::sym::RETURN),
             _ => return true,
         };
         let step = self.model.handle(&key);
@@ -330,14 +330,15 @@ impl Menu {
 
             // Quick settings read out their value on the right, where the
             // chevron would be on a row that opens something.
-            let right_text = match row.adjust {
-                Some(adjust) => Some(crate::live::value(adjust, self.status.as_ref())),
-                None if row.submenu => Some(">".to_string()),
-                None => None,
+            let right_text = match (row.adjust, row.state) {
+                (Some(adjust), _) => Some(crate::live::value(adjust, self.status.as_ref())),
+                (None, Some(field)) => Some(crate::live::state_value(field, self.status.as_ref())),
+                (None, None) if row.submenu => Some(">".to_string()),
+                (None, None) => None,
             };
             let mut right_width = 0;
             if let Some(text) = &right_text {
-                let mono = row.adjust.is_some();
+                let mono = row.adjust.is_some() || row.state.is_some();
                 let size_right = if mono { theme.font.size_hint } else { size };
                 let width = if mono {
                     self.mono.measure(text, size_right) as i32

@@ -171,6 +171,8 @@ pub struct WindowInfo {
     pub app: String,
     pub title: String,
     pub focused: bool,
+    #[serde(default)]
+    pub floating: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
