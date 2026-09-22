@@ -137,11 +137,13 @@ install_from_source() {
         fonts-dejavu-core i2c-tools evtest \
         build-essential pkg-config libxkbcommon-dev"
 
-  # cargo usually lives in the user's ~/.cargo/bin, which root's PATH misses.
-  su "$TARGET_USER" -c 'command -v cargo >/dev/null' \
+  # A login shell, so a rustup toolchain in ~/.cargo/bin wins over the older
+  # /usr/bin/cargo that Debian ships (Trixie's 1.85 is too old for wayland-protocols).
+  su -l "$TARGET_USER" -c 'command -v cargo >/dev/null' \
     || die "cargo is not installed for '$TARGET_USER'; install rustup, or drop --from-source to use a release build"
+  msg "cargo: $(su -l "$TARGET_USER" -c 'cargo --version')"
   msg "building (10-40 minutes on a Pi 4)"
-  run "su '$TARGET_USER' -c 'cd \"$src\" && cargo build --release --workspace'"
+  run "su -l '$TARGET_USER' -c 'cd \"$src\" && cargo build --release --workspace'"
 
   msg "installing files"
   for binary in pt35d pt35ctl pt35-bar pt35-menu pt35-pointer; do
