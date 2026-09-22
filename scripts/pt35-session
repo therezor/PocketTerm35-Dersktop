@@ -36,4 +36,13 @@ export PT35_SHARE=/usr/share/pt35-desktop
 LOG_DIR="${XDG_RUNTIME_DIR}/pt35"
 mkdir -p "$LOG_DIR"
 
-exec sway --unsupported-gpu >"$LOG_DIR/sway.log" 2>&1
+sway --unsupported-gpu >"$LOG_DIR/sway.log" 2>&1
+status=$?
+
+# sway's children are reparented to init when it exits. A surviving pt35d holds
+# the socket and the VT, and the next session then cannot start.
+for helper in pt35d pt35-bar pt35-menu pt35-pointer; do
+  pkill -x -u "$(id -u)" "$helper" 2>/dev/null || true
+done
+
+exit "$status"
