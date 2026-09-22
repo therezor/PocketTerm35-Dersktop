@@ -1176,8 +1176,11 @@ pub fn run(page: Option<String>) -> Result<()> {
     let mono_bold = Font::load(&theme.font.family_mono_bold)
         .or_else(|_| Font::load(&theme.font.family_mono))
         .or_else(|_| Font::load(&theme.font.family))?;
-    let rows = theme.menu.rows_visible as usize;
     let body = 480 - theme.bar.height - theme.menu.header_height - theme.menu.hint_height;
+    // How many rows actually fit, not how many the theme asks for: a list that
+    // hands out one row more than the body can draw hides the cursor on it.
+    let rows =
+        ((body - 12) / theme.menu.row_height).clamp(1, theme.menu.rows_visible.max(1)) as usize;
     let grid_rows = (body / (theme.menu.tile_height + theme.menu.gap)).max(1) as usize;
     // A screen name may be a builtin rather than a page in menu.toml, and that
     // includes the root: the launcher is assembled, not written down.
