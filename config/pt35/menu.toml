@@ -23,8 +23,8 @@ layout = "grid"
 entries = [
   { label = "Apps",      goto = "apps",         glyph = "A",  tint = "#2f81f7", note = "launcher" },
   { label = "Windows",   builtin = "windows",   glyph = "W",  tint = "#3fb950", note = "running" },
-  { label = "Wi-Fi",     builtin = "wifi",      glyph = "wf", tint = "#48e6fe", note = "networks" },
-  { label = "Bluetooth", builtin = "bluetooth", glyph = "bt", tint = "#7c72ff", note = "devices" },
+  { label = "Wi-Fi",     builtin = "wifi",      glyph = "≈", tint = "#48e6fe", note = "networks" },
+  { label = "Bluetooth", builtin = "bluetooth", glyph = "B", tint = "#7c72ff", note = "devices" },
   { label = "Volume",    builtin = "audio",     glyph = "V",  tint = "#d29922", note = "level" },
   { label = "Settings",  goto = "settings",     glyph = "S",  tint = "#8b949e", note = "system" },
   { label = "Files",     app = "files",         glyph = "F",  tint = "#f0883e", note = "browse" },
@@ -40,12 +40,12 @@ entries = [
   { label = "Files",    app = "files",    glyph = "F",  tint = "#f0883e" },
   { label = "Editor",   app = "editor",   glyph = "E",  tint = "#2f81f7" },
   { label = "Monitor",  app = "monitor",  glyph = "M",  tint = "#d29922" },
-  { label = "Music",    app = "music",    glyph = "Mu", tint = "#7c72ff" },
-  { label = "Images",   app = "images",   glyph = "Im", tint = "#48e6fe" },
+  { label = "Music",    app = "music",    glyph = "♪", tint = "#7c72ff" },
+  { label = "Images",   app = "images",   glyph = "I", tint = "#48e6fe" },
   { label = "PDF",      app = "pdf",      glyph = "P",  tint = "#f85149" },
-  { label = "Video",    app = "video",    glyph = "V",  tint = "#db61a2" },
+  { label = "Video",    app = "video",    glyph = "▶",  tint = "#db61a2" },
   { label = "Browser",  app = "browser",  glyph = "@",  tint = "#2f81f7" },
-  { label = "All apps", builtin = "desktop_entries", glyph = "...", tint = "#8b949e" },
+  { label = "All apps", builtin = "desktop_entries", glyph = "…", tint = "#8b949e" },
 ]
 
 [menu.settings]

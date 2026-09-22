@@ -157,6 +157,7 @@ install_from_source() {
   run "install -m644 '$src/config/pt35/'*.toml '$SHARE/pt35/'"
   run "install -m755 '$src/scripts/pt35-probe.sh' '$SHARE/pt35-probe.sh'"
   run "install -d '$SHARE/logind' && install -m644 '$src/config/logind/pt35.conf' '$SHARE/logind/'"
+  run "install -d '$SHARE/systemd' && install -m644 '$src/config/systemd/greetd-vt1.conf' '$SHARE/systemd/'"
   run "install -d /etc/keyd && install -m644 '$src/config/keyd/pocketterm35.conf' /etc/keyd/"
   run "install -m440 '$src/packaging/pt35-cpu-profile.sudoers' /etc/sudoers.d/pt35-cpu-profile"
   run "install -d /usr/share/wayland-sessions && install -m644 '$src/config/pt35-session.desktop' /usr/share/wayland-sessions/"

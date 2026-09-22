@@ -100,13 +100,17 @@ command = "/usr/bin/pt35-session"
 user = "$USER_NAME"
 EOF
 
+install -d /etc/systemd/system/greetd.service.d
+if [ -f "$SHARE/systemd/greetd-vt1.conf" ]; then
+  install -m644 "$SHARE/systemd/greetd-vt1.conf" /etc/systemd/system/greetd.service.d/pt35-vt1.conf
+fi
+
 if [ -d /run/systemd/system ]; then
+  systemctl daemon-reload >/dev/null 2>&1 || true
   systemctl enable seatd.service >/dev/null 2>&1 || true
-  systemctl enable keyd.service >/dev/null 2>&1 || true
   systemctl disable lightdm.service >/dev/null 2>&1 || true
   systemctl set-default graphical.target >/dev/null 2>&1 || true
   systemctl enable greetd.service >/dev/null 2>&1 || true
-  systemctl restart keyd.service >/dev/null 2>&1 || true
 fi
 
 cat <<EOF
