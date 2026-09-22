@@ -472,7 +472,7 @@ impl Menu {
             let badge = 40;
             let bx = x + 12;
             let by = y + (tile_h - badge) / 2;
-            canvas.rounded_rect(bx, by, badge as u32, badge as u32, 10, tint);
+            canvas.rounded_rect(bx, by, badge as u32, badge as u32, theme.menu.radius, tint);
             let glyph_size = theme.font.size_title;
             let glyph_w = self.font.measure(&row.glyph, glyph_size) as i32;
             self.font.draw(

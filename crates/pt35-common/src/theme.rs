@@ -188,7 +188,7 @@ impl Default for Menu {
             filter_hint: "X to search".into(),
             header_height: 46,
             hint_height: 46,
-            radius: 12,
+            radius: 2,
             columns: 3,
             tile_height: 86,
             gap: 10,

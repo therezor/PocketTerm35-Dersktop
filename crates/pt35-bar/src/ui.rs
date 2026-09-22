@@ -52,15 +52,29 @@ impl Bar {
         let y = centre - box_h / 2;
 
         if focused {
-            canvas.rounded_rect(x, y, width as u32, box_h as u32, 6, self.theme.color.accent);
+            canvas.rounded_rect(
+                x,
+                y,
+                width as u32,
+                box_h as u32,
+                RADIUS,
+                self.theme.color.accent,
+            );
         } else {
-            canvas.rounded_rect(x, y, width as u32, box_h as u32, 6, self.theme.color.border);
+            canvas.rounded_rect(
+                x,
+                y,
+                width as u32,
+                box_h as u32,
+                RADIUS,
+                self.theme.color.border,
+            );
             canvas.rounded_rect(
                 x + 1,
                 y + 1,
                 (width - 2) as u32,
                 (box_h - 2) as u32,
-                6,
+                RADIUS,
                 self.theme.color.background,
             );
         }
@@ -100,7 +114,7 @@ impl Bar {
             centre - height / 2,
             width as u32,
             height as u32,
-            (height / 2) as u32,
+            RADIUS,
             fill,
         );
         let baseline = centre + (size * 0.36) as i32;
@@ -110,6 +124,10 @@ impl Bar {
         x + width
     }
 }
+
+/// Square corners with the sharpness taken off. A deck panel is machined, not
+/// moulded.
+const RADIUS: u32 = 2;
 
 /// Two characters of an app id: "pcmanfm" -> "PC", "foot" -> "FO".
 fn initials(app: &str) -> String {
