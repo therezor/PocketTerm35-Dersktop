@@ -100,7 +100,11 @@ install_from_release() {
   sums="$tmp/SHA256SUMS"
 
   msg "downloading the latest release from $REPO"
-  run "curl -fsSL -o '$deb' '$url/pt35-desktop_arm64.deb'"
+  if ! curl -fsSL -o "$deb" "$url/pt35-desktop_arm64.deb"; then
+    warn "no published release yet — falling back to building from source"
+    clone_and_build "$tmp"
+    return
+  fi
   if curl -fsSL -o "$sums" "$url/SHA256SUMS" 2>/dev/null; then
     msg "verifying checksum"
     run "(cd '$tmp' && grep 'pt35-desktop_arm64.deb' SHA256SUMS | sha256sum -c -)"
@@ -108,6 +112,16 @@ install_from_release() {
     warn "no SHA256SUMS published for this release; skipping checksum verification"
   fi
   run "PT35_USER='$TARGET_USER' DEBIAN_FRONTEND=noninteractive apt-get install -y '$deb'"
+}
+
+# No release to download: fetch the source and build it here instead, so the
+# one-command install works even before the first tag is cut.
+clone_and_build() {
+  local tmp="$1"
+  run "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git"
+  run "git clone --depth 1 'https://github.com/$REPO' '$tmp/src'"
+  run "chown -R '$TARGET_USER' '$tmp/src'"
+  install_from_source "$tmp/src"
 }
 
 install_from_source() {

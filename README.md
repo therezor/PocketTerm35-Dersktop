@@ -38,6 +38,11 @@ curl -fsSL https://raw.githubusercontent.com/therezor/PocketTerm35-Dersktop/main
 sudo reboot
 ```
 
+Until the first release is tagged there is nothing to download, so the script
+clones the repo and builds it on the device instead (10–40 minutes on a Pi 4);
+once a `v*` tag exists, CI publishes `pt35-desktop_arm64.deb` and the same
+command installs it in seconds.
+
 The installer refuses Bookworm (its `sway` is not rebuilt against the Raspberry
 Pi `libwlroots`), warns if the `sway` candidate is not an `+rpt` build, and
 keeps a backup of `config.txt`. To undo everything:
