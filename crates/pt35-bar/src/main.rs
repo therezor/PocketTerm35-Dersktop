@@ -7,6 +7,7 @@
 // On non-Linux hosts only the portable half compiles; its helpers are then unused.
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
+mod icons;
 mod segments;
 mod status;
 

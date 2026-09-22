@@ -2,6 +2,7 @@
 //! code means the "does the battery widget disappear when the hardware has no
 //! battery" question is answerable in a unit test.
 
+use crate::icons::Icon;
 use pt35_common::ipc::Status;
 use pt35_common::theme::{Rgb, Theme, Visibility};
 
@@ -9,6 +10,26 @@ use pt35_common::theme::{Rgb, Theme, Visibility};
 pub struct Segment {
     pub text: String,
     pub color: Rgb,
+    /// Drawn to the left of the text. A segment may be icon only.
+    pub icon: Option<Icon>,
+}
+
+impl Segment {
+    fn text(text: impl Into<String>, color: Rgb) -> Self {
+        Self {
+            text: text.into(),
+            color,
+            icon: None,
+        }
+    }
+
+    fn icon(icon: Icon, color: Rgb) -> Self {
+        Self {
+            text: String::new(),
+            color,
+            icon: Some(icon),
+        }
+    }
 }
 
 /// Right-hand side: state of the machine. `clock` is passed in so the caller
@@ -18,51 +39,43 @@ pub fn right(status: Option<&Status>, theme: &Theme, clock: &str) -> Vec<Segment
     if let Some(status) = status {
         // The D-pad either navigates or moves a cursor, and the same buttons
         // either confirm or click. Nothing else on screen says which.
-        out.push(Segment {
-            text: status.input_mode.label().into(),
-            color: match status.input_mode {
+        out.push(Segment::text(
+            status.input_mode.label(),
+            match status.input_mode {
                 pt35_common::ipc::InputMode::Mouse => theme.color.warning,
                 pt35_common::ipc::InputMode::Buttons => theme.color.accent,
             },
-        });
+        ));
         if (status.scale - 1.0).abs() > 0.01 {
-            out.push(Segment {
-                text: format!("{:.2}x", status.scale),
-                color: theme.color.muted,
-            });
+            out.push(Segment::text(
+                format!("{:.2}x", status.scale),
+                theme.color.muted,
+            ));
         }
         if let Some(volume) = status.volume_percent {
-            let muted = status.muted.unwrap_or(false);
-            out.push(Segment {
-                text: if muted {
-                    "mute".into()
-                } else {
-                    format!("{volume}%")
+            out.push(Segment::icon(
+                Icon::Volume {
+                    level: volume.min(100),
+                    muted: status.muted.unwrap_or(false),
                 },
-                color: if muted {
-                    theme.color.muted
-                } else {
-                    theme.color.foreground
-                },
-            });
+                theme.color.foreground,
+            ));
         }
-        if theme.bar.show_network {
-            if let Some(net) = &status.network {
-                out.push(Segment {
-                    text: net.clone(),
-                    color: theme.color.foreground,
-                });
-            }
+        // An interface name is not news. Whether there is signal is.
+        if theme.bar.show_network && status.network.is_some() {
+            out.push(Segment::icon(
+                Icon::Wifi {
+                    signal: status.network_signal,
+                },
+                theme.color.foreground,
+            ));
         }
         match (theme.bar.show_battery, status.battery_percent) {
             (Visibility::Never, _) => {}
             // `auto` is the interesting case: on a unit where the RP2040 keeps
             // the gauge to itself there is nothing to show, so show nothing.
             (Visibility::Auto, None) => {}
-            (Visibility::Always, None) => out.push(Segment {
-                text: "--".into(),
-                color: theme.color.muted,
-            }),
+            (Visibility::Always, None) => out.push(Segment::text("--", theme.color.muted)),
             (_, Some(percent)) => {
                 let charging = status.charging.unwrap_or(false);
                 let color = match percent {
@@ -72,17 +85,11 @@ pub fn right(status: Option<&Status>, theme: &Theme, clock: &str) -> Vec<Segment
                     _ => theme.color.foreground,
                 };
                 let mark = if charging { "+" } else { "" };
-                out.push(Segment {
-                    text: format!("{percent}{mark}%"),
-                    color,
-                });
+                out.push(Segment::text(format!("{percent}{mark}%"), color));
             }
         }
     }
-    out.push(Segment {
-        text: clock.to_string(),
-        color: theme.color.foreground,
-    });
+    out.push(Segment::text(clock, theme.color.foreground));
     out
 }
 

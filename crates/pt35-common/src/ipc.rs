@@ -169,6 +169,9 @@ pub struct Status {
     pub volume_percent: Option<u8>,
     pub muted: Option<bool>,
     pub network: Option<String>,
+    /// Wi-Fi link quality, 0-100. `None` on a wired or offline machine.
+    #[serde(default)]
+    pub network_signal: Option<u8>,
     #[serde(default)]
     pub input_mode: InputMode,
     pub scale: f32,
@@ -185,6 +188,9 @@ pub struct WindowInfo {
     pub workspace: u8,
     pub app: String,
     pub title: String,
+    /// One or two characters standing in for an icon, from the app's profile.
+    #[serde(default)]
+    pub glyph: String,
     pub focused: bool,
     #[serde(default)]
     pub floating: bool,

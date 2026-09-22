@@ -119,13 +119,14 @@ pub struct Menu {
 
 impl Menu {
     pub fn new(theme: Theme, font: Font, mono: Font, model: Model) -> Self {
+        let status = crate::live::status();
         Self {
             theme,
             font,
             mono,
             model,
-            status: crate::live::status(),
-            windows: providers::items(pt35_common::menu::Builtin::Windows).len(),
+            windows: status.as_ref().map(|s| s.windows.len()).unwrap_or(0),
+            status,
             row_hits: Vec::new(),
             hint_hits: Vec::new(),
             error: None,

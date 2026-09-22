@@ -26,6 +26,15 @@ pub struct Row {
     pub submenu: bool,
 }
 
+/// The window picker is a grid: you recognise an app by its shape faster than
+/// you read its name. Everything else dynamic is a list of similar things.
+fn layout_for(builtin: Builtin) -> Layout {
+    match builtin {
+        Builtin::Windows => Layout::Grid,
+        _ => Layout::List,
+    }
+}
+
 /// One screen on the stack.
 #[derive(Debug, Clone)]
 pub struct Screen {
@@ -40,10 +49,11 @@ pub struct Screen {
 pub enum Source {
     /// A page from menu.toml, by id.
     Page(String),
-    /// A dynamic list: the payloads are opaque strings the caller understands.
+    /// A dynamic list. The items carry their own payload, note and glyph; the
+    /// payload is opaque to the model.
     Dynamic {
         builtin: Builtin,
-        payloads: Vec<String>,
+        items: Vec<crate::providers::Item>,
     },
     /// A yes/no question guarding `command`.
     Confirm { command: Command },
@@ -139,14 +149,22 @@ impl Model {
             .into_iter()
             .map(|(index, label)| {
                 let entry = self.entry(&screen.source, index);
+                let item = match &screen.source {
+                    Source::Dynamic { items, .. } => items.get(index),
+                    _ => None,
+                };
                 Row {
                     label: label.to_string(),
-                    note: entry.map(|e| e.note.clone()).unwrap_or_default(),
+                    note: entry
+                        .map(|e| e.note.clone())
+                        .or_else(|| item.map(|i| i.note.clone()))
+                        .unwrap_or_default(),
                     builtin: entry.and_then(|e| e.builtin),
                     adjust: entry.and_then(|e| e.adjust),
                     state: entry.and_then(|e| e.state),
                     glyph: entry
                         .map(|e| e.glyph.clone())
+                        .or_else(|| item.map(|i| i.glyph.clone()))
                         .filter(|g| !g.is_empty())
                         .unwrap_or_else(|| {
                             label
@@ -228,15 +246,27 @@ impl Model {
     }
 
     /// Push a screen built from live data (windows, networks, .desktop files).
-    pub fn push_dynamic(&mut self, builtin: Builtin, title: &str, items: Vec<(String, String)>) {
-        let (labels, payloads): (Vec<_>, Vec<_>) = items.into_iter().unzip();
-        let rows = self.rows;
+    pub fn push_dynamic(
+        &mut self,
+        builtin: Builtin,
+        title: &str,
+        items: Vec<crate::providers::Item>,
+    ) {
+        let layout = layout_for(builtin);
         self.stack.push(Screen {
             title: title.to_string(),
-            list: ListState::new(labels, rows),
-            source: Source::Dynamic { builtin, payloads },
-            layout: Layout::List,
+            list: self.list_for(layout, &items),
+            layout,
+            source: Source::Dynamic { builtin, items },
         });
+    }
+
+    fn list_for(&self, layout: Layout, items: &[crate::providers::Item]) -> ListState {
+        let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        match layout {
+            Layout::Grid => ListState::new(labels, self.grid_rows).with_columns(self.columns),
+            Layout::List => ListState::new(labels, self.rows),
+        }
     }
 
     fn push_confirm(&mut self, command: Command, label: &str) {
@@ -250,17 +280,17 @@ impl Model {
     }
 
     /// Refresh the items of the dynamic screen on top, keeping it open.
-    pub fn replace_dynamic(&mut self, items: Vec<(String, String)>) {
-        let rows = self.rows;
-        let Some(screen) = self.stack.last_mut() else {
+    pub fn replace_dynamic(&mut self, items: Vec<crate::providers::Item>) {
+        let Some(builtin) = self.stack.last().and_then(|screen| match screen.source {
+            Source::Dynamic { builtin, .. } => Some(builtin),
+            _ => None,
+        }) else {
             return;
         };
-        let Source::Dynamic { builtin, .. } = screen.source else {
-            return;
-        };
-        let (labels, payloads): (Vec<_>, Vec<_>) = items.into_iter().unzip();
-        screen.list = ListState::new(labels, rows);
-        screen.source = Source::Dynamic { builtin, payloads };
+        let list = self.list_for(layout_for(builtin), &items);
+        let screen = self.screen_mut();
+        screen.list = list;
+        screen.source = Source::Dynamic { builtin, items };
     }
 
     /// Activate the nth row of the drawn window. Used by a tap.
@@ -287,14 +317,15 @@ impl Model {
                 // On the switcher, Y closes the window under the cursor.
                 if let Source::Dynamic {
                     builtin: Builtin::Windows,
-                    payloads,
+                    items,
                 } = &self.screen().source
                 {
                     if let Some(payload) = self
                         .screen()
                         .list
                         .selected()
-                        .and_then(|index| payloads.get(index))
+                        .and_then(|index| items.get(index))
+                        .map(|item| &item.payload)
                         .cloned()
                     {
                         return Step::Close(payload);
@@ -354,7 +385,7 @@ impl Model {
                     Step::Run(command)
                 }
             }
-            Source::Dynamic { builtin, payloads } => match payloads.get(index) {
+            Source::Dynamic { builtin, items } => match items.get(index).map(|i| &i.payload) {
                 Some(payload) => Step::Run(Command::Dynamic {
                     builtin,
                     payload: payload.clone(),
@@ -544,8 +575,8 @@ entries = [
             Builtin::Windows,
             "Windows",
             vec![
-                ("foot".into(), "con:12".into()),
-                ("helix".into(), "con:34".into()),
+                crate::providers::Item::new("foot", "con:12"),
+                crate::providers::Item::new("helix", "con:34"),
             ],
         );
         press(&mut model, sym::DOWN);

@@ -233,13 +233,29 @@ impl App for Bar {
             .into_iter()
             .rev()
         {
-            let width = self.mono.measure(&segment.text, size) as i32;
+            let icon_width = segment.icon.map(|i| i.width() + 4).unwrap_or(0);
+            let width = self.mono.measure(&segment.text, size) as i32 + icon_width;
             if right - width <= x {
                 break;
             }
             right -= width;
-            self.mono
-                .draw(canvas, &segment.text, right, baseline, size, segment.color);
+            if let Some(icon) = segment.icon {
+                icon.draw(
+                    canvas,
+                    right,
+                    centre,
+                    segment.color,
+                    self.theme.color.border,
+                );
+            }
+            self.mono.draw(
+                canvas,
+                &segment.text,
+                right + icon_width,
+                baseline,
+                size,
+                segment.color,
+            );
             if !first {
                 canvas.rect(
                     right + width + pad - 1,

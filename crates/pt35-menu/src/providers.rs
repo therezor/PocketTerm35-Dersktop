@@ -6,8 +6,29 @@
 use pt35_common::menu::Builtin;
 use std::process::Command;
 
-/// `(label, payload)` pairs for a dynamic screen.
-pub type Items = Vec<(String, String)>;
+/// One row of a dynamic screen. `payload` is opaque to the model: only the
+/// provider and the code that acts on the row know what it means.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Item {
+    pub label: String,
+    pub payload: String,
+    /// Second line on a tile, right-hand text on a row.
+    pub note: String,
+    /// One or two characters standing in for an icon.
+    pub glyph: String,
+}
+
+impl Item {
+    pub fn new(label: impl Into<String>, payload: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            payload: payload.into(),
+            ..Self::default()
+        }
+    }
+}
+
+pub type Items = Vec<Item>;
 
 pub fn title(builtin: Builtin) -> &'static str {
     match builtin {
@@ -35,67 +56,42 @@ pub fn items(builtin: Builtin) -> Items {
 
 // ---------------------------------------------------------------- windows
 
+/// The picker. The daemon already knows every window and which profile owns it,
+/// so the glyph comes back with the list instead of being guessed here.
 fn windows() -> Items {
-    match pt35_common::sway::Sway::connect()
-        .and_then(|mut s| s.request(pt35_common::sway::MessageType::GetTree, ""))
-    {
-        Ok(json) => match serde_json::from_str(&json) {
-            Ok(tree) => parse_windows(&tree),
-            Err(e) => {
-                log::warn!("sway tree: {e}");
-                Vec::new()
-            }
-        },
-        Err(e) => {
-            log::warn!("sway: {e}");
-            Vec::new()
-        }
+    let Some(status) = crate::live::status() else {
+        return Vec::new();
+    };
+    status
+        .windows
+        .iter()
+        .map(|w| Item {
+            label: pretty_app(&w.app),
+            payload: format!("[con_id={}]", w.id),
+            note: w.title.clone(),
+            glyph: if w.glyph.is_empty() {
+                initials(&w.app)
+            } else {
+                w.glyph.clone()
+            },
+        })
+        .collect()
+}
+
+/// `pt35-monitor` is what sway calls it; "Monitor" is what it is.
+fn pretty_app(app: &str) -> String {
+    let name = app.trim_start_matches("pt35-");
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => "Window".to_string(),
     }
 }
 
-/// Flatten a sway tree into "workspace: window title" rows whose payload is the
-/// container id, so activating one focuses exactly that window.
-pub fn parse_windows(node: &serde_json::Value) -> Items {
-    fn walk(node: &serde_json::Value, workspace: Option<&str>, out: &mut Items) {
-        let kind = node["type"].as_str().unwrap_or("");
-        let name = node["name"].as_str().unwrap_or("");
-        let workspace = if kind == "workspace" {
-            Some(name)
-        } else {
-            workspace
-        };
-
-        let is_window = node.get("pid").is_some()
-            || node.get("app_id").and_then(|v| v.as_str()).is_some()
-            || node.get("window").and_then(|v| v.as_i64()).is_some();
-        if is_window && !name.is_empty() {
-            if let Some(id) = node["id"].as_i64() {
-                // "2  pcmanfm  Home": workspace, app, then the title, so the
-                // list scans down the left edge.
-                let app = node["app_id"]
-                    .as_str()
-                    .or_else(|| node["window_properties"]["class"].as_str())
-                    .unwrap_or("");
-                let label = match (workspace, app.is_empty()) {
-                    (Some(ws), false) => format!("{ws}  {app}  {name}"),
-                    (Some(ws), true) => format!("{ws}  {name}"),
-                    (None, _) => name.to_string(),
-                };
-                out.push((label, format!("[con_id={id}]")));
-            }
-        }
-        for key in ["nodes", "floating_nodes"] {
-            if let Some(children) = node[key].as_array() {
-                for child in children {
-                    walk(child, workspace, out);
-                }
-            }
-        }
-    }
-
-    let mut out = Vec::new();
-    walk(node, None, &mut out);
-    out
+/// Two letters for an app with no profile, the same rule the dock uses.
+fn initials(app: &str) -> String {
+    let name = app.trim_start_matches("pt35-");
+    name.chars().take(2).collect::<String>().to_uppercase()
 }
 
 // ------------------------------------------------------------------- wifi
@@ -106,7 +102,7 @@ fn wifi() -> Items {
         &["-t", "-f", "ACTIVE,SIGNAL,SSID", "device", "wifi", "list"],
     ) {
         Some(out) => parse_nmcli(&out),
-        None => vec![("nmcli not installed".into(), String::new())],
+        None => vec![Item::new("nmcli not installed", "")],
     }
 }
 
@@ -131,9 +127,11 @@ pub fn parse_nmcli(out: &str) -> Items {
     }
     seen.sort_by_key(|entry| std::cmp::Reverse(entry.1));
     seen.into_iter()
-        .map(|(ssid, signal, active)| {
-            let mark = if active { "* " } else { "  " };
-            (format!("{mark}{ssid}  {signal}%"), ssid)
+        .map(|(ssid, signal, active)| Item {
+            label: ssid.clone(),
+            payload: ssid,
+            note: format!("{signal}%"),
+            glyph: if active { "*".into() } else { String::new() },
         })
         .collect()
 }
@@ -143,7 +141,7 @@ pub fn parse_nmcli(out: &str) -> Items {
 fn bluetooth() -> Items {
     match run("bluetoothctl", &["devices"]) {
         Some(out) => parse_bluetoothctl(&out),
-        None => vec![("bluetoothctl not installed".into(), String::new())],
+        None => vec![Item::new("bluetoothctl not installed", "")],
     }
 }
 
@@ -153,7 +151,7 @@ pub fn parse_bluetoothctl(out: &str) -> Items {
         .filter_map(|line| {
             let rest = line.strip_prefix("Device ")?;
             let (mac, name) = rest.split_once(' ')?;
-            Some((name.trim().to_string(), mac.to_string()))
+            Some(Item::new(name.trim(), mac))
         })
         .collect()
 }
@@ -167,7 +165,7 @@ fn levels(what: &str) -> Items {
         .rev()
         .map(|step| {
             let percent = step * 10;
-            (format!("{percent:>3}%"), format!("{what} {percent}"))
+            Item::new(format!("{percent:>3}%"), format!("{what} {percent}"))
         })
         .collect()
 }
@@ -192,13 +190,13 @@ fn desktop_entries() -> Items {
             let Ok(text) = std::fs::read_to_string(&path) else {
                 continue;
             };
-            if let Some(item) = parse_desktop_entry(&text) {
-                out.push(item);
+            if let Some((name, exec)) = parse_desktop_entry(&text) {
+                out.push(Item::new(name, exec));
             }
         }
     }
-    out.sort_by_key(|entry| entry.0.to_lowercase());
-    out.dedup_by(|a, b| a.0 == b.0);
+    out.sort_by_key(|entry| entry.label.to_lowercase());
+    out.dedup_by(|a, b| a.label == b.label);
     out
 }
 
@@ -241,23 +239,17 @@ pub fn parse_desktop_entry(text: &str) -> Option<(String, String)> {
 
 fn about() -> Items {
     let mut out = vec![
-        (
-            format!("pt35-desktop {}", env!("CARGO_PKG_VERSION")),
-            String::new(),
-        ),
-        (
+        Item::new(format!("pt35-desktop {}", env!("CARGO_PKG_VERSION")), ""),
+        Item::new(
             format!(
                 "panel {}",
                 std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "?".into())
             ),
-            String::new(),
+            "",
         ),
     ];
     if let Ok(model) = std::fs::read_to_string("/proc/device-tree/model") {
-        out.push((
-            model.trim_end_matches('\0').trim().to_string(),
-            String::new(),
-        ));
+        out.push(Item::new(model.trim_end_matches('\0').trim(), ""));
     }
     out
 }
@@ -274,40 +266,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn flattens_a_sway_tree_into_windows() {
-        let tree: serde_json::Value = serde_json::from_str(
-            r#"{"type":"root","name":"root","nodes":[
-                 {"type":"output","name":"HDMI-A-1","nodes":[
-                   {"type":"workspace","name":"1","nodes":[
-                     {"type":"con","id":12,"name":"foot","app_id":"foot","pid":900}
-                   ],"floating_nodes":[]},
-                   {"type":"workspace","name":"2","nodes":[
-                     {"type":"con","id":34,"name":"helix","app_id":"pt35-editor","pid":901}
-                   ],"floating_nodes":[]}
-                 ],"floating_nodes":[]}
-               ],"floating_nodes":[]}"#,
-        )
-        .unwrap();
-        let items = parse_windows(&tree);
-        assert_eq!(
-            items,
-            vec![
-                ("1  foot  foot".to_string(), "[con_id=12]".to_string()),
-                (
-                    "2  pt35-editor  helix".to_string(),
-                    "[con_id=34]".to_string()
-                ),
-            ]
-        );
-    }
-
-    #[test]
-    fn skips_workspaces_and_outputs_themselves() {
-        let tree: serde_json::Value = serde_json::from_str(
-            r#"{"type":"workspace","id":5,"name":"1","nodes":[],"floating_nodes":[]}"#,
-        )
-        .unwrap();
-        assert!(parse_windows(&tree).is_empty());
+    fn an_app_without_a_profile_still_gets_a_name_and_two_letters() {
+        assert_eq!(pretty_app("pt35-monitor"), "Monitor");
+        assert_eq!(pretty_app("chromium"), "Chromium");
+        assert_eq!(pretty_app(""), "Window");
+        assert_eq!(initials("pcmanfm"), "PC");
+        assert_eq!(initials("pt35-monitor"), "MO");
     }
 
     #[test]
@@ -315,17 +279,9 @@ mod tests {
         let out = "no:42:Cafe\nyes:78:Home\nno:55:Home\nno:0:\n";
         let items = parse_nmcli(out);
         assert_eq!(items.len(), 2);
-        assert_eq!(items[0].1, "Home");
-        assert!(
-            items[0].0.starts_with('*'),
-            "the active network is marked: {:?}",
-            items[0].0
-        );
-        assert!(
-            items[0].0.contains("78%"),
-            "keeps the strongest signal: {:?}",
-            items[0].0
-        );
+        assert_eq!(items[0].label, "Home");
+        assert_eq!(items[0].glyph, "*", "the active network is marked");
+        assert_eq!(items[0].note, "78%", "keeps the strongest signal");
     }
 
     #[test]
@@ -333,7 +289,7 @@ mod tests {
         let out = "Device AA:BB:CC:DD:EE:FF Keyboard K380\nnoise\n";
         assert_eq!(
             parse_bluetoothctl(out),
-            vec![("Keyboard K380".to_string(), "AA:BB:CC:DD:EE:FF".to_string())]
+            vec![Item::new("Keyboard K380", "AA:BB:CC:DD:EE:FF")]
         );
     }
 
@@ -369,7 +325,7 @@ mod tests {
     fn level_ladders_run_from_full_to_zero() {
         let items = levels("volume");
         assert_eq!(items.len(), 11);
-        assert_eq!(items[0].1, "volume 100");
-        assert_eq!(items[10].1, "volume 0");
+        assert_eq!(items[0].payload, "volume 100");
+        assert_eq!(items[10].payload, "volume 0");
     }
 }

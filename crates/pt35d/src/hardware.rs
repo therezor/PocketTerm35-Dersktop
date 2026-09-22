@@ -90,6 +90,16 @@ impl Hardware {
 
     /// A short description of the live connection: `wlan0` state, or the first
     /// interface that is up. `None` when nothing is connected.
+    /// Link quality as a percentage, for the bar's signal meter. The kernel
+    /// reports it out of 70 in `/proc/net/wireless`.
+    pub fn network_signal(&self) -> Option<u8> {
+        let text = std::fs::read_to_string("/proc/net/wireless").ok()?;
+        let line = text.lines().nth(2)?;
+        let quality = line.split_whitespace().nth(2)?.trim_end_matches('.');
+        let quality: f32 = quality.parse().ok()?;
+        Some(((quality / 70.0) * 100.0).clamp(0.0, 100.0) as u8)
+    }
+
     pub fn network(&self) -> Option<String> {
         for iface in &self.net {
             if read_trim(&iface.join("operstate")).as_deref() == Some("up") {

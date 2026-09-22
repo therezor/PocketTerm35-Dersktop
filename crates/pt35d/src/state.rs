@@ -140,6 +140,7 @@ impl Session {
         self.status.volume_percent = volume;
         self.status.muted = muted;
         self.status.network = self.hw.network();
+        self.status.network_signal = self.hw.network_signal();
         self.status.windows = self.window_list();
         self.spread_windows();
         if let Ok((workspace, app)) = self.sway().and_then(|s| s.focus()) {
@@ -176,11 +177,18 @@ impl Session {
         let Ok(tree) = serde_json::from_str::<serde_json::Value>(&json) else {
             return Vec::new();
         };
+        let apps = self.apps.clone();
         pt35_common::sway::windows(&tree)
             .into_iter()
             .map(|w| pt35_common::ipc::WindowInfo {
                 id: w.id,
                 workspace: w.workspace,
+                glyph: apps
+                    .apps
+                    .values()
+                    .find(|app| app.matches_app(&w.app))
+                    .map(|app| app.glyph.clone())
+                    .unwrap_or_default(),
                 app: w.app,
                 title: w.title,
                 focused: w.focused,
@@ -699,6 +707,7 @@ mod tests {
         pt35_common::ipc::WindowInfo {
             id,
             workspace,
+            glyph: String::new(),
             app: "app".into(),
             title: "title".into(),
             focused,

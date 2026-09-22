@@ -3,17 +3,13 @@
 //! Twelve controls, two things to do with them. In Buttons mode the D-pad is
 //! the arrow keys and A is Enter; in Mouse mode the D-pad moves the cursor and
 //! A is a left click. Select switches, and is bound in the sway config so
-//! neither mode can lose it. L and R switch app in both, and pressing them
-//! together closes the window.
+//! neither mode can lose it. L closes the window and R opens the picker, in
+//! both.
 //!
 //! Both modes are plain sway bindings on the keysyms the patched firmware
 //! sends, so nothing runs in the background and the letters keep typing. Enter,
 //! Escape and Tab go through `wtype`, because sway has no "send key" command;
 //! the clicks and the cursor moves are sway's own `seat cursor` commands.
-//!
-//! The L+R chord is why L and R fire on release. sway matches a binding the
-//! moment its keys are down, so a press binding on L would run before R could
-//! ever join it, and the chord would never be reached.
 
 use pt35_common::ipc::InputMode;
 use pt35_common::theme::Pointer;
