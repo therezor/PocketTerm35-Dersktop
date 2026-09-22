@@ -119,7 +119,10 @@ impl Session {
         // pt35-pointer exits on its own (Escape), so the flag has to be observed
         // rather than remembered.
         if self.status.pointer_armed
-            && !matches!(self.pointer_proc.as_mut().map(|c| c.try_wait()), Some(Ok(None)))
+            && !matches!(
+                self.pointer_proc.as_mut().map(|c| c.try_wait()),
+                Some(Ok(None))
+            )
         {
             self.pointer_proc = None;
             self.status.pointer_armed = false;
