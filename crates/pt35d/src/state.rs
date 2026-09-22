@@ -391,8 +391,14 @@ impl Session {
 
     /// Put the device in one mode or the other.
     fn set_mode(&mut self, mode: InputMode) -> Result<()> {
-        for command in crate::modes::apply(mode, &self.theme.pointer.clone()) {
-            self.sway_command(&command)?;
+        let pointer = self.theme.pointer.clone();
+        for command in crate::modes::apply(mode, &pointer) {
+            // Unbinding a key the other mode never held is an error to sway and
+            // normal here: the two modes hold different keys.
+            let result = self.sway_command(&command);
+            if !command.starts_with("unbindsym") {
+                result?;
+            }
         }
         self.status.input_mode = mode;
         Ok(())

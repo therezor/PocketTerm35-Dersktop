@@ -78,12 +78,24 @@ fn mouse_binds(step: i32) -> Vec<String> {
     out
 }
 
+/// Every way a grabbed key might be bound. sway matches `unbindsym` on the
+/// flags too, so a `--release` bind needs a `--release` unbind. A key that is
+/// not bound at all answers with an error either way, which the caller ignores.
+fn unbind_all() -> Vec<String> {
+    GRABBED
+        .iter()
+        .flat_map(|key| {
+            [
+                format!("unbindsym {key}"),
+                format!("unbindsym --release {key}"),
+            ]
+        })
+        .collect()
+}
+
 /// sway commands that put the device in `mode`, from whatever it was in.
 pub fn apply(mode: InputMode, pointer: &Pointer) -> Vec<String> {
-    let mut out: Vec<String> = GRABBED
-        .iter()
-        .map(|key| format!("unbindsym {key}"))
-        .collect();
+    let mut out = unbind_all();
     match mode {
         InputMode::Buttons => {
             out.extend(common_binds());
@@ -116,10 +128,7 @@ pub fn apply(mode: InputMode, pointer: &Pointer) -> Vec<String> {
 /// Hand every grabbed key back. The menu reads them itself, and a sway binding
 /// beats any surface.
 pub fn release() -> Vec<String> {
-    let mut out: Vec<String> = GRABBED
-        .iter()
-        .map(|key| format!("unbindsym {key}"))
-        .collect();
+    let mut out = unbind_all();
     out.push(format!(
         "input type:keyboard repeat_delay {NAV_REPEAT_DELAY}"
     ));
@@ -180,6 +189,12 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_release_bind_gets_a_release_unbind() {
+        let commands = apply(InputMode::Buttons, &Pointer::default());
+        assert!(commands.contains(&"unbindsym --release XF86Launch9".to_string()));
     }
 
     #[test]
