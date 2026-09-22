@@ -24,6 +24,7 @@ match     = { class = "Pcmanfm" }
 workspace = 2
 scale     = 0.75
 pointer   = "auto"
+buttons   = true
 
 [app.editor]
 label     = "Editor"
@@ -53,6 +54,7 @@ exec      = "sh -c 'imv-wayland \"${HOME}/Pictures\"'"
 match     = { app_id = "imv" }
 workspace = 6
 scale     = 1.0
+buttons   = true
 
 [app.video]
 label      = "Video"
@@ -61,6 +63,7 @@ match      = { app_id = "mpv" }
 workspace  = 7
 scale      = 1.0
 fullscreen = true
+buttons    = true
 
 [app.browser]
 label     = "Browser"

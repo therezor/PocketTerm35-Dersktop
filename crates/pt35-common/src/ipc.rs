@@ -37,6 +37,10 @@ pub enum Request {
     Window {
         action: WindowAction,
     },
+    /// Button mode: A B X Y L R act as buttons inside apps instead of typing.
+    Buttons {
+        action: Toggle,
+    },
     Screenshot,
     Cpu {
         profile: CpuProfile,
@@ -149,8 +153,24 @@ pub struct Status {
     pub muted: Option<bool>,
     pub network: Option<String>,
     pub pointer_armed: bool,
+    /// True while the face buttons are grabbed as buttons, false while they
+    /// type. The bar shows which, because the same key does two things.
+    pub button_mode: bool,
     pub scale: f32,
     pub cpu_profile: Option<CpuProfile>,
+    /// Open windows, for the dock in the bar.
+    #[serde(default)]
+    pub windows: Vec<WindowInfo>,
+}
+
+/// One entry in the dock.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct WindowInfo {
+    pub id: i64,
+    pub workspace: u8,
+    pub app: String,
+    pub title: String,
+    pub focused: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -193,6 +213,9 @@ mod tests {
         roundtrip(Request::Status);
         roundtrip(Request::Window {
             action: WindowAction::Close,
+        });
+        roundtrip(Request::Buttons {
+            action: Toggle::Toggle,
         });
     }
 

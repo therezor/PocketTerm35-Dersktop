@@ -50,6 +50,25 @@ const NAV_HINTS: &[Hint] = &[
     },
 ];
 
+const WINDOW_HINTS: &[Hint] = &[
+    Hint {
+        button: "A",
+        action: "Focus",
+    },
+    Hint {
+        button: "B",
+        action: "Back",
+    },
+    Hint {
+        button: "Y",
+        action: "Close",
+    },
+    Hint {
+        button: "Sel",
+        action: "Exit",
+    },
+];
+
 const FILTER_HINTS: &[Hint] = &[
     Hint {
         button: "Start",
@@ -68,6 +87,7 @@ const FILTER_HINTS: &[Hint] = &[
 pub struct Menu {
     theme: Theme,
     font: Font,
+    mono: Font,
     model: Model,
     status: Option<pt35_common::ipc::Status>,
     windows: usize,
@@ -79,10 +99,11 @@ pub struct Menu {
 }
 
 impl Menu {
-    pub fn new(theme: Theme, font: Font, model: Model) -> Self {
+    pub fn new(theme: Theme, font: Font, mono: Font, model: Model) -> Self {
         Self {
             theme,
             font,
+            mono,
             model,
             status: crate::live::status(),
             windows: providers::items(pt35_common::menu::Builtin::Windows).len(),
@@ -110,6 +131,27 @@ impl Menu {
     fn apply(&mut self, step: Step) -> bool {
         self.error = None;
         match step {
+            Step::Close(criteria) => {
+                let cmd = format!("swaymsg '{criteria} kill'");
+                if let Err(e) = std::process::Command::new("sh").arg("-c").arg(&cmd).spawn() {
+                    self.error = Some(format!("{cmd}: {e}"));
+                }
+                // Rebuild the list: the window it named is going away.
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                let items = providers::items(pt35_common::menu::Builtin::Windows);
+                self.model.replace_dynamic(items);
+                true
+            }
+            Step::Adjust(adjust, up) => {
+                let args = adjust.step(up);
+                if let Err(e) = std::process::Command::new("pt35ctl").args(&args).spawn() {
+                    self.error = Some(format!("pt35ctl: {e}"));
+                }
+                // The value on screen comes from the daemon, so re-read it.
+                std::thread::sleep(std::time::Duration::from_millis(120));
+                self.status = crate::live::status();
+                true
+            }
             Step::Quit => false,
             Step::Run(command) => {
                 // A launch that fails must not close the menu: the screen would
@@ -131,53 +173,60 @@ impl Menu {
     }
 
     fn draw_header(&mut self, canvas: &mut Canvas) -> i32 {
-        let theme = &self.theme;
+        let theme = self.theme.clone();
         let height = theme.menu.header_height;
         let pad = theme.menu.padding_x as i32;
+        let track = theme.font.tracking;
         canvas.rect(0, 0, canvas.width, height, theme.color.background_alt);
-        // A hairline of accent under the header ties the screen together and
-        // separates it from the list without spending a whole row on a border.
         canvas.rect(0, height as i32 - 2, canvas.width, 2, theme.color.accent);
 
-        let baseline = (height as f32 * 0.66) as i32;
-        let deeper = self.model.depth() > 1;
-        let title = self.model.screen().title.clone();
+        let baseline = (height as f32 * 0.64) as i32;
+        let title = self.model.screen().title.to_uppercase();
+        // A deeper screen shows the way back in the path itself.
+        let path = if self.model.depth() > 1 {
+            format!("PT35 < {title}")
+        } else {
+            format!("PT35 // {title}")
+        };
         let mut x = pad;
-        if deeper {
-            x = self.font.draw(
-                canvas,
-                "<",
-                x,
-                baseline,
-                theme.font.size_title,
-                theme.color.muted,
-            ) + 8;
-        }
-        self.font.draw(
+        x = self.mono.draw_tracked(
             canvas,
-            &title,
+            "PT35",
+            x,
+            baseline,
+            theme.font.size_title,
+            theme.color.accent,
+            track,
+        );
+        let rest = path.trim_start_matches("PT35");
+        self.mono.draw_tracked(
+            canvas,
+            rest,
             x,
             baseline,
             theme.font.size_title,
             theme.color.foreground,
+            track,
         );
 
-        // Right-hand side: the live filter, or a nudge that X starts one.
         let filtering = self.model.screen().list.mode() == Mode::Filter;
         let filter = self.model.screen().list.filter().to_string();
         let (text, color) = if filtering {
-            (format!("{filter}_"), theme.color.accent)
+            (format!("[{filter}_]"), theme.color.accent)
         } else {
-            (theme.menu.filter_hint.clone(), theme.color.muted)
+            (theme.menu.filter_hint.to_uppercase(), theme.color.muted)
         };
-        let width = self.font.measure(&text, theme.font.size_hint) as i32;
-        self.font.draw(
+        let width = self
+            .mono
+            .measure_tracked(&text, theme.font.size_hint, track) as i32;
+        self.mono.draw_tracked(
             canvas,
             &text,
             canvas.width as i32 - pad - width,
             baseline,
             theme.font.size_hint,
             color,
+            track,
         );
         height as i32
     }
@@ -255,19 +304,43 @@ impl Menu {
             let mut x = pad + 6;
             if numbers && index < 9 {
                 let number = format!("{}", index + 1);
-                self.font
+                self.mono
                     .draw(canvas, &number, x, baseline, theme.font.size_hint, dim);
                 x += 22;
             }
-            // Leave room for the chevron so a long label never collides with it.
-            let room = canvas.width.saturating_sub(x as u32 + pad as u32 + 24);
+
+            // Quick settings read out their value on the right, where the
+            // chevron would be on a row that opens something.
+            let right_text = match row.adjust {
+                Some(adjust) => Some(crate::live::value(adjust, self.status.as_ref())),
+                None if row.submenu => Some(">".to_string()),
+                None => None,
+            };
+            let mut right_width = 0;
+            if let Some(text) = &right_text {
+                let mono = row.adjust.is_some();
+                let size_right = if mono { theme.font.size_hint } else { size };
+                let width = if mono {
+                    self.mono.measure(text, size_right) as i32
+                } else {
+                    self.font.measure(text, size_right) as i32
+                };
+                let tx = canvas.width as i32 - pad - width;
+                let colour = if selected { fg } else { theme.color.accent };
+                if mono {
+                    self.mono
+                        .draw(canvas, text, tx, baseline, size_right, colour);
+                } else {
+                    self.font.draw(canvas, text, tx, baseline, size_right, dim);
+                }
+                right_width = width + 10;
+            }
+
+            let room = canvas
+                .width
+                .saturating_sub(x as u32 + pad as u32 + right_width as u32);
             let label = self.font.elide(&row.label, size, room);
             self.font.draw(canvas, &label, x, baseline, size, fg);
-
-            if row.submenu {
-                let chevron_x = canvas.width as i32 - pad - 14;
-                self.font.draw(canvas, ">", chevron_x, baseline, size, dim);
-            }
         }
 
         // Scroll indicator: a slim bar on the right, only when it means something.
@@ -392,6 +465,21 @@ impl Menu {
                 theme.color.background,
             );
 
+            if focused {
+                // Corner ticks: instrument framing, and they survive on a busy
+                // wallpaper better than a full ring.
+                let t = 10;
+                for (cx, cy, dx, dy) in [
+                    (x + 4, y + 4, 1, 1),
+                    (x + tile_w - 5, y + 4, -1, 1),
+                    (x + 4, y + tile_h - 5, 1, -1),
+                    (x + tile_w - 5, y + tile_h - 5, -1, -1),
+                ] {
+                    canvas.rect(cx.min(cx + dx * t), cy, t as u32, 2, tint);
+                    canvas.rect(cx, cy.min(cy + dy * t), 2, t as u32, tint);
+                }
+            }
+
             let text_x = bx + badge + 10;
             let room = (x + tile_w - text_x - 8).max(8) as u32;
             let label = self.font.elide(&row.label, theme.font.size_menu, room);
@@ -410,8 +498,8 @@ impl Menu {
                 theme.color.foreground,
             );
             if has_note {
-                let note = self.font.elide(&note, theme.font.size_hint, room);
-                self.font.draw(
+                let note = self.mono.elide(&note, theme.font.size_hint, room);
+                self.mono.draw(
                     canvas,
                     &note,
                     text_x,
@@ -430,7 +518,18 @@ impl Menu {
         canvas.rect(0, top, canvas.width, 1, theme.color.border);
 
         let filtering = self.model.screen().list.mode() == Mode::Filter;
-        let hints: &[Hint] = if filtering { FILTER_HINTS } else { NAV_HINTS };
+        let on_switcher = matches!(
+            self.model.screen().source,
+            crate::model::Source::Dynamic {
+                builtin: pt35_common::menu::Builtin::Windows,
+                ..
+            }
+        );
+        let hints: &[Hint] = match (filtering, on_switcher) {
+            (true, _) => FILTER_HINTS,
+            (false, true) => WINDOW_HINTS,
+            (false, false) => NAV_HINTS,
+        };
         let size = theme.font.size_hint;
         let baseline = top + (height as f32 * 0.62) as i32;
         let centre = top + height as i32 / 2;
@@ -525,6 +624,7 @@ pub fn run(page: Option<String>) -> Result<()> {
     let theme: Theme = pt35_common::load_config("pt35/theme.toml").unwrap_or_default();
     let tree = pt35_common::load_config("pt35/menu.toml").unwrap_or_default();
     let font = Font::load(&theme.font.family)?;
+    let mono = Font::load(&theme.font.family_mono).or_else(|_| Font::load(&theme.font.family))?;
     let rows = theme.menu.rows_visible as usize;
     let body = 480 - theme.bar.height - theme.menu.header_height - theme.menu.hint_height;
     let grid_rows = (body / (theme.menu.tile_height + theme.menu.gap)).max(1) as usize;
@@ -536,7 +636,7 @@ pub fn run(page: Option<String>) -> Result<()> {
         theme.menu.columns as usize,
     );
     layer::run(
-        Menu::new(theme, font, model),
+        Menu::new(theme, font, mono, model),
         SurfaceSpec::overlay("pt35-menu"),
     )
 }

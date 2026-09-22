@@ -11,32 +11,21 @@ pub struct Segment {
     pub color: Rgb,
 }
 
-/// Left-hand side: where you are.
-pub fn left(status: Option<&Status>, theme: &Theme) -> Vec<Segment> {
-    let Some(status) = status else {
-        return vec![Segment {
-            text: "pt35d?".into(),
-            color: theme.color.critical,
-        }];
-    };
-    let mut out = vec![Segment {
-        text: format!("{}", status.workspace),
-        color: theme.color.accent,
-    }];
-    if let Some(app) = &status.app {
-        out.push(Segment {
-            text: app.clone(),
-            color: theme.color.foreground,
-        });
-    }
-    out
-}
-
 /// Right-hand side: state of the machine. `clock` is passed in so the caller
 /// owns time formatting (and tests are deterministic).
 pub fn right(status: Option<&Status>, theme: &Theme, clock: &str) -> Vec<Segment> {
     let mut out = Vec::new();
     if let Some(status) = status {
+        // The same six keys either type or act as buttons, so the bar has to
+        // say which. It is the one piece of state you cannot see any other way.
+        out.push(Segment {
+            text: if status.button_mode { "BTN" } else { "TXT" }.into(),
+            color: if status.button_mode {
+                theme.color.accent
+            } else {
+                theme.color.muted
+            },
+        });
         if status.pointer_armed {
             out.push(Segment {
                 text: "ptr".into(),
@@ -118,28 +107,12 @@ mod tests {
     }
 
     #[test]
-    fn shows_the_workspace_and_app() {
-        let theme = Theme::default();
-        let segments = left(Some(&status()), &theme);
-        assert_eq!(segments[0].text, "3");
-        assert_eq!(segments[1].text, "helix");
-    }
-
-    #[test]
-    fn says_so_when_the_daemon_is_gone() {
-        let theme = Theme::default();
-        let segments = left(None, &theme);
-        assert_eq!(segments[0].text, "pt35d?");
-        assert_eq!(segments[0].color, theme.color.critical);
-    }
-
-    #[test]
     fn hides_battery_when_the_hardware_does_not_expose_one() {
         let theme = Theme::default();
         let segments = right(Some(&status()), &theme, "12:34");
         assert_eq!(
             segments.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(),
-            ["12:34"]
+            ["TXT", "12:34"]
         );
     }
 
@@ -159,6 +132,19 @@ mod tests {
         let battery = segments.iter().find(|s| s.text.contains('%')).unwrap();
         assert_eq!(battery.text, "8+%");
         assert_eq!(battery.color, theme.color.ok);
+    }
+
+    #[test]
+    fn says_whether_the_face_buttons_type_or_act() {
+        let theme = Theme::default();
+        let mut s = status();
+        assert!(right(Some(&s), &theme, "12:34")
+            .iter()
+            .any(|seg| seg.text == "TXT"));
+        s.button_mode = true;
+        assert!(right(Some(&s), &theme, "12:34")
+            .iter()
+            .any(|seg| seg.text == "BTN"));
     }
 
     #[test]

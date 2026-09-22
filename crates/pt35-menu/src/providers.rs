@@ -70,9 +70,16 @@ pub fn parse_windows(node: &serde_json::Value) -> Items {
             || node.get("window").and_then(|v| v.as_i64()).is_some();
         if is_window && !name.is_empty() {
             if let Some(id) = node["id"].as_i64() {
-                let label = match workspace {
-                    Some(ws) => format!("{ws}: {name}"),
-                    None => name.to_string(),
+                // "2  pcmanfm  Home": workspace, app, then the title, so the
+                // list scans down the left edge.
+                let app = node["app_id"]
+                    .as_str()
+                    .or_else(|| node["window_properties"]["class"].as_str())
+                    .unwrap_or("");
+                let label = match (workspace, app.is_empty()) {
+                    (Some(ws), false) => format!("{ws}  {app}  {name}"),
+                    (Some(ws), true) => format!("{ws}  {name}"),
+                    (None, _) => name.to_string(),
                 };
                 out.push((label, format!("[con_id={id}]")));
             }
@@ -285,8 +292,11 @@ mod tests {
         assert_eq!(
             items,
             vec![
-                ("1: foot".to_string(), "[con_id=12]".to_string()),
-                ("2: helix".to_string(), "[con_id=34]".to_string()),
+                ("1  foot  foot".to_string(), "[con_id=12]".to_string()),
+                (
+                    "2  pt35-editor  helix".to_string(),
+                    "[con_id=34]".to_string()
+                ),
             ]
         );
     }

@@ -52,6 +52,9 @@ pub struct Entry {
     pub glyph: String,
     /// Badge colour, `#rrggbb`. Defaults to the theme accent.
     pub tint: Option<crate::theme::Rgb>,
+    /// Makes this row a quick setting: the D-pad changes the value in place
+    /// instead of opening anything. One of volume, brightness, scale.
+    pub adjust: Option<Adjust>,
     /// Ask before running (used for reboot / shut down).
     pub confirm: bool,
     pub goto: Option<String>,
@@ -59,6 +62,26 @@ pub struct Entry {
     pub exec: Option<String>,
     pub action: Option<String>,
     pub builtin: Option<Builtin>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Adjust {
+    Volume,
+    Brightness,
+    Scale,
+}
+
+impl Adjust {
+    /// The pt35ctl arguments for one step in either direction.
+    pub fn step(self, up: bool) -> Vec<String> {
+        let arg = |v: &str| v.to_string();
+        match self {
+            Adjust::Volume => vec![arg("volume"), arg(if up { "+5" } else { "-5" })],
+            Adjust::Brightness => vec![arg("brightness"), arg(if up { "+10" } else { "-10" })],
+            Adjust::Scale => vec![arg("scale"), arg("cycle")],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -76,6 +99,8 @@ pub enum Builtin {
 /// What an entry does, resolved once at load time so the UI never has to guess.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
+    /// A quick setting with no submenu behind it.
+    Adjust,
     Goto(String),
     App(String),
     Exec(String),
@@ -84,8 +109,18 @@ pub enum Kind {
 }
 
 impl Entry {
-    /// Exactly one of the action fields must be set.
+    /// Exactly one of the action fields must be set. An `adjust` row may have
+    /// none: the D-pad is the whole interaction.
     pub fn kind(&self) -> Result<Kind, EntryError> {
+        if self.adjust.is_some()
+            && self.goto.is_none()
+            && self.app.is_none()
+            && self.exec.is_none()
+            && self.action.is_none()
+            && self.builtin.is_none()
+        {
+            return Ok(Kind::Adjust);
+        }
         let mut found = Vec::new();
         if let Some(v) = &self.goto {
             found.push(Kind::Goto(v.clone()));

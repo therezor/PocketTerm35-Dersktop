@@ -25,6 +25,8 @@ pub struct Session {
     pointer_proc: Option<Child>,
     /// Output scale to go back to once the menu closes.
     scale_before_menu: Option<f32>,
+    /// Whether button mode was on before the menu took the keyboard.
+    buttons_before_menu: bool,
 }
 
 impl Session {
@@ -44,6 +46,7 @@ impl Session {
             menu_proc: None,
             pointer_proc: None,
             scale_before_menu: None,
+            buttons_before_menu: false,
         };
         if let Err(e) = session.menu.validate() {
             log::error!("menu.toml is inconsistent ({e}); the menu key will show an error page");
@@ -117,6 +120,16 @@ impl Session {
             .unwrap_or(1.0)
     }
 
+    /// Whether the face buttons act as buttons on this workspace. A terminal
+    /// needs the letters; a viewer is better with buttons.
+    pub fn buttons_for_workspace(apps: &AppTable, workspace: u8) -> bool {
+        apps.apps
+            .values()
+            .find(|app| app.workspace == workspace)
+            .map(|app| app.buttons)
+            .unwrap_or(false)
+    }
+
     /// True once sway has gone. The daemon must not outlive it: a stale pt35d
     /// holds the socket and the next session cannot start.
     ///
@@ -138,6 +151,7 @@ impl Session {
         self.status.volume_percent = volume;
         self.status.muted = muted;
         self.status.network = self.hw.network();
+        self.status.windows = self.window_list();
         if let Ok((workspace, app)) = self.sway().and_then(|s| s.focus()) {
             let moved = workspace != self.status.workspace;
             self.status.workspace = workspace;
@@ -146,6 +160,12 @@ impl Session {
             // to follow the focused workspace: leave the browser's workspace and
             // the panel goes back to native 640x480 instead of staying at 0.75.
             if moved {
+                let buttons = Self::buttons_for_workspace(&self.apps, workspace);
+                if buttons != self.status.button_mode {
+                    if let Err(e) = self.set_button_mode(buttons) {
+                        log::warn!("button mode: {e}");
+                    }
+                }
                 let wanted = Self::scale_for_workspace(&self.apps, workspace);
                 if (wanted - self.status.scale).abs() > f32::EPSILON {
                     if let Err(e) = self.sway_command(&format!("output * scale {wanted}")) {
@@ -164,6 +184,7 @@ impl Session {
             if matches!(child.try_wait(), Ok(Some(_))) {
                 self.menu_proc = None;
                 self.restore_scale();
+                self.restore_buttons();
             }
         }
         if !matches!(
@@ -174,6 +195,27 @@ impl Session {
             self.status.pointer_armed = false;
         }
         self.low_battery_hook();
+    }
+
+    /// Open windows, for the dock in the bar.
+    fn window_list(&mut self) -> Vec<pt35_common::ipc::WindowInfo> {
+        let reply = self
+            .sway()
+            .and_then(|s| s.request(pt35_common::sway::MessageType::GetTree, ""));
+        let Ok(json) = reply else { return Vec::new() };
+        let Ok(tree) = serde_json::from_str::<serde_json::Value>(&json) else {
+            return Vec::new();
+        };
+        pt35_common::sway::windows(&tree)
+            .into_iter()
+            .map(|w| pt35_common::ipc::WindowInfo {
+                id: w.id,
+                workspace: w.workspace,
+                app: w.app,
+                title: w.title,
+                focused: w.focused,
+            })
+            .collect()
     }
 
     fn low_battery_hook(&mut self) {
@@ -291,6 +333,16 @@ impl Session {
                 Ok(Response::Ok)
             }
 
+            Request::Buttons { action } => {
+                let want = match action {
+                    Toggle::On => true,
+                    Toggle::Off => false,
+                    Toggle::Toggle => !self.status.button_mode,
+                };
+                self.set_button_mode(want)?;
+                Ok(Response::Ok)
+            }
+
             Request::Touch { action } => {
                 let arg = match action {
                     Toggle::On => "enabled",
@@ -335,6 +387,7 @@ impl Session {
                 let _ = child.wait();
             }
             self.restore_scale();
+            self.restore_buttons();
         }
         if want_open {
             // The shell's own UI is drawn for 640x480. An app profile may have
@@ -345,6 +398,12 @@ impl Session {
                     self.status.scale = 1.0;
                 }
             }
+            // The menu reads the letters itself, so the compositor must not
+            // be holding them while it is up.
+            if self.status.button_mode {
+                self.buttons_before_menu = true;
+                let _ = self.set_button_mode(false);
+            }
             let mut cmd = Command::new("pt35-menu");
             if let Some(page) = page {
                 cmd.arg("--page").arg(page);
@@ -352,6 +411,27 @@ impl Session {
             self.menu_proc = Some(cmd.stdin(Stdio::null()).spawn()?);
         }
         Ok(())
+    }
+
+    /// Grab or release the six letter buttons.
+    fn set_button_mode(&mut self, on: bool) -> Result<()> {
+        let commands = if on {
+            crate::buttons::enable()
+        } else {
+            crate::buttons::disable()
+        };
+        for command in commands {
+            self.sway_command(&command)?;
+        }
+        self.status.button_mode = on;
+        Ok(())
+    }
+
+    fn restore_buttons(&mut self) {
+        if self.buttons_before_menu {
+            self.buttons_before_menu = false;
+            let _ = self.set_button_mode(true);
+        }
     }
 
     fn restore_scale(&mut self) {
@@ -566,6 +646,17 @@ mod tests {
         assert_eq!(next_scale(0.75), 0.6);
         assert_eq!(next_scale(0.6), 1.0);
         assert_eq!(next_scale(1.37), 1.0, "an unknown scale returns to native");
+    }
+
+    #[test]
+    fn a_workspace_takes_the_button_mode_of_the_app_that_owns_it() {
+        let apps: AppTable = toml::from_str(
+            "[app.term]\nexec = \"foot\"\nworkspace = 1\n[app.pix]\nexec = \"imv\"\nworkspace = 6\nbuttons = true\n",
+        )
+        .unwrap();
+        assert!(!Session::buttons_for_workspace(&apps, 1));
+        assert!(Session::buttons_for_workspace(&apps, 6));
+        assert!(!Session::buttons_for_workspace(&apps, 4));
     }
 
     #[test]

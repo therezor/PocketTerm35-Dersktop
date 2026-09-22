@@ -4,7 +4,7 @@
 //! navigation model — including "what happens when you confirm a shutdown" —
 //! is unit-testable.
 
-use pt35_common::menu::{Builtin, Kind, Layout, MenuTree};
+use pt35_common::menu::{Adjust, Builtin, Kind, Layout, MenuTree};
 use pt35_common::theme::Rgb;
 use pt35_ui::keys::Key;
 use pt35_ui::list::{ListState, Outcome};
@@ -14,6 +14,8 @@ use pt35_ui::list::{ListState, Outcome};
 pub struct Row {
     pub label: String,
     pub note: String,
+    /// A quick setting the D-pad changes in place.
+    pub adjust: Option<Adjust>,
     /// Set when the row opens a builtin screen, so the UI can replace `note`
     /// with live state.
     pub builtin: Option<Builtin>,
@@ -63,6 +65,10 @@ pub enum Command {
 pub enum Step {
     /// Repaint.
     Redraw,
+    /// Change a quick setting by one step, then stay on the screen.
+    Adjust(Adjust, bool),
+    /// Close the window this sway criteria matches, then stay on the screen.
+    Close(String),
     /// Nothing changed.
     Nothing,
     /// The caller must populate this builtin screen and push it.
@@ -135,6 +141,7 @@ impl Model {
                     label: label.to_string(),
                     note: entry.map(|e| e.note.clone()).unwrap_or_default(),
                     builtin: entry.and_then(|e| e.builtin),
+                    adjust: entry.and_then(|e| e.adjust),
                     glyph: entry
                         .map(|e| e.glyph.clone())
                         .filter(|g| !g.is_empty())
@@ -151,6 +158,13 @@ impl Model {
                 }
             })
             .collect()
+    }
+
+    /// The quick setting under the cursor, if this row is one.
+    pub fn focused_adjust(&self) -> Option<Adjust> {
+        let screen = self.screen();
+        let index = screen.list.selected()?;
+        self.entry(&screen.source, index)?.adjust
     }
 
     /// Tiles or rows for the screen on top.
@@ -232,6 +246,20 @@ impl Model {
         });
     }
 
+    /// Refresh the items of the dynamic screen on top, keeping it open.
+    pub fn replace_dynamic(&mut self, items: Vec<(String, String)>) {
+        let rows = self.rows;
+        let Some(screen) = self.stack.last_mut() else {
+            return;
+        };
+        let Source::Dynamic { builtin, .. } = screen.source else {
+            return;
+        };
+        let (labels, payloads): (Vec<_>, Vec<_>) = items.into_iter().unzip();
+        screen.list = ListState::new(labels, rows);
+        screen.source = Source::Dynamic { builtin, payloads };
+    }
+
     /// Activate the nth row of the drawn window. Used by a tap.
     pub fn activate_window(&mut self, index: usize) -> Step {
         if !self.screen_mut().list.focus_window(index) {
@@ -253,6 +281,22 @@ impl Model {
             // Y jumps back to the root menu — on a handheld, backing out of
             // four levels one press at a time is the thing people complain about.
             Outcome::Secondary => {
+                // On the switcher, Y closes the window under the cursor.
+                if let Source::Dynamic {
+                    builtin: Builtin::Windows,
+                    payloads,
+                } = &self.screen().source
+                {
+                    if let Some(payload) = self
+                        .screen()
+                        .list
+                        .selected()
+                        .and_then(|index| payloads.get(index))
+                        .cloned()
+                    {
+                        return Step::Close(payload);
+                    }
+                }
                 if self.stack.len() > 1 {
                     self.stack.truncate(1);
                     Step::Redraw
@@ -271,6 +315,26 @@ impl Model {
             Outcome::Activate(index) => {
                 let _ = rows;
                 self.activate(index)
+            }
+            // A list leaves Left and Right to the screen: on a quick setting
+            // they are the control, everywhere else they are back and open.
+            Outcome::Left | Outcome::Right => {
+                let up = matches!(outcome, Outcome::Right);
+                match self.focused_adjust() {
+                    Some(adjust) => Step::Adjust(adjust, up),
+                    None if up => match self.screen().list.selected() {
+                        Some(index) => self.activate(index),
+                        None => Step::Nothing,
+                    },
+                    None => {
+                        if self.stack.len() > 1 {
+                            self.stack.pop();
+                            Step::Redraw
+                        } else {
+                            Step::Quit
+                        }
+                    }
+                }
             }
         }
     }
@@ -311,6 +375,8 @@ impl Model {
                     }
                 };
                 let command = match kind {
+                    // The D-pad is the whole interaction for a quick setting.
+                    Kind::Adjust => return Step::Nothing,
                     Kind::Goto(target) => {
                         self.push_page(&target);
                         return Step::Redraw;

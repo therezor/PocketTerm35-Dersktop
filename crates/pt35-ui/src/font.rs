@@ -85,11 +85,16 @@ impl Font {
 
     /// Width in pixels of `text` at `size`.
     pub fn measure(&mut self, text: &str, size: f32) -> u32 {
+        self.measure_tracked(text, size, 0.0)
+    }
+
+    /// Width with `tracking` extra pixels between glyphs.
+    pub fn measure_tracked(&mut self, text: &str, size: f32, tracking: f32) -> u32 {
         let mut width = 0.0;
         for ch in text.chars() {
-            width += self.glyph(ch, size).0.advance_width;
+            width += self.glyph(ch, size).0.advance_width + tracking;
         }
-        width.ceil() as u32
+        (width - tracking).max(0.0).ceil() as u32
     }
 
     /// Draw `text` with its left edge at `x` and its baseline at `y`.
@@ -103,6 +108,21 @@ impl Font {
         size: f32,
         color: Rgb,
     ) -> i32 {
+        self.draw_tracked(canvas, text, x, y, size, color, 0.0)
+    }
+
+    /// Draw with extra spacing between glyphs.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_tracked(
+        &mut self,
+        canvas: &mut Canvas,
+        text: &str,
+        x: i32,
+        y: i32,
+        size: f32,
+        color: Rgb,
+        tracking: f32,
+    ) -> i32 {
         let mut pen = x as f32;
         for ch in text.chars() {
             let (metrics, bitmap) = self.glyph(ch, size).clone();
@@ -114,9 +134,9 @@ impl Font {
                     canvas.blend(gx + col as i32, gy + row as i32, coverage, color);
                 }
             }
-            pen += metrics.advance_width;
+            pen += metrics.advance_width + tracking;
         }
-        pen.ceil() as i32
+        (pen - tracking).ceil() as i32
     }
 
     /// Shorten `text` with an ellipsis so it fits in `max_width` pixels.
@@ -203,6 +223,18 @@ mod tests {
         assert!(
             font.measure(&tiny, 16.0) <= 4,
             "{tiny:?} overflows a 4px budget"
+        );
+    }
+
+    #[test]
+    fn tracking_widens_text_without_changing_the_first_glyph() {
+        let Some(mut font) = test_font() else { return };
+        let plain = font.measure("menu", 16.0);
+        let tracked = font.measure_tracked("menu", 16.0, 2.0);
+        assert_eq!(tracked, plain + 6, "three gaps between four glyphs");
+        assert_eq!(
+            font.measure_tracked("m", 16.0, 2.0),
+            font.measure("m", 16.0)
         );
     }
 

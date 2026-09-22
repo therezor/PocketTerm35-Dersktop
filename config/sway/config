@@ -89,6 +89,9 @@ bindsym Menu        exec $menu
 bindsym Print       exec $menu
 bindsym Sys_Req     exec $menu
 
+# Start toggles button mode: A B X Y L R stop typing and act as buttons.
+bindsym Pause       exec $ctl buttons toggle
+
 # Fallbacks on Alt, in case this unit has no physical Super key: without them a
 # missing Mod4 would leave the session with no way to open anything.
 bindsym Mod1+space  exec $menu

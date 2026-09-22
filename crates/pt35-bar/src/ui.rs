@@ -14,9 +14,9 @@ use crate::status::StatusFeed;
 struct Bar {
     theme: Theme,
     font: Font,
+    mono: Font,
     feed: StatusFeed,
     clock: String,
-    /// Tap targets recorded by the last draw.
     hits: Vec<(i32, i32, Action)>,
 }
 
@@ -24,20 +24,62 @@ struct Bar {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Action {
     Menu,
-    Switch,
+    Focus(i64),
     Close,
 }
 
 impl Bar {
-    fn new(theme: Theme, font: Font, feed: StatusFeed) -> Self {
+    fn new(theme: Theme, font: Font, mono: Font, feed: StatusFeed) -> Self {
         let clock = now(&theme);
         Self {
             theme,
             font,
+            mono,
             feed,
             clock,
             hits: Vec::new(),
         }
+    }
+
+    /// One dock slot: the app's initial in a rounded square, filled when it has
+    /// focus and outlined when it does not.
+    fn slot(&mut self, canvas: &mut Canvas, x: i32, app: &str, focused: bool, id: i64) -> i32 {
+        let size = self.theme.font.size_bar;
+        let centre = canvas.height as i32 / 2;
+        let box_h = (canvas.height as i32 - 8).max(18);
+        let label = initials(app);
+        let width = (self.mono.measure(&label, size) as i32 + 14).max(box_h);
+        let y = centre - box_h / 2;
+
+        if focused {
+            canvas.rounded_rect(x, y, width as u32, box_h as u32, 6, self.theme.color.accent);
+        } else {
+            canvas.rounded_rect(x, y, width as u32, box_h as u32, 6, self.theme.color.border);
+            canvas.rounded_rect(
+                x + 1,
+                y + 1,
+                (width - 2) as u32,
+                (box_h - 2) as u32,
+                6,
+                self.theme.color.background,
+            );
+        }
+        let ink = if focused {
+            self.theme.color.accent_fg
+        } else {
+            self.theme.color.muted
+        };
+        let text_x = x + (width - self.mono.measure(&label, size) as i32) / 2;
+        self.mono.draw(
+            canvas,
+            &label,
+            text_x,
+            centre + (size * 0.36) as i32,
+            size,
+            ink,
+        );
+        self.hits.push((x, x + width, Action::Focus(id)));
+        x + width + 4
     }
 
     fn button(
@@ -51,8 +93,8 @@ impl Bar {
     ) -> i32 {
         let size = self.theme.font.size_bar;
         let centre = canvas.height as i32 / 2;
-        let height = (canvas.height as i32 - 6).max(16);
-        let width = (self.font.measure(glyph, size) as i32 + 16).max(height);
+        let height = (canvas.height as i32 - 8).max(18);
+        let width = (self.mono.measure(glyph, size) as i32 + 16).max(height);
         canvas.rounded_rect(
             x,
             centre - height / 2,
@@ -62,10 +104,25 @@ impl Bar {
             fill,
         );
         let baseline = centre + (size * 0.36) as i32;
-        let text_x = x + (width - self.font.measure(glyph, size) as i32) / 2;
-        self.font.draw(canvas, glyph, text_x, baseline, size, ink);
+        let text_x = x + (width - self.mono.measure(glyph, size) as i32) / 2;
+        self.mono.draw(canvas, glyph, text_x, baseline, size, ink);
         self.hits.push((x, x + width, action));
         x + width
+    }
+}
+
+/// Two characters of an app id: "pcmanfm" -> "PC", "foot" -> "FO".
+fn initials(app: &str) -> String {
+    let cleaned: String = app
+        .trim_start_matches("org.")
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect();
+    let text: String = cleaned.chars().take(2).collect();
+    if text.is_empty() {
+        "??".into()
+    } else {
+        text.to_uppercase()
     }
 }
 
@@ -98,14 +155,11 @@ impl App for Bar {
             .iter()
             .find(|(left, right, _)| x >= *left && x < *right)
             .map(|(_, _, action)| *action);
-        let args: &[&str] = match hit {
-            Some(Action::Menu) => &["menu", "toggle"],
-            Some(Action::Switch) => &["menu", "open", "windows"],
-            Some(Action::Close) => &["window", "close"],
-            None => return true,
-        };
-        if let Err(e) = std::process::Command::new("pt35ctl").args(args).spawn() {
-            log::error!("pt35ctl {}: {e}", args.join(" "));
+        match hit {
+            Some(Action::Menu) => spawn("pt35ctl", &["menu".into(), "toggle".into()]),
+            Some(Action::Close) => spawn("pt35ctl", &["window".into(), "close".into()]),
+            Some(Action::Focus(id)) => spawn("swaymsg", &[format!("[con_id={id}] focus")]),
+            None => {}
         }
         true
     }
@@ -118,8 +172,6 @@ impl App for Bar {
         let centre = canvas.height as i32 / 2;
         self.hits.clear();
 
-        // A hairline under the bar, the one bit of chrome that separates it from
-        // a fullscreen app.
         canvas.rect(
             0,
             canvas.height as i32 - 1,
@@ -136,45 +188,10 @@ impl App for Bar {
             self.theme.color.accent,
             self.theme.color.accent_fg,
             Action::Menu,
-        ) + 6;
+        ) + 8;
 
-        for (index, segment) in segments::left(status.as_ref(), &self.theme)
-            .into_iter()
-            .enumerate()
-        {
-            if index == 0 {
-                let width = self.font.measure(&segment.text, size) as i32;
-                let height = (canvas.height as i32 - 8).max(14);
-                canvas.rounded_rect(
-                    x,
-                    centre - height / 2,
-                    (width + 14) as u32,
-                    height as u32,
-                    4,
-                    self.theme.color.background_alt,
-                );
-                self.font.draw(
-                    canvas,
-                    &segment.text,
-                    x + 7,
-                    baseline,
-                    size,
-                    self.theme.color.accent,
-                );
-                self.hits.push((x, x + width + 14, Action::Switch));
-                x += width + 14 + 6;
-                continue;
-            }
-            let text = self.font.elide(&segment.text, size, canvas.width / 3);
-            x = self
-                .font
-                .draw(canvas, &text, x, baseline, size, segment.color)
-                + pad;
-        }
-
-        // Close sits hard against the right edge: the same corner every time,
-        // whatever else the bar is showing.
-        let close_w = (self.font.measure("x", size) as i32 + 16).max(canvas.height as i32 - 6);
+        // Right side first, so the dock knows how much room it has left.
+        let close_w = (self.mono.measure("x", size) as i32 + 16).max(canvas.height as i32 - 8);
         let close_x = canvas.width as i32 - close_w - pad / 2;
         self.button(
             canvas,
@@ -191,12 +208,12 @@ impl App for Bar {
             .into_iter()
             .rev()
         {
-            let width = self.font.measure(&segment.text, size) as i32;
-            right -= width;
-            if right <= x {
+            let width = self.mono.measure(&segment.text, size) as i32;
+            if right - width <= x {
                 break;
             }
-            self.font
+            right -= width;
+            self.mono
                 .draw(canvas, &segment.text, right, baseline, size, segment.color);
             if !first {
                 canvas.rect(
@@ -210,15 +227,59 @@ impl App for Bar {
             first = false;
             right -= pad * 2;
         }
+
+        // The dock: one slot per open window, focused one filled.
+        match status.as_ref() {
+            Some(status) if !status.windows.is_empty() => {
+                for window in &status.windows {
+                    let app = if window.app.is_empty() {
+                        window.title.clone()
+                    } else {
+                        window.app.clone()
+                    };
+                    if x + 40 > right {
+                        break;
+                    }
+                    x = self.slot(canvas, x, &app, window.focused, window.id);
+                }
+            }
+            Some(_) => {
+                self.font.draw(
+                    canvas,
+                    "no windows",
+                    x,
+                    baseline,
+                    size,
+                    self.theme.color.muted,
+                );
+            }
+            None => {
+                self.font.draw(
+                    canvas,
+                    "pt35d?",
+                    x,
+                    baseline,
+                    size,
+                    self.theme.color.critical,
+                );
+            }
+        }
+    }
+}
+
+fn spawn(binary: &str, args: &[String]) {
+    if let Err(e) = std::process::Command::new(binary).args(args).spawn() {
+        log::error!("{binary}: {e}");
     }
 }
 
 pub fn run() -> Result<()> {
     let theme: Theme = pt35_common::load_config("pt35/theme.toml").unwrap_or_default();
     let font = Font::load(&theme.font.family)?;
+    let mono = Font::load(&theme.font.family_mono).or_else(|_| Font::load(&theme.font.family))?;
     let feed = StatusFeed::default();
     feed.spawn();
 
     let height = theme.bar.height;
-    layer::run(Bar::new(theme, font, feed), SurfaceSpec::bar(height))
+    layer::run(Bar::new(theme, font, mono, feed), SurfaceSpec::bar(height))
 }

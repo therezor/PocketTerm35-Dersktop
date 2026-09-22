@@ -26,6 +26,7 @@ usage:
   pt35ctl cpu powersave|balanced|performance
   pt35ctl power screenoff|lock|logout|reboot|poweroff|menu
   pt35ctl touch on|off|toggle
+  pt35ctl buttons on|off|toggle
   pt35ctl reload
   pt35ctl status [--json]
 ";
@@ -159,6 +160,12 @@ fn parse(argv: &[&str]) -> Result<Request> {
         },
 
         ["touch", action] => Request::Touch {
+            action: toggle(action)?,
+        },
+        ["buttons"] => Request::Buttons {
+            action: Toggle::Toggle,
+        },
+        ["buttons", action] => Request::Buttons {
             action: toggle(action)?,
         },
         ["reload"] => Request::Reload,
@@ -307,6 +314,7 @@ mod tests {
         // Keep in step with config/pt35/menu.toml: every `action = "..."` there
         // must be a command this binary understands.
         for action in [
+            "buttons toggle",
             "pointer toggle",
             "scale cycle",
             "cpu powersave",

@@ -106,6 +106,59 @@ impl Sway {
     }
 }
 
+/// One open window, as the dock and the switcher need it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Window {
+    pub id: i64,
+    pub workspace: u8,
+    /// app_id on Wayland, class on XWayland.
+    pub app: String,
+    pub title: String,
+    pub focused: bool,
+}
+
+/// Flatten a sway tree into the windows it holds, in workspace order.
+pub fn windows(node: &serde_json::Value) -> Vec<Window> {
+    fn walk(node: &serde_json::Value, workspace: u8, out: &mut Vec<Window>) {
+        let kind = node["type"].as_str().unwrap_or("");
+        let workspace = if kind == "workspace" {
+            node["num"].as_i64().unwrap_or(0).clamp(0, 9) as u8
+        } else {
+            workspace
+        };
+        let is_window = node.get("pid").is_some()
+            || node["app_id"].as_str().is_some()
+            || node["window"].as_i64().is_some();
+        if is_window && kind != "workspace" {
+            if let Some(id) = node["id"].as_i64() {
+                out.push(Window {
+                    id,
+                    workspace,
+                    app: node["app_id"]
+                        .as_str()
+                        .or_else(|| node["window_properties"]["class"].as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    title: node["name"].as_str().unwrap_or("").to_string(),
+                    focused: node["focused"].as_bool() == Some(true),
+                });
+            }
+        }
+        for key in ["nodes", "floating_nodes"] {
+            if let Some(children) = node[key].as_array() {
+                for child in children {
+                    walk(child, workspace, out);
+                }
+            }
+        }
+    }
+
+    let mut out = Vec::new();
+    walk(node, 0, &mut out);
+    out.sort_by_key(|w| (w.workspace, w.id));
+    out
+}
+
 /// Walk a sway tree and return the name of the focused node.
 pub fn focused_window_name(node: &serde_json::Value) -> Option<String> {
     if node["focused"].as_bool() == Some(true) {
@@ -150,6 +203,30 @@ mod tests {
             focused_window_name(&tree).as_deref(),
             Some("helix — main.rs")
         );
+    }
+
+    #[test]
+    fn lists_windows_with_their_workspace() {
+        let tree: serde_json::Value = serde_json::from_str(
+            r#"{"type":"root","name":"root","nodes":[
+                 {"type":"output","name":"HDMI-A-1","nodes":[
+                   {"type":"workspace","num":1,"name":"1","nodes":[
+                     {"type":"con","id":12,"name":"foot","app_id":"foot","pid":9,"focused":false}
+                   ],"floating_nodes":[]},
+                   {"type":"workspace","num":2,"name":"2","nodes":[
+                     {"type":"con","id":34,"name":"Home","window":5,
+                      "window_properties":{"class":"Pcmanfm"},"pid":10,"focused":true}
+                   ],"floating_nodes":[]}
+                 ],"floating_nodes":[]}
+               ],"floating_nodes":[]}"#,
+        )
+        .unwrap();
+        let list = windows(&tree);
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].app, "foot");
+        assert_eq!(list[0].workspace, 1);
+        assert_eq!(list[1].app, "Pcmanfm");
+        assert!(list[1].focused);
     }
 
     #[test]

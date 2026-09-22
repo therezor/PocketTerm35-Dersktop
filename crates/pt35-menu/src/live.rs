@@ -4,7 +4,7 @@
 //! answer to why you opened the menu.
 
 use pt35_common::ipc::{Request, Response, Status};
-use pt35_common::menu::Builtin;
+use pt35_common::menu::{Adjust, Builtin};
 use pt35_common::paths;
 use std::io::{BufRead, BufReader, Write};
 
@@ -66,6 +66,25 @@ pub fn note(builtin: Builtin, status: Option<&Status>, windows: usize) -> Option
     })
 }
 
+/// Current value of a quick setting, shown on the right of its row.
+pub fn value(adjust: Adjust, status: Option<&Status>) -> String {
+    let Some(status) = status else {
+        return "--".into();
+    };
+    match adjust {
+        Adjust::Volume => match (status.volume_percent, status.muted) {
+            (_, Some(true)) => "muted".into(),
+            (Some(percent), _) => format!("{percent}%"),
+            _ => "n/a".into(),
+        },
+        Adjust::Brightness => status
+            .brightness_percent
+            .map(|percent| format!("{percent}%"))
+            .unwrap_or_else(|| "n/a".into()),
+        Adjust::Scale => format!("{:.2}x", status.scale),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,6 +126,15 @@ mod tests {
             ..status()
         };
         assert_eq!(note(Builtin::Audio, Some(&s), 0).unwrap(), "muted");
+    }
+
+    #[test]
+    fn quick_settings_read_out_their_value() {
+        let s = status();
+        assert_eq!(value(Adjust::Volume, Some(&s)), "40%");
+        assert_eq!(value(Adjust::Scale, Some(&s)), "1.00x");
+        assert_eq!(value(Adjust::Brightness, Some(&s)), "n/a");
+        assert_eq!(value(Adjust::Volume, None), "--");
     }
 
     #[test]

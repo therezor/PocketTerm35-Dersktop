@@ -48,15 +48,17 @@ entries = [
   { label = "All apps", builtin = "desktop_entries", glyph = "…", tint = "#7aa48e" },
 ]
 
+# Quick settings: the D-pad changes a value in place, no submenu, no round trip.
 [menu.settings]
-title = "Settings"
+title = "Quick settings"
 entries = [
-  { label = "Volume",       builtin = "audio" },
-  { label = "Brightness",   builtin = "display" },
-  { label = "Pointer mode", action = "pointer toggle" },
-  { label = "Screen scale", action = "scale cycle" },
-  { label = "CPU profile",  goto = "cpu" },
+  { label = "Volume",       adjust = "volume" },
+  { label = "Brightness",   adjust = "brightness" },
+  { label = "Screen scale", adjust = "scale" },
+  { label = "Buttons",      action = "buttons toggle" },
+  { label = "Pointer",      action = "pointer toggle" },
   { label = "Touchscreen",  action = "touch toggle" },
+  { label = "CPU profile",  goto = "cpu" },
   { label = "Screenshot",   action = "screenshot" },
   { label = "Reload shell", action = "reload" },
   { label = "About",        builtin = "about" },

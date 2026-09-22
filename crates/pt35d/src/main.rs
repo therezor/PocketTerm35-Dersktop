@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 mod audio;
+mod buttons;
 mod hardware;
 mod hooks;
 mod server;

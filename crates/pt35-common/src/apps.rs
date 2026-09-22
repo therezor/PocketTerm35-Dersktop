@@ -32,6 +32,9 @@ pub struct AppProfile {
     pub fullscreen: bool,
     /// Whether the keyboard-driven pointer arms itself for this app.
     pub pointer: PointerPolicy,
+    /// True when the face buttons should act as buttons in this app. A terminal
+    /// or an editor needs the letters, a viewer does not.
+    pub buttons: bool,
     /// Extra environment for the child process.
     pub env: BTreeMap<String, String>,
 }
@@ -66,6 +69,7 @@ impl Default for AppProfile {
             scale: 1.0,
             fullscreen: false,
             pointer: PointerPolicy::Off,
+            buttons: false,
             env: BTreeMap::new(),
         }
     }
@@ -149,6 +153,15 @@ env = { FOO = "bar" }
         assert_eq!(app.pointer, PointerPolicy::Off);
         assert!(!app.fullscreen);
         table.validate().unwrap();
+    }
+
+    #[test]
+    fn buttons_are_off_unless_a_profile_asks() {
+        let table: AppTable =
+            toml::from_str("[app.x]\nexec = \"true\"\n[app.y]\nexec = \"true\"\nbuttons = true\n")
+                .unwrap();
+        assert!(!table.get("x").unwrap().buttons);
+        assert!(table.get("y").unwrap().buttons);
     }
 
     #[test]

@@ -28,8 +28,13 @@ pub enum Outcome {
     Activate(usize),
     /// Leave this screen (Escape).
     Cancel,
-    /// Go up one level (B / Left / Backspace in nav mode).
+    /// Go up one level (B / Backspace in nav mode).
     Back,
+    /// D-pad left on a list. A plain list treats it as Back, a settings row
+    /// turns it into a decrement.
+    Left,
+    /// D-pad right on a list.
+    Right,
     /// The screen's own secondary action (Y).
     Secondary,
     /// Nothing happened; do not repaint.
@@ -129,17 +134,14 @@ impl ListState {
                 if self.columns > 1 {
                     self.move_by(-1)
                 } else {
-                    Outcome::Back
+                    Outcome::Left
                 }
             }
             Navigation::Right => {
                 if self.columns > 1 {
                     self.move_by(1)
                 } else {
-                    match self.selected() {
-                        Some(index) => Outcome::Activate(index),
-                        None => Outcome::Nothing,
-                    }
+                    Outcome::Right
                 }
             }
             Navigation::PageUp => self.move_by(-(self.page() as isize)),
@@ -426,6 +428,13 @@ mod tests {
         // In a grid, Back is B or Select, never Left.
         assert_eq!(grid.handle(&Key::new(sym::LEFT)), Outcome::Redraw);
         assert_eq!(grid.handle(&Key::with_text('b' as u32, 'b')), Outcome::Back);
+    }
+
+    #[test]
+    fn a_list_reports_left_and_right_for_the_screen_to_interpret() {
+        let mut list = list();
+        assert_eq!(list.handle(&Key::new(sym::LEFT)), Outcome::Left);
+        assert_eq!(list.handle(&Key::new(sym::RIGHT)), Outcome::Right);
     }
 
     #[test]
