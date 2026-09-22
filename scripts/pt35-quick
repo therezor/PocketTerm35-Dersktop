@@ -1,0 +1,45 @@
+#!/bin/sh
+# pt35-quick — the radio switches behind the quick panel.
+#
+# nmcli and bluetoothctl have no "toggle", and the menu has no shell: it runs
+# one command and shows what it prints on failure.
+set -eu
+
+usage() {
+  echo "usage: pt35-quick wifi|bluetooth on|off|toggle" >&2
+  exit 2
+}
+
+[ $# -eq 2 ] || usage
+
+case "$1" in
+  wifi)
+    command -v nmcli >/dev/null || { echo "nmcli is not installed" >&2; exit 1; }
+    case "$2" in
+      on|off) nmcli radio wifi "$2" ;;
+      toggle)
+        if [ "$(nmcli radio wifi)" = enabled ]; then
+          nmcli radio wifi off
+        else
+          nmcli radio wifi on
+        fi
+        ;;
+      *) usage ;;
+    esac
+    ;;
+  bluetooth)
+    command -v bluetoothctl >/dev/null || { echo "bluetoothctl is not installed" >&2; exit 1; }
+    case "$2" in
+      on|off) bluetoothctl power "$2" ;;
+      toggle)
+        if bluetoothctl show | grep -q "Powered: yes"; then
+          bluetoothctl power off
+        else
+          bluetoothctl power on
+        fi
+        ;;
+      *) usage ;;
+    esac
+    ;;
+  *) usage ;;
+esac

@@ -32,7 +32,11 @@ pub struct Row {
 /// you read its name. Everything else dynamic is a list of similar things.
 fn layout_for(builtin: Builtin) -> Layout {
     match builtin {
-        Builtin::Launcher | Builtin::Windows => Layout::Grid,
+        Builtin::Windows => Layout::Grid,
+        // A list you can scan and type into, with the side column beside it.
+        Builtin::Launcher => Layout::List,
+        // Both are drawn by hand; the list underneath is only the cursor.
+        Builtin::Quick | Builtin::System => Layout::List,
         _ => Layout::List,
     }
 }
@@ -193,6 +197,15 @@ impl Model {
     pub fn focused_adjust(&self) -> Option<Adjust> {
         let screen = self.screen();
         let index = screen.list.selected()?;
+        if let Source::Dynamic { items, .. } = &screen.source {
+            let payload = items.get(index).map(|i| i.payload.as_str())?;
+            return match payload.strip_prefix("adjust:")? {
+                "volume" => Some(Adjust::Volume),
+                "brightness" => Some(Adjust::Brightness),
+                "scale" => Some(Adjust::Scale),
+                _ => None,
+            };
+        }
         self.entry(&screen.source, index)?.adjust
     }
 
@@ -253,6 +266,23 @@ impl Model {
         });
     }
 
+    /// Open a page from menu.toml by id, on top of what is there.
+    pub fn open_page(&mut self, id: &str) {
+        self.push_page(id);
+    }
+
+    /// Make a builtin the bottom of the stack. The launcher is the root, and
+    /// Back from the first screen must leave the menu, not reveal a stub.
+    pub fn set_root_dynamic(
+        &mut self,
+        builtin: Builtin,
+        title: &str,
+        items: Vec<crate::providers::Item>,
+    ) {
+        self.stack.clear();
+        self.push_dynamic(builtin, title, items);
+    }
+
     /// Push a screen built from live data (windows, networks, .desktop files).
     pub fn push_dynamic(
         &mut self,
@@ -263,16 +293,26 @@ impl Model {
         let layout = layout_for(builtin);
         self.stack.push(Screen {
             title: title.to_string(),
-            list: self.list_for(layout, &items),
+            list: self.list_for(builtin, layout, &items),
             layout,
             source: Source::Dynamic { builtin, items },
         });
     }
 
-    fn list_for(&self, layout: Layout, items: &[crate::providers::Item]) -> ListState {
+    fn list_for(
+        &self,
+        builtin: Builtin,
+        layout: Layout,
+        items: &[crate::providers::Item],
+    ) -> ListState {
         let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
         match layout {
             Layout::Grid => ListState::new(labels, self.grid_rows).with_columns(self.columns),
+            // The quick panel is one screenful by design: it never scrolls.
+            Layout::List if builtin == Builtin::Quick => {
+                let rows = labels.len().max(1);
+                ListState::new(labels, rows)
+            }
             Layout::List => ListState::new(labels, self.rows),
         }
     }
@@ -295,7 +335,7 @@ impl Model {
         }) else {
             return;
         };
-        let list = self.list_for(layout_for(builtin), &items);
+        let list = self.list_for(builtin, layout_for(builtin), &items);
         let screen = self.screen_mut();
         screen.list = list;
         screen.source = Source::Dynamic { builtin, items };
@@ -394,25 +434,29 @@ impl Model {
                 }
             }
             Source::Dynamic {
-                builtin: Builtin::Launcher,
+                builtin: Builtin::Launcher | Builtin::Quick,
                 items,
             } => {
                 let Some(payload) = items.get(index).map(|i| i.payload.clone()) else {
                     return Step::Nothing;
                 };
                 let (kind, rest) = payload.split_once(':').unwrap_or(("", payload.as_str()));
+                let rest = rest.to_string();
                 match kind {
                     "page" => {
-                        let page = rest.to_string();
-                        self.push_page(&page);
+                        self.push_page(&rest);
                         Step::Redraw
                     }
-                    "screen" => match Builtin::from_name(rest) {
+                    "screen" => match Builtin::from_name(&rest) {
                         Some(builtin) => Step::Open(builtin),
                         None => Step::Nothing,
                     },
-                    "app" => Step::Run(Command::App(rest.to_string())),
-                    "exec" => Step::Run(Command::Exec(rest.to_string())),
+                    "app" => Step::Run(Command::App(rest)),
+                    "exec" => Step::Run(Command::Exec(rest)),
+                    // A switch stays: watching it flip is the point.
+                    "sh" => Step::RunStay(Command::Exec(rest)),
+                    "ctl" => Step::RunStay(Command::Action(rest)),
+                    // The D-pad is the whole interaction for a slider.
                     _ => Step::Nothing,
                 }
             }

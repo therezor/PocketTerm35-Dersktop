@@ -36,6 +36,7 @@ assets = [
     ["target/release/pt35-menu", "usr/bin/", "755"],
     ["../../scripts/pt35-session", "usr/bin/", "755"],
     ["../../scripts/pt35-kbd", "usr/bin/", "755"],
+    ["../../scripts/pt35-quick", "usr/bin/", "755"],
     ["../../scripts/pt35-cpu-profile", "usr/lib/pt35/", "755"],
     ["../../scripts/pt35-probe.sh", "usr/share/pt35-desktop/", "755"],
     ["../../config/sway/config", "usr/share/pt35-desktop/sway/", "644"],

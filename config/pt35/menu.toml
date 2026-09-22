@@ -24,25 +24,19 @@
 # a profile, then everything else with a .desktop file. X searches all of it.
 root = "launcher"
 
-# Quick settings: one press, no submenu. The D-pad changes a value in place and
-# every toggle reads out its own state.
-[menu.quick]
-title = "Quick"
-entries = [
-  { label = "Input mode",  action = "mode toggle", state = "mode" },
-  { label = "Volume",      adjust = "volume" },
-  { label = "Touchscreen", action = "touch toggle", state = "touch" },
-  { label = "Screenshot",  action = "screenshot" },
-]
+# The quick panel itself is a builtin screen (switches and sliders, drawn by
+# hand). This page is what sits behind its Settings chip.
 
 [menu.settings]
 title = "Settings"
 entries = [
-  { label = "Wi-Fi",       builtin = "wifi",      state = "network" },
-  { label = "Bluetooth",   builtin = "bluetooth" },
-  { label = "CPU profile", goto = "cpu" },
+  { label = "Wi-Fi",        builtin = "wifi",   state = "network" },
+  { label = "Bluetooth",    builtin = "bluetooth" },
+  { label = "System",       builtin = "system" },
+  { label = "CPU profile",  goto = "cpu" },
+  { label = "Screenshot",   action = "screenshot" },
   { label = "Reload shell", action = "reload" },
-  { label = "About",       builtin = "about" },
+  { label = "About",        builtin = "about" },
 ]
 
 [menu.cpu]

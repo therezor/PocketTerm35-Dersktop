@@ -153,6 +153,7 @@ install_from_source() {
   done
   run "install -m755 '$src/scripts/pt35-session' /usr/bin/pt35-session"
   run "install -m755 '$src/scripts/pt35-kbd' /usr/bin/pt35-kbd"
+  run "install -m755 '$src/scripts/pt35-quick' /usr/bin/pt35-quick"
   run "install -d /usr/lib/pt35 && install -m755 '$src/scripts/pt35-cpu-profile' /usr/lib/pt35/pt35-cpu-profile"
   run "install -d '$SHARE/sway' '$SHARE/pt35' '$SHARE/foot' '$SHARE/boot'"
   run "install -m644 '$src/config/sway/config' '$SHARE/sway/config'"
@@ -232,7 +233,7 @@ do_uninstall() {
     fi
   fi
   run "rm -f /usr/bin/pt35d /usr/bin/pt35ctl /usr/bin/pt35-bar /usr/bin/pt35-menu \
-        /usr/bin/pt35-session /usr/bin/pt35-kbd \
+        /usr/bin/pt35-session /usr/bin/pt35-kbd /usr/bin/pt35-quick \
         /etc/keyd/pocketterm35.conf \
         /etc/sudoers.d/pt35-cpu-profile /usr/share/wayland-sessions/pt35-session.desktop"
   run "rm -rf '$SHARE' /usr/lib/pt35"

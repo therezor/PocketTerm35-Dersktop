@@ -18,6 +18,27 @@ use crate::{exec, providers};
 
 /// One entry in the bottom legend. The pill is coloured like the physical
 /// button so the legend can be read at a glance instead of word by word.
+/// The launcher's side buttons: not apps, so not in the app list.
+#[derive(Clone, Copy)]
+enum Side {
+    Screen(pt35_common::menu::Builtin),
+    Page(&'static str),
+}
+
+const SIDE: &[(&str, Side, &str)] = &[
+    (
+        "Windows",
+        Side::Screen(pt35_common::menu::Builtin::Windows),
+        "multitasking-view",
+    ),
+    (
+        "Settings",
+        Side::Screen(pt35_common::menu::Builtin::Quick),
+        "preferences-system",
+    ),
+    ("Power", Side::Page("power"), "system-shutdown"),
+];
+
 #[derive(Clone, Copy)]
 struct Hint {
     button: &'static str,
@@ -111,6 +132,9 @@ pub struct Menu {
     model: Model,
     status: Option<pt35_common::ipc::Status>,
     icons: pt35_ui::icon::Icons,
+    /// Which of the launcher's side buttons has the cursor, if any. The apps
+    /// are a list and these three are not, so they are tracked apart.
+    side: Option<usize>,
     windows: usize,
     /// Hit boxes recorded by the last draw, so touch never has to re-derive
     /// the layout and drift from it.
@@ -125,6 +149,7 @@ impl Menu {
         let icons = pt35_ui::icon::Icons::new(&theme.icons.theme);
         Self {
             icons,
+            side: None,
             theme,
             font,
             mono,
@@ -134,6 +159,33 @@ impl Menu {
             row_hits: Vec::new(),
             hint_hits: Vec::new(),
             error: None,
+        }
+    }
+
+    fn on_launcher(&self) -> bool {
+        matches!(
+            self.model.screen().source,
+            crate::model::Source::Dynamic {
+                builtin: pt35_common::menu::Builtin::Launcher,
+                ..
+            }
+        )
+    }
+
+    fn open_side(&mut self, index: usize) -> bool {
+        self.side = None;
+        match SIDE.get(index).map(|(_, target, _)| *target) {
+            Some(Side::Screen(builtin)) => {
+                let items = providers::items(builtin);
+                self.model
+                    .push_dynamic(builtin, providers::title(builtin), items);
+                true
+            }
+            Some(Side::Page(page)) => {
+                self.model.open_page(page);
+                true
+            }
+            None => true,
         }
     }
 
@@ -570,6 +622,291 @@ impl Menu {
         }
     }
 
+    /// The launcher: apps down the left, the three screens that are not apps
+    /// down the right.
+    fn draw_launcher(&mut self, canvas: &mut Canvas, top: i32, bottom: i32) {
+        let theme = self.theme.clone();
+        let pad = theme.menu.padding_x as i32;
+        let side_w = 150;
+        let split = canvas.width as i32 - side_w - pad;
+        let icon_size = 24;
+
+        let rows = self.model.visible_rows();
+        let cursor = self.model.screen().list.cursor_index();
+        let row_h = theme.menu.row_height as i32;
+        self.row_hits.clear();
+        for (index, row) in rows.iter().enumerate() {
+            let y = top + index as i32 * row_h;
+            if y + row_h > bottom {
+                break;
+            }
+            self.row_hits.push((0, y, split, y + row_h));
+            let focused = index == cursor && self.side.is_none();
+            if focused {
+                canvas.rect(0, y, split as u32, row_h as u32, theme.color.background_alt);
+                canvas.rect(0, y, 3, row_h as u32, theme.color.accent);
+            }
+            let centre = y + row_h / 2;
+            let drawn = !row.icon.is_empty()
+                && self
+                    .icons
+                    .get(&row.icon, icon_size)
+                    .map(|icon| icon.draw(canvas, pad, centre - icon_size as i32 / 2))
+                    .is_some();
+            if !drawn {
+                let glyph = if row.glyph.is_empty() {
+                    row.label.chars().next().unwrap_or('?').to_string()
+                } else {
+                    row.glyph.clone()
+                };
+                self.font.draw(
+                    canvas,
+                    &glyph,
+                    pad,
+                    centre + (theme.font.size_menu / 3.0) as i32,
+                    theme.font.size_menu,
+                    theme.color.muted,
+                );
+            }
+            let label_x = pad + icon_size as i32 + 12;
+            let label = self.font.elide(
+                &row.label,
+                theme.font.size_menu,
+                (split - label_x - 8) as u32,
+            );
+            self.font.draw(
+                canvas,
+                &label,
+                label_x,
+                centre + (theme.font.size_menu / 3.0) as i32,
+                theme.font.size_menu,
+                if focused {
+                    theme.color.accent
+                } else {
+                    theme.color.foreground
+                },
+            );
+        }
+
+        canvas.rect(split, top, 1, (bottom - top) as u32, theme.color.border);
+
+        let gap = 10;
+        let height = ((bottom - top) - gap * (SIDE.len() as i32 - 1)) / SIDE.len() as i32;
+        for (index, (label, _, icon)) in SIDE.iter().enumerate() {
+            let x = split + pad;
+            let y = top + index as i32 * (height + gap);
+            let focused = self.side == Some(index);
+            let colour = if focused {
+                theme.color.accent
+            } else {
+                theme.color.border
+            };
+            canvas.rounded_rect(x, y, side_w as u32, height as u32, 2, colour);
+            canvas.rounded_rect(
+                x + 1,
+                y + 1,
+                (side_w - 2) as u32,
+                (height - 2) as u32,
+                2,
+                theme.color.background_alt,
+            );
+            let size = 32;
+            if let Some(icon) = self.icons.get(icon, size) {
+                icon.draw(canvas, x + (side_w - size as i32) / 2, y + 12);
+            }
+            let tw = self.font.measure(label, theme.font.size_hint) as i32;
+            self.font.draw(
+                canvas,
+                label,
+                x + (side_w - tw) / 2,
+                y + height - 12,
+                theme.font.size_hint,
+                if focused {
+                    theme.color.accent
+                } else {
+                    theme.color.foreground
+                },
+            );
+        }
+    }
+
+    /// The quick panel: a switch, a slider or a readout per row, and the ways
+    /// out drawn as chips along the bottom.
+    fn draw_quick(&mut self, canvas: &mut Canvas, top: i32, bottom: i32) {
+        let theme = self.theme.clone();
+        let pad = theme.menu.padding_x as i32;
+        let rows = self.model.visible_rows();
+        let cursor = self.model.screen().list.cursor_index();
+        self.row_hits.clear();
+
+        let chips: Vec<usize> = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.glyph == "button")
+            .map(|(i, _)| i)
+            .collect();
+        let chip_h = 44;
+        let chip_top = bottom - chip_h;
+        let lines = rows.len() - chips.len();
+        let row_h = ((chip_top - top - 8) / lines.max(1) as i32).min(56);
+        let icon_size = 24;
+
+        for (index, row) in rows.iter().enumerate() {
+            if chips.contains(&index) {
+                continue;
+            }
+            let y = top + index as i32 * row_h;
+            let focused = index == cursor;
+            self.row_hits.push((0, y, canvas.width as i32, y + row_h));
+            if focused {
+                canvas.rect(0, y, canvas.width, row_h as u32, theme.color.background_alt);
+                canvas.rect(0, y, 3, row_h as u32, theme.color.accent);
+            }
+            let centre = y + row_h / 2;
+            if let Some(icon) = self.icons.get_symbolic(&row.icon, icon_size) {
+                icon.draw_tinted(
+                    canvas,
+                    pad,
+                    centre - icon_size as i32 / 2,
+                    if focused {
+                        theme.color.accent
+                    } else {
+                        theme.color.muted
+                    },
+                );
+            }
+            let label_x = pad + icon_size as i32 + 12;
+            self.font.draw(
+                canvas,
+                &row.label,
+                label_x,
+                centre + (theme.font.size_menu / 3.0) as i32,
+                theme.font.size_menu,
+                theme.color.foreground,
+            );
+
+            let right = canvas.width as i32 - pad;
+            match row.glyph.split(':').next().unwrap_or("") {
+                "switch" => {
+                    let on = row.glyph.ends_with("on");
+                    let w = 62;
+                    let h = 26;
+                    let x = right - w;
+                    let colour = if on {
+                        theme.color.accent
+                    } else {
+                        theme.color.border
+                    };
+                    canvas.rounded_rect(x, centre - h / 2, w as u32, h as u32, 2, colour);
+                    let text = if on { "ON" } else { "OFF" };
+                    let tw = self.mono.measure(text, theme.font.size_hint) as i32;
+                    self.mono.draw(
+                        canvas,
+                        text,
+                        x + (w - tw) / 2,
+                        centre + 5,
+                        theme.font.size_hint,
+                        if on {
+                            theme.color.accent_fg
+                        } else {
+                            theme.color.muted
+                        },
+                    );
+                    self.note(canvas, &row.note, x - 10, centre);
+                }
+                "slide" => {
+                    let value: i32 = row
+                        .glyph
+                        .split(':')
+                        .nth(1)
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    let note_w = self.mono.measure(&row.note, theme.font.size_hint) as i32;
+                    let track_x = label_x + 130;
+                    let track_w = right - note_w - 12 - track_x;
+                    canvas.rect(track_x, centre - 2, track_w as u32, 4, theme.color.border);
+                    let filled = track_w * value.clamp(0, 100) / 100;
+                    canvas.rect(track_x, centre - 2, filled as u32, 4, theme.color.accent);
+                    canvas.rounded_rect(
+                        track_x + filled - 4,
+                        centre - 9,
+                        8,
+                        18,
+                        2,
+                        theme.color.accent,
+                    );
+                    self.mono.draw(
+                        canvas,
+                        &row.note,
+                        right - note_w,
+                        centre + 5,
+                        theme.font.size_hint,
+                        theme.color.foreground,
+                    );
+                }
+                _ => self.note(canvas, &row.note, right, centre),
+            }
+        }
+
+        // The ways out, side by side.
+        if !chips.is_empty() {
+            let gap = 10;
+            let width = (canvas.width as i32 - pad * 2 - gap * (chips.len() as i32 - 1))
+                / chips.len() as i32;
+            for (slot, index) in chips.iter().enumerate() {
+                let row = &rows[*index];
+                let x = pad + slot as i32 * (width + gap);
+                let focused = *index == cursor;
+                self.row_hits
+                    .push((x, chip_top, x + width, chip_top + chip_h));
+                let colour = if focused {
+                    theme.color.accent
+                } else {
+                    theme.color.border
+                };
+                canvas.rounded_rect(x, chip_top, width as u32, chip_h as u32, 2, colour);
+                canvas.rounded_rect(
+                    x + 1,
+                    chip_top + 1,
+                    (width - 2) as u32,
+                    (chip_h - 2) as u32,
+                    2,
+                    theme.color.background,
+                );
+                let tw = self.font.measure(&row.label, theme.font.size_hint) as i32;
+                self.font.draw(
+                    canvas,
+                    &row.label,
+                    x + (width - tw) / 2,
+                    chip_top + chip_h / 2 + 5,
+                    theme.font.size_hint,
+                    if focused {
+                        theme.color.accent
+                    } else {
+                        theme.color.foreground
+                    },
+                );
+            }
+        }
+    }
+
+    /// Right-aligned readout next to a switch.
+    fn note(&mut self, canvas: &mut Canvas, note: &str, right: i32, centre: i32) {
+        if note.is_empty() {
+            return;
+        }
+        let size = self.theme.font.size_hint;
+        let width = self.mono.measure(note, size) as i32;
+        self.mono.draw(
+            canvas,
+            note,
+            right - width,
+            centre + 5,
+            size,
+            self.theme.color.muted,
+        );
+    }
+
     fn draw_hints(&mut self, canvas: &mut Canvas, top: i32) {
         let theme = &self.theme;
         let height = theme.menu.hint_height;
@@ -640,6 +977,32 @@ impl App for Menu {
     }
 
     fn key(&mut self, key: Key) -> bool {
+        use pt35_ui::keys::{navigate, Navigation};
+        if self.on_launcher() {
+            let mode = self.model.screen().list.mode();
+            match (self.side, navigate(&key, mode)) {
+                // Right leaves the app list for the side buttons, left comes
+                // back. Nothing else about the launcher is two-dimensional.
+                (None, Navigation::Right) => {
+                    self.side = Some(0);
+                    return true;
+                }
+                (Some(_), Navigation::Left) | (Some(_), Navigation::Back) => {
+                    self.side = None;
+                    return true;
+                }
+                (Some(index), Navigation::Down) => {
+                    self.side = Some((index + 1) % SIDE.len());
+                    return true;
+                }
+                (Some(index), Navigation::Up) => {
+                    self.side = Some((index + SIDE.len() - 1) % SIDE.len());
+                    return true;
+                }
+                (Some(index), Navigation::Activate) => return self.open_side(index),
+                _ => {}
+            }
+        }
         let step = self.model.handle(&key);
         self.apply(step)
     }
@@ -681,9 +1044,22 @@ impl App for Menu {
             hint_top = y;
         }
         let body_top = self.draw_header(canvas) + 8;
-        match self.model.layout() {
-            Layout::Grid => self.draw_tiles(canvas, body_top, hint_top - 4),
-            Layout::List => self.draw_rows(canvas, body_top, hint_top),
+        let quick = matches!(
+            self.model.screen().source,
+            crate::model::Source::Dynamic {
+                builtin: pt35_common::menu::Builtin::Quick,
+                ..
+            }
+        );
+        if quick {
+            self.draw_quick(canvas, body_top, hint_top - 4);
+        } else if self.on_launcher() {
+            self.draw_launcher(canvas, body_top, hint_top - 4);
+        } else {
+            match self.model.layout() {
+                Layout::Grid => self.draw_tiles(canvas, body_top, hint_top - 4),
+                Layout::List => self.draw_rows(canvas, body_top, hint_top),
+            }
         }
         self.draw_hints(canvas, hint_top);
     }
@@ -700,21 +1076,28 @@ pub fn run(page: Option<String>) -> Result<()> {
     // A screen name may be a builtin rather than a page in menu.toml, and that
     // includes the root: the launcher is assembled, not written down.
     let tree: pt35_common::menu::MenuTree = tree;
-    let wanted = page.clone().unwrap_or_else(|| tree.root.clone());
-    let builtin = pt35_common::menu::Builtin::from_name(&wanted);
-    let mut model = Model::sized(
-        tree,
-        page.as_deref().filter(|_| builtin.is_none()),
-        rows,
-        grid_rows,
-        theme.menu.columns as usize,
-    );
-    if let Some(builtin) = builtin {
-        model.push_dynamic(
+    let root = pt35_common::menu::Builtin::from_name(&tree.root);
+    let mut model = Model::sized(tree, None, rows, grid_rows, theme.menu.columns as usize);
+    if let Some(builtin) = root {
+        model.set_root_dynamic(
             builtin,
             providers::title(builtin),
             providers::items(builtin),
         );
+    }
+    match page.as_deref() {
+        None => {}
+        Some(name) => match pt35_common::menu::Builtin::from_name(name) {
+            Some(builtin) if Some(builtin) != root => {
+                model.push_dynamic(
+                    builtin,
+                    providers::title(builtin),
+                    providers::items(builtin),
+                );
+            }
+            Some(_) => {}
+            None => model.open_page(name),
+        },
     }
     layer::run(
         Menu::new(theme, font, mono, model),

@@ -35,6 +35,8 @@ pub type Items = Vec<Item>;
 pub fn title(builtin: Builtin) -> &'static str {
     match builtin {
         Builtin::Launcher => "Launcher",
+        Builtin::Quick => "Quick settings",
+        Builtin::System => "System",
         Builtin::Windows => "Windows",
         Builtin::Wifi => "Wi-Fi",
         Builtin::Bluetooth => "Bluetooth",
@@ -48,6 +50,8 @@ pub fn title(builtin: Builtin) -> &'static str {
 pub fn items(builtin: Builtin) -> Items {
     match builtin {
         Builtin::Launcher => launcher(),
+        Builtin::Quick => quick(),
+        Builtin::System => Vec::new(),
         Builtin::Windows => windows(),
         Builtin::Wifi => wifi(),
         Builtin::Bluetooth => bluetooth(),
@@ -60,44 +64,14 @@ pub fn items(builtin: Builtin) -> Items {
 
 // --------------------------------------------------------------- launcher
 
-/// The root screen: the four screens that are not apps, then the apps with a
-/// profile, then everything else that is installed. One list, so typing finds
-/// any of it.
+/// Every app: the ones with a profile first, then everything else with a
+/// .desktop file. One list, so typing finds any of it. Windows, Settings and
+/// Power are not apps and live in the launcher's side column.
 ///
-/// The payload says what activating a row means, because these rows are not all
-/// the same kind of thing: `screen:`, `app:` or `exec:`.
+/// The payload says what activating a row means: `app:` goes through the
+/// daemon with its profile, `exec:` is a plain command line.
 fn launcher() -> Items {
-    let mut out = vec![
-        Item {
-            label: "Windows".into(),
-            payload: "screen:windows".into(),
-            note: "running".into(),
-            glyph: "W".into(),
-            icon: "multitasking-view".into(),
-        },
-        Item {
-            label: "Quick".into(),
-            payload: "page:quick".into(),
-            note: "toggles".into(),
-            glyph: "Q".into(),
-            icon: "preferences-desktop".into(),
-        },
-        Item {
-            label: "Settings".into(),
-            payload: "page:settings".into(),
-            note: "system".into(),
-            glyph: "S".into(),
-            icon: "preferences-system".into(),
-        },
-        Item {
-            label: "Power".into(),
-            payload: "page:power".into(),
-            note: "off".into(),
-            glyph: "P".into(),
-            icon: "system-shutdown".into(),
-        },
-    ];
-
+    let mut out: Items = Vec::new();
     let apps: pt35_common::apps::AppTable =
         pt35_common::load_config("pt35/apps.toml").unwrap_or_default();
     for (id, app) in &apps.apps {
@@ -123,6 +97,136 @@ fn launcher() -> Items {
         }
     }
     out
+}
+
+// ------------------------------------------------------------------ quick
+
+/// The quick panel: switches with their state, sliders with their value, and
+/// three ways out to the screens behind them.
+///
+/// `note` is the right-hand readout and `glyph` says how to draw the row:
+/// `switch`, `slide`, `read` or `button`.
+pub fn quick() -> Items {
+    let status = crate::live::status();
+    let signal = status.as_ref().and_then(|s| s.network_signal);
+    let online = status.as_ref().and_then(|s| s.network.clone());
+    let volume = status.as_ref().and_then(|s| s.volume_percent).unwrap_or(0);
+    let muted = status.as_ref().and_then(|s| s.muted).unwrap_or(false);
+    let mouse = status
+        .as_ref()
+        .map(|s| s.input_mode == pt35_common::ipc::InputMode::Mouse)
+        .unwrap_or(false);
+    let touch = status.as_ref().map(|s| s.touch_enabled).unwrap_or(true);
+
+    let wifi_on = online.is_some();
+    vec![
+        Item {
+            label: "Wi-Fi".into(),
+            payload: "sh:pt35-quick wifi toggle".into(),
+            note: match (wifi_on, wifi_name()) {
+                (true, Some(ssid)) => ssid,
+                (true, None) => online.unwrap_or_else(|| "on".into()),
+                (false, _) => String::new(),
+            },
+            glyph: switch(wifi_on),
+            icon: pt35_ui::icon::wifi_icon(signal).into(),
+        },
+        Item {
+            label: "Bluetooth".into(),
+            payload: "sh:pt35-quick bluetooth toggle".into(),
+            note: bluetooth_state(),
+            glyph: switch(bluetooth_on()),
+            icon: "bluetooth".into(),
+        },
+        Item {
+            label: "Input".into(),
+            payload: "ctl:mode toggle".into(),
+            note: if mouse { "mouse" } else { "buttons" }.into(),
+            glyph: switch(mouse),
+            icon: if mouse {
+                "input-mouse"
+            } else {
+                "input-keyboard"
+            }
+            .into(),
+        },
+        Item {
+            label: "Touch".into(),
+            payload: "ctl:touch toggle".into(),
+            note: String::new(),
+            glyph: switch(touch),
+            icon: "input-touchpad".into(),
+        },
+        Item {
+            label: "Volume".into(),
+            payload: "adjust:volume".into(),
+            note: if muted {
+                "muted".into()
+            } else {
+                format!("{volume}%")
+            },
+            glyph: format!("slide:{}", if muted { 0 } else { volume }),
+            icon: pt35_ui::icon::volume_icon(volume, muted).into(),
+        },
+        Item {
+            label: "Brightness".into(),
+            // The backlight is a PWM pin on the keyboard's MCU: Linux cannot
+            // see it, let alone move it.
+            payload: String::new(),
+            note: "Fn  -  =".into(),
+            glyph: "read".into(),
+            icon: "display-brightness".into(),
+        },
+        Item {
+            label: "Networks".into(),
+            payload: "screen:wifi".into(),
+            note: String::new(),
+            glyph: "button".into(),
+            icon: "network-wireless".into(),
+        },
+        Item {
+            label: "Audio".into(),
+            payload: "screen:audio".into(),
+            note: String::new(),
+            glyph: "button".into(),
+            icon: "audio-volume-high".into(),
+        },
+        Item {
+            label: "Settings".into(),
+            payload: "page:settings".into(),
+            note: String::new(),
+            glyph: "button".into(),
+            icon: "preferences-system".into(),
+        },
+    ]
+}
+
+fn switch(on: bool) -> String {
+    if on { "switch:on" } else { "switch:off" }.to_string()
+}
+
+/// The network you are on, which is worth more than the interface name.
+fn wifi_name() -> Option<String> {
+    run("iwgetid", &["-r"])
+        .map(|out| out.trim().to_string())
+        .filter(|name| !name.is_empty())
+}
+
+fn bluetooth_on() -> bool {
+    run("bluetoothctl", &["show"])
+        .map(|out| out.contains("Powered: yes"))
+        .unwrap_or(false)
+}
+
+fn bluetooth_state() -> String {
+    let Some(out) = run("bluetoothctl", &["devices", "Connected"]) else {
+        return String::new();
+    };
+    match out.lines().filter(|l| l.starts_with("Device ")).count() {
+        0 => String::new(),
+        1 => "1 device".into(),
+        n => format!("{n} devices"),
+    }
 }
 
 // ---------------------------------------------------------------- windows

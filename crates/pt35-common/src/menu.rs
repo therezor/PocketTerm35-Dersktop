@@ -107,6 +107,11 @@ pub enum StateField {
 pub enum Builtin {
     /// Everything you can start, plus the screens that are not apps.
     Launcher,
+    /// Switches and sliders: the things you change without leaving what you
+    /// were doing.
+    Quick,
+    /// A read-only dashboard: load, memory, storage, network, uptime.
+    System,
     Windows,
     Wifi,
     Bluetooth,
@@ -122,6 +127,8 @@ impl Builtin {
     pub fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "launcher" => Builtin::Launcher,
+            "quick" => Builtin::Quick,
+            "system" => Builtin::System,
             "windows" => Builtin::Windows,
             "wifi" => Builtin::Wifi,
             "bluetooth" => Builtin::Bluetooth,
