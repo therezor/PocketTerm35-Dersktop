@@ -49,12 +49,21 @@ pub struct Server {
 impl Server {
     pub fn bind(session: Arc<Mutex<Session>>, subscribers: Arc<Subscribers>) -> Result<Self> {
         let path = paths::socket_path();
-        // A stale socket from a crashed session would block bind().
-        if path.exists() {
-            if UnixStream::connect(&path).is_ok() {
+        // On a session restart the previous pt35d can still hold the socket for
+        // a second or two, until it notices sway is gone. Wait for it rather
+        // than leaving the new session with no daemon.
+        for attempt in 0..12 {
+            if !path.exists() {
+                break;
+            }
+            if UnixStream::connect(&path).is_err() {
+                std::fs::remove_file(&path).ok();
+                break;
+            }
+            if attempt == 11 {
                 anyhow::bail!("another pt35d is already listening on {}", path.display());
             }
-            std::fs::remove_file(&path).ok();
+            std::thread::sleep(std::time::Duration::from_millis(500));
         }
         let listener =
             UnixListener::bind(&path).with_context(|| format!("binding {}", path.display()))?;
