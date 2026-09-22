@@ -136,7 +136,7 @@ install_from_source() {
         sway xwayland foot seatd greetd keyd \
         pipewire pipewire-alsa pipewire-pulse wireplumber \
         xdg-desktop-portal-wlr wl-clipboard grim wtype \
-        fonts-dejavu-core papirus-icon-theme i2c-tools evtest python3-serial \
+        fonts-dejavu-core papirus-icon-theme i2c-tools evtest python3-serial htop \
         build-essential pkg-config libxkbcommon-dev"
 
   # A login shell, so a rustup toolchain in ~/.cargo/bin wins over the older

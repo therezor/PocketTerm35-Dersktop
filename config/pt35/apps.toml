@@ -47,7 +47,7 @@ scale     = 0.75
 label     = "Monitor"
 glyph     = "M"
 icon      = "utilities-system-monitor"
-exec      = "foot -a pt35-monitor top"
+exec      = "foot -a pt35-monitor htop"
 match     = { app_id = "pt35-monitor" }
 workspace = 4
 
