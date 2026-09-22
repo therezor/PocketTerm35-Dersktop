@@ -324,8 +324,15 @@ impl Session {
                         }
                     }
                     WindowAction::Close => {
+                        // Closing leaves you on an empty workspace otherwise,
+                        // because every app owns one.
                         self.closed_at = Some(std::time::Instant::now());
+                        self.status.windows = self.window_list();
+                        let next = next_window(&self.status.windows, self.status.workspace, true);
                         self.sway_command("kill")?;
+                        if let Some(id) = next {
+                            let _ = self.sway_command(&format!("[con_id={id}] focus"));
+                        }
                     }
                     WindowAction::Fullscreen => self.sway_command("fullscreen toggle")?,
                 }
