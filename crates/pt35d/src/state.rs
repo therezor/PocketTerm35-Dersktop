@@ -52,6 +52,10 @@ pub struct Session {
 /// a blank screen.
 const LAUNCH_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// The Start button, by the keysym `KEY_PAUSE` produces. Bound by the daemon
+/// rather than the sway config, because it changes hands when the menu opens.
+const START: &str = "Pause";
+
 impl Session {
     pub fn new() -> Self {
         let mut session = Self {
@@ -108,6 +112,9 @@ impl Session {
             log::info!("closed a menu left behind by a previous pt35d");
             self.ensure_focus();
         }
+        // That menu held Start. Whether or not one was there, the key belongs
+        // to the compositor again now.
+        self.grab_start();
     }
 
     /// Tell sway where each app's window belongs, once, at startup.
@@ -448,6 +455,27 @@ impl Session {
                         self.close_window(target)?;
                     }
                     WindowAction::CloseId(id) => self.close_window(id)?,
+                    WindowAction::CloseAll => {
+                        self.sync_windows();
+                        let ids: Vec<i64> = self.status.windows.iter().map(|w| w.id).collect();
+                        let count = ids.len();
+                        for id in ids {
+                            if let Err(e) = self.sway_command(&format!("[con_id={id}] kill")) {
+                                log::warn!("closing {id}: {e}");
+                            }
+                        }
+                        // Drop them all at once. Anything that refuses to go
+                        // comes back on its own `window::close` never arriving.
+                        self.status.windows.clear();
+                        self.notify(
+                            match count {
+                                1 => "Closed 1 window".to_string(),
+                                n => format!("Closed {n} windows"),
+                            },
+                            0,
+                        );
+                        self.open_menu_on_empty_desktop();
+                    }
                     WindowAction::Fullscreen => self.sway_command("fullscreen toggle")?,
                 }
                 Ok(Response::Ok)
@@ -547,6 +575,7 @@ impl Session {
                 self.menu_is_desktop = false;
             }
             let _ = self.unbind_all();
+            self.release_start();
             let mut cmd = Command::new("pt35-menu");
             if let Some(page) = page {
                 cmd.arg("--page").arg(page);
@@ -696,9 +725,29 @@ impl Session {
     }
 
     fn restore_mode(&mut self) {
+        self.grab_start();
         let mode = self.mode_before_menu;
         if let Err(e) = self.set_mode(mode) {
             log::warn!("input mode: {e}");
+        }
+    }
+
+    /// Hand Start to the menu while it is up.
+    ///
+    /// A sway binding beats any surface, so with `Pause` bound the menu never
+    /// saw the key and could not decide what closing means on the screen you
+    /// are actually looking at.
+    fn release_start(&mut self) {
+        if let Err(e) = self.sway_command(&format!("unbindsym {START}")) {
+            log::warn!("releasing Start: {e}");
+        }
+    }
+
+    /// Take Start back. `$mod+space` stays bound in the sway config throughout,
+    /// so the menu is still reachable if this ever fails.
+    fn grab_start(&mut self) {
+        if let Err(e) = self.sway_command(&format!("bindsym {START} exec pt35ctl menu toggle")) {
+            log::warn!("taking Start back: {e}");
         }
     }
 

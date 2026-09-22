@@ -318,6 +318,23 @@ impl Model {
         }
     }
 
+    /// Put a confirmation in front of closing every window.
+    fn confirm_close_all(&mut self) -> Step {
+        let count = match &self.screen().source {
+            Source::Dynamic { items, .. } => items.len(),
+            _ => 0,
+        };
+        if count == 0 {
+            return Step::Nothing;
+        }
+        let label = match count {
+            1 => "Close 1 window".to_string(),
+            n => format!("Close all {n} windows"),
+        };
+        self.push_confirm(Command::Action("window closeall".into()), &label);
+        Step::Redraw
+    }
+
     fn push_confirm(&mut self, command: Command, label: &str) {
         let rows = self.rows;
         // Spelled out, not "No" and "Yes": half a second of reading is the
@@ -331,6 +348,16 @@ impl Model {
             source: Source::Confirm { command },
             layout: Layout::List,
         });
+    }
+
+    /// Drop back to the top screen, keeping the menu open.
+    pub fn go_home(&mut self) -> Step {
+        if self.stack.len() > 1 {
+            self.stack.truncate(1);
+            Step::Redraw
+        } else {
+            Step::Nothing
+        }
     }
 
     /// Whether this screen's rows carry a 1-9 shortcut.
@@ -395,6 +422,15 @@ impl Model {
     }
 
     pub fn handle(&mut self, key: &Key) -> Step {
+        // X on the window picker is close-all, not search: a grid of three
+        // tiles is not a list worth filtering, and closing everything had
+        // nowhere else to live.
+        if self.dynamic_builtin() == Some(Builtin::Windows)
+            && pt35_ui::keys::navigate(key, self.screen().list.mode())
+                == pt35_ui::keys::Navigation::StartFilter
+        {
+            return self.confirm_close_all();
+        }
         let rows = self.rows;
         let outcome = self.screen_mut().list.handle(key);
         match outcome {

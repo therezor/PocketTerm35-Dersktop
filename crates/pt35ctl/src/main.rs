@@ -22,6 +22,7 @@ usage:
   pt35ctl scale [1.0|0.75|cycle]
   pt35ctl window fit|close|next|prev|fullscreen
   pt35ctl window focus|close ID
+  pt35ctl window closeall
   pt35ctl screenshot
   pt35ctl cpu powersave|balanced|performance
   pt35ctl power screenoff|lock|logout|reboot|poweroff|menu

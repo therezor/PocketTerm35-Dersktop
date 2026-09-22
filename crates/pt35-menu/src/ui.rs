@@ -68,6 +68,9 @@ struct Hint {
     action: &'static str,
 }
 
+// No Start anywhere but the search legend. B goes back and, at the top screen,
+// back means out: two keys for one job is one key wasted on a device with
+// twelve of them.
 const NAV_HINTS: &[Hint] = &[
     Hint {
         button: "A",
@@ -89,10 +92,6 @@ const NAV_HINTS: &[Hint] = &[
         button: "L/R",
         action: "Page",
     },
-    Hint {
-        button: "Start",
-        action: "Close",
-    },
 ];
 
 const WINDOW_HINTS: &[Hint] = &[
@@ -104,14 +103,15 @@ const WINDOW_HINTS: &[Hint] = &[
         button: "B",
         action: "Back",
     },
-    // "Close" twice meant two different things on the same bar.
     Hint {
         button: "Y",
-        action: "Close app",
+        action: "Close",
     },
+    // Searching three tiles you can see is not worth a key. Closing all of
+    // them is, and it asks first.
     Hint {
-        button: "Start",
-        action: "Close menu",
+        button: "X",
+        action: "Close all",
     },
 ];
 
@@ -128,14 +128,12 @@ const QUICK_HINTS: &[Hint] = &[
         button: "Y",
         action: "Home",
     },
-    Hint {
-        button: "Start",
-        action: "Close",
-    },
 ];
 
 // Start here clears the search rather than closing the menu: the list decides
 // that before the model ever sees the key.
+// Start earns its place here: it drops the whole filter at once, which
+// Backspace only does one character at a time.
 const FILTER_HINTS: &[Hint] = &[
     Hint {
         button: "Enter",
@@ -392,10 +390,22 @@ impl Menu {
                 self.resync();
                 true
             }
-            // Nothing to go back to. Closing would leave a charcoal rectangle,
-            // and the daemon would reopen this a moment later anyway.
-            Step::Quit if self.is_desktop() => true,
-            Step::Quit => false,
+            // The menu is the desktop, so closing it means going back to the
+            // top screen. There is nothing behind it to close onto.
+            Step::Quit if self.windows == 0 => {
+                let step = self.model.go_home();
+                self.apply(step)
+            }
+            Step::Quit => {
+                // Tell the daemon on the way out rather than leaving it to
+                // notice on its next poll, which left every button dead for up
+                // to two seconds after the menu had gone.
+                let _ = crate::live::request(&pt35_common::ipc::Request::Menu {
+                    action: pt35_common::ipc::Toggle::Off,
+                    page: None,
+                });
+                false
+            }
             Step::Run(command) => {
                 // A launch that fails must not close the menu: the screen would
                 // go back to an empty workspace with no word of what happened.
@@ -1154,18 +1164,27 @@ impl Menu {
         // L/R page through a list. Saying so when everything already fits is a
         // promise the screen does not keep.
         let paged = self.model.screen().list.len() > self.model.screen().list.rows();
-        // Nor is "Start: Close" a promise we keep when this is the desktop.
         let rooted = self.model.depth() == 1;
         let pinned = self.is_desktop();
         let hints: Vec<Hint> = hints
             .iter()
             .filter(|hint| paged || hint.button != "L/R")
-            .filter(|hint| !(pinned && hint.button == "Start"))
-            // At the root there is nowhere to go back to and nowhere to go
-            // home to. A legend that names a key which does nothing is worse
-            // than a shorter legend.
-            .filter(|hint| !(rooted && matches!(hint.button, "B" | "Y")))
-            .cloned()
+            // At the top screen there is nowhere to go home to, and on the
+            // desktop there is nothing to close the menu onto. A legend that
+            // names a key which does nothing is worse than a shorter legend.
+            .filter(|hint| !(rooted && hint.button == "Y"))
+            .filter(|hint| !(pinned && hint.button == "B"))
+            .map(|hint| {
+                // At the top screen, back means out.
+                if rooted && hint.button == "B" {
+                    Hint {
+                        button: "B",
+                        action: "Close",
+                    }
+                } else {
+                    *hint
+                }
+            })
             .collect();
         let size = theme.font.size_hint;
         let baseline = top + (height as f32 * 0.62) as i32;

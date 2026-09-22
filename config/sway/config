@@ -86,12 +86,12 @@ exec --no-startup-id foot
 # The six face buttons are bound by pt35d, not here: it drops them while the
 # menu is open. See crates/pt35d/src/modes.rs.
 
-# Start (KEY_PAUSE) is the menu. Select (KEY_SYSRQ) switches input mode. Neither
-# carries a character, so both are safe to grab while typing. A sway binding
-# beats any surface, so Start closes the menu again from inside it.
+# Start (KEY_PAUSE) is the menu and Select (KEY_SYSRQ) switches input mode.
+# Neither carries a character, so both are safe to grab while typing.
 #
-# These two are bound here, not by pt35d, so that no mode can lose them.
-bindsym Pause       exec $menu
+# Start is bound by pt35d, not here: a sway binding beats any surface, and the
+# menu has to see the key to know what closing means on the screen you are
+# looking at. $mod+space stays bound here throughout as the way back in.
 bindsym $mod+space  exec $menu
 
 # NOT bound: `Menu`. The L shoulder sends that keysym so the focused app opens

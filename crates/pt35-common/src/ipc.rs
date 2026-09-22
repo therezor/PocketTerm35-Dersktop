@@ -123,6 +123,9 @@ impl Request {
             },
 
             ["window", "fit"] => Request::WindowFit,
+            ["window", "closeall"] => Request::Window {
+                action: WindowAction::CloseAll,
+            },
             ["window", "close"] => Request::Window {
                 action: WindowAction::Close,
             },
@@ -239,6 +242,9 @@ pub enum WindowAction {
     Focus(i64),
     /// Close one window by container id, whichever one has focus.
     CloseId(i64),
+    /// Ask every window to close. Destructive, so nothing reaches this without
+    /// a confirmation in front of it.
+    CloseAll,
 }
 
 /// The device has twelve controls and two things to do with them, so there are
