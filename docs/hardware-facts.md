@@ -8,6 +8,8 @@ output; the rest is already verified.
 bash scripts/pt35-probe.sh > docs/hardware-facts.md 2>&1
 ```
 
+Captured on a Pi 5 board, 2026-09-22.
+
 ## Verified
 
 ### Display — plain HDMI, no overlay needed
@@ -62,4 +64,3 @@ PipeWire is installed by the installer.
 | Connector name and modes | `swaymsg -t get_outputs`, `/sys/class/drm/*/modes` | the sway config uses `output *` precisely because this is unknown |
 | Touch orientation | touch each corner under `evtest` | may need a libinput calibration matrix |
 | Does a GTK4 app render legibly at `output * scale 0.75`? | open one, look at it | this is the go/no-go for the whole GUI-app strategy |
-| RAM baseline and with the shell running | `free -m`, `smem -k` | the < 150 MB shell / < 250 MB session budget |
