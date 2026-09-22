@@ -56,11 +56,18 @@ status=$?
 # and the VT so the next session cannot start, and a client whose compositor
 # vanished can spin on the dead socket at 100% CPU (imv does). Take the whole
 # login session down with sway.
-session_id=$(ps -o sess= -p "$$" 2>/dev/null | tr -d ' ')
+#
+# The sweep goes through the cgroup, not the session id: sway calls setsid() for
+# everything it launches, so those get session ids of their own, but nothing can
+# leave the cgroup logind put them in.
+cgroup=$(cut -d: -f3 /proc/self/cgroup | head -1)
+procs="/sys/fs/cgroup${cgroup}/cgroup.procs"
+
 leftovers() {
-  [ -n "$session_id" ] || return 0
-  ps -o pid= -s "$session_id" 2>/dev/null | tr -d ' ' | grep -v "^$$\$" || true
+  [ -r "$procs" ] || return 0
+  grep -vE "^($$|$PPID)\$" "$procs" || true
 }
+
 for signal in TERM KILL; do
   pids=$(leftovers)
   [ -n "$pids" ] || break
