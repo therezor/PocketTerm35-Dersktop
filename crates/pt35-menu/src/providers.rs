@@ -51,7 +51,7 @@ pub fn items(builtin: Builtin) -> Items {
     match builtin {
         Builtin::Launcher => launcher(),
         Builtin::Quick => quick(),
-        Builtin::System => Vec::new(),
+        Builtin::System => system(),
         Builtin::Windows => windows(),
         Builtin::Wifi => wifi(),
         Builtin::Bluetooth => bluetooth(),
@@ -99,6 +99,131 @@ fn launcher() -> Items {
     out
 }
 
+// ----------------------------------------------------------------- system
+
+/// The dashboard. Everything here is a file in /proc or /sys, read once when
+/// the screen opens: no daemon round trip, no sampling thread.
+pub fn system() -> Items {
+    let mut out = Vec::new();
+    if let Some((used, total)) = memory() {
+        out.push(bar_item(
+            "Memory",
+            used * 100 / total.max(1),
+            &format!(
+                "{:.1} / {:.1} GB",
+                used as f32 / 1024.0 / 1024.0,
+                total as f32 / 1024.0 / 1024.0
+            ),
+            "drive-harddisk",
+        ));
+    }
+    if let Some((used, total)) = storage() {
+        out.push(bar_item(
+            "Storage",
+            used * 100 / total.max(1),
+            &format!("{used} / {total} GB"),
+            "drive-multidisk",
+        ));
+    }
+    if let Some(load) = load_percent() {
+        out.push(bar_item(
+            "Load",
+            load,
+            &format!("{load}%"),
+            "utilities-system-monitor",
+        ));
+    }
+    if let Some(temp) = temperature() {
+        out.push(read_item("Temperature", &format!("{temp:.1} C"), "temp"));
+    }
+    if let Some(address) = ip_address() {
+        out.push(read_item("Address", &address, "network-wired"));
+    }
+    if let Some(up) = uptime() {
+        out.push(read_item("Uptime", &up, "clock"));
+    }
+    out.push(read_item("Shell", env!("CARGO_PKG_VERSION"), "computer"));
+    out
+}
+
+fn bar_item(label: &str, percent: u64, note: &str, icon: &str) -> Item {
+    Item {
+        label: label.into(),
+        payload: String::new(),
+        note: note.into(),
+        glyph: format!("bar:{}", percent.min(100)),
+        icon: icon.into(),
+    }
+}
+
+fn read_item(label: &str, note: &str, icon: &str) -> Item {
+    Item {
+        label: label.into(),
+        payload: String::new(),
+        note: note.into(),
+        glyph: "read".into(),
+        icon: icon.into(),
+    }
+}
+
+/// Used and total, in kB, the way `free` counts it.
+fn memory() -> Option<(u64, u64)> {
+    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let field = |name: &str| -> Option<u64> {
+        text.lines()
+            .find(|l| l.starts_with(name))?
+            .split_whitespace()
+            .nth(1)?
+            .parse()
+            .ok()
+    };
+    let total = field("MemTotal:")?;
+    let available = field("MemAvailable:")?;
+    Some((total.saturating_sub(available), total))
+}
+
+/// Used and total of the root filesystem, in GB.
+fn storage() -> Option<(u64, u64)> {
+    let out = run("df", &["-BG", "--output=used,size", "/"])?;
+    let line = out.lines().nth(1)?;
+    let mut fields = line.split_whitespace();
+    let used: u64 = fields.next()?.trim_end_matches('G').parse().ok()?;
+    let size: u64 = fields.next()?.trim_end_matches('G').parse().ok()?;
+    Some((used, size))
+}
+
+/// One-minute load as a percentage of all cores.
+fn load_percent() -> Option<u64> {
+    let text = std::fs::read_to_string("/proc/loadavg").ok()?;
+    let one: f32 = text.split_whitespace().next()?.parse().ok()?;
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1) as f32;
+    Some(((one / cores) * 100.0).min(100.0) as u64)
+}
+
+fn temperature() -> Option<f32> {
+    let raw = std::fs::read_to_string("/sys/class/thermal/thermal_zone0/temp").ok()?;
+    Some(raw.trim().parse::<f32>().ok()? / 1000.0)
+}
+
+fn ip_address() -> Option<String> {
+    let out = run("hostname", &["-I"])?;
+    out.split_whitespace().next().map(str::to_string)
+}
+
+fn uptime() -> Option<String> {
+    let text = std::fs::read_to_string("/proc/uptime").ok()?;
+    let seconds: f64 = text.split_whitespace().next()?.parse().ok()?;
+    let seconds = seconds as u64;
+    Some(format!(
+        "{:02}:{:02}:{:02}",
+        seconds / 3600,
+        (seconds % 3600) / 60,
+        seconds % 60
+    ))
+}
+
 // ------------------------------------------------------------------ quick
 
 /// The quick panel: switches with their state, sliders with their value, and
@@ -141,8 +266,9 @@ pub fn quick() -> Items {
         Item {
             label: "Input".into(),
             payload: "ctl:mode toggle".into(),
-            note: if mouse { "mouse" } else { "buttons" }.into(),
-            glyph: switch(mouse),
+            note: if mouse { "MOUSE" } else { "BUTTONS" }.into(),
+            // Not a switch: neither mode is "off".
+            glyph: "read".into(),
             icon: if mouse {
                 "input-mouse"
             } else {

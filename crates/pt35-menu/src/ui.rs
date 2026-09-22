@@ -814,6 +814,33 @@ impl Menu {
                     );
                     self.note(canvas, &row.note, x - 10, centre);
                 }
+                "bar" => {
+                    let value: i32 = row
+                        .glyph
+                        .split(':')
+                        .nth(1)
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    let note_w = self.mono.measure(&row.note, theme.font.size_hint) as i32;
+                    let bar_x = label_x + 130;
+                    let bar_w = right - note_w - 12 - bar_x;
+                    canvas.rect(bar_x, centre - 5, bar_w as u32, 10, theme.color.border);
+                    let filled = bar_w * value.clamp(0, 100) / 100;
+                    let colour = match value {
+                        85..=100 => theme.color.critical,
+                        60..=84 => theme.color.warning,
+                        _ => theme.color.accent,
+                    };
+                    canvas.rect(bar_x, centre - 5, filled as u32, 10, colour);
+                    self.mono.draw(
+                        canvas,
+                        &row.note,
+                        right - note_w,
+                        centre + 5,
+                        theme.font.size_hint,
+                        theme.color.foreground,
+                    );
+                }
                 "slide" => {
                     let value: i32 = row
                         .glyph
@@ -1047,7 +1074,7 @@ impl App for Menu {
         let quick = matches!(
             self.model.screen().source,
             crate::model::Source::Dynamic {
-                builtin: pt35_common::menu::Builtin::Quick,
+                builtin: pt35_common::menu::Builtin::Quick | pt35_common::menu::Builtin::System,
                 ..
             }
         );
