@@ -13,20 +13,41 @@ That is with the patched keyboard firmware in [`firmware/`](../firmware/).
 Stock, the six face buttons send the letters `l r x y b a` and the shell has to
 grab them, which is what "button mode" below is for.
 
-## Global
+## Two modes
 
-| control | action |
+Buttons mode is the default. Mouse mode exists because some GUI controls only
+answer a cursor. Select switches between them and the bar says which you are in.
+
+| control | Buttons | Mouse |
+|---|---|---|
+| D-pad | arrows | move the cursor |
+| A | Enter | left click |
+| B | Escape | right click |
+| X | Tab | scroll up |
+| Y | fullscreen toggle | scroll down |
+| L / R | previous / next app | previous / next app |
+| Start | menu | menu |
+| Select | switch mode | switch mode |
+
+Holding A in Mouse mode drags: the press and the release are sent separately.
+The D-pad repeats faster there (40/s against 8/s) so the cursor crosses the
+screen in about a second.
+
+Both modes are sway bindings on the keysyms the patched firmware sends, so
+nothing runs in the background and the letters keep typing. The menu takes them
+back while it is open, because it reads the same keys itself.
+
+## Keyboard
+
+| key | action |
 |---|---|
-| Start | open or close the menu, from anywhere |
-| Select | switch to the next open app |
 | Super + Space, Menu key | open the menu |
-| Super + b | button mode on or off |
+| Super + m | switch mode |
 | Super + Enter | terminal |
 | Super + q | close the window |
 | Super + w | window switcher |
 | Super + 1..9 | workspace |
 | Super + Tab | next workspace |
-| Super + p | keyboard pointer, `g` for grid jump |
 | Super + f | fullscreen toggle |
 | Super + r | fit an oversized window to the screen |
 | Super + s | screenshot |
@@ -34,24 +55,6 @@ grab them, which is what "button mode" below is for.
 
 There is no tiling. One window owns the screen and the rest wait on their own
 workspace: pt35d moves a second window off a workspace that already has one.
-
-## The face buttons inside an app
-
-| button | action |
-|---|---|
-| A | Enter |
-| B | Escape |
-| X | Tab |
-| Y | fullscreen toggle |
-| L / R | previous / next app |
-
-The compositor holds these all the time, including in the terminal: with the
-patched firmware they are not letters, so nothing is lost. The menu drops them
-while it is open, because it reads the same keys itself.
-
-`Super`+`b` or Quick > Buttons turns the grab off, and the bar shows `BTN` or
-`TXT`. On stock firmware that toggle is the only way to use the buttons as
-buttons, and it costs you the letters `a b x y l r` while it is on.
 
 ## Menu
 
@@ -65,7 +68,6 @@ buttons, and it costs you the letters `a b x y l r` while it is on.
 | L / R | page |
 | 1-9 | pick that visible row |
 | Start, Escape | close |
-| Select | close and switch app |
 | touch | tap a tile, a row or a legend pill |
 
 On the window switcher, Y closes the highlighted window. On a quick setting, the

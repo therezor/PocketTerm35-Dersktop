@@ -148,7 +148,7 @@ install_from_source() {
   run "su -l '$TARGET_USER' -c 'cd \"$src\" && cargo build --release --workspace'"
 
   msg "installing files"
-  for binary in pt35d pt35ctl pt35-bar pt35-menu pt35-pointer; do
+  for binary in pt35d pt35ctl pt35-bar pt35-menu; do
     run "install -m755 '$src/target/release/$binary' /usr/bin/$binary"
   done
   run "install -m755 '$src/scripts/pt35-session' /usr/bin/pt35-session"
@@ -232,7 +232,7 @@ do_uninstall() {
     fi
   fi
   run "rm -f /usr/bin/pt35d /usr/bin/pt35ctl /usr/bin/pt35-bar /usr/bin/pt35-menu \
-        /usr/bin/pt35-pointer /usr/bin/pt35-session /usr/bin/pt35-kbd \
+        /usr/bin/pt35-session /usr/bin/pt35-kbd \
         /etc/keyd/pocketterm35.conf \
         /etc/sudoers.d/pt35-cpu-profile /usr/share/wayland-sessions/pt35-session.desktop"
   run "rm -rf '$SHARE' /usr/lib/pt35"

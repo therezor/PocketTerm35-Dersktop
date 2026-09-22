@@ -15,7 +15,7 @@
 # Tiles also take `glyph` (1-2 characters), `tint` (#rrggbb) and `note`.
 # `layout = "grid"` draws tiles, the default draws rows.
 #
-# `state = "buttons" | "pointer" | "volume" | "brightness" | "network" | "scale"`
+# `state = "mode" | "volume" | "brightness" | "network" | "scale"`
 # draws that value at the end of the row, so a toggle says which way it is set.
 
 root = "main"
@@ -56,8 +56,7 @@ entries = [
 [menu.quick]
 title = "Quick"
 entries = [
-  { label = "Buttons",     action = "buttons toggle", state = "buttons" },
-  { label = "Mouse",       action = "pointer toggle", state = "pointer" },
+  { label = "Input mode",  action = "mode toggle", state = "mode" },
   { label = "Volume",      adjust = "volume" },
   { label = "Brightness",  adjust = "brightness" },
   { label = "Touchscreen", action = "touch toggle" },

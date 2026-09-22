@@ -27,7 +27,8 @@ gaps inner 0
 gaps outer 0
 smart_borders on
 
-# No mouse on this device. The cursor only exists while pt35-pointer is armed.
+# No mouse on this device. The cursor only exists in Mouse mode, where pt35d
+# lifts the hide timeout.
 focus_follows_mouse no
 mouse_warping none
 seat * hide_cursor 1500
@@ -85,16 +86,18 @@ exec --no-startup-id foot
 # menu is open. See crates/pt35d/src/buttons.rs.
 
 # Start (KEY_PAUSE) is the menu: launcher, windows, quick settings, power.
-# Select (KEY_SYSRQ) switches to the next open app. Neither carries a character,
-# so both are safe to grab while typing. A sway binding beats any surface, so
-# Start closes the menu again and Select switches out of it.
+# Select (KEY_SYSRQ) switches between the two input modes. Neither carries a
+# character, so both are safe to grab while typing. A sway binding beats any
+# surface, so Start closes the menu again from inside it.
+#
+# These two are bound here, not by pt35d, so that no mode can lose them.
 bindsym Pause       exec $menu
 bindsym $mod+space  exec $menu
 bindsym Menu        exec $menu
 
-bindsym Print       exec $ctl window next
-bindsym Sys_Req     exec $ctl window next
-bindsym $mod+b      exec $ctl buttons toggle
+bindsym Print       exec $ctl mode toggle
+bindsym Sys_Req     exec $ctl mode toggle
+bindsym $mod+m      exec $ctl mode toggle
 
 # Fallbacks on Alt for a unit whose firmware does not send Super.
 bindsym Mod1+space  exec $menu
@@ -109,9 +112,6 @@ bindsym $mod+f      fullscreen toggle
 bindsym $mod+t      floating toggle
 # force an oversized window back on-screen
 bindsym $mod+r      exec $ctl window fit
-# keyboard-driven mouse (pt35-pointer)
-bindsym $mod+p      exec $ctl pointer toggle
-bindsym $mod+g      exec $ctl pointer grid
 bindsym $mod+s      exec $ctl screenshot
 bindsym $mod+Shift+c reload
 bindsym $mod+Shift+e exec $ctl power menu

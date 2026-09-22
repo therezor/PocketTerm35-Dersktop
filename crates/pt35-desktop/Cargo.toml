@@ -34,7 +34,6 @@ assets = [
     ["target/release/pt35ctl", "usr/bin/", "755"],
     ["target/release/pt35-bar", "usr/bin/", "755"],
     ["target/release/pt35-menu", "usr/bin/", "755"],
-    ["target/release/pt35-pointer", "usr/bin/", "755"],
     ["../../scripts/pt35-session", "usr/bin/", "755"],
     ["../../scripts/pt35-kbd", "usr/bin/", "755"],
     ["../../scripts/pt35-cpu-profile", "usr/lib/pt35/", "755"],

@@ -74,13 +74,3 @@ fn gui_apps_that_need_room_shrink_themselves() {
         );
     }
 }
-
-#[test]
-fn every_app_keeps_the_face_buttons() {
-    // The patched firmware sends F13-F18 for them, so holding the buttons costs
-    // no letter and there is no reason for an app to give them up.
-    let apps: AppTable = load("apps.toml");
-    for (id, app) in &apps.apps {
-        assert!(app.buttons, "app {id:?} gives up the face buttons");
-    }
-}

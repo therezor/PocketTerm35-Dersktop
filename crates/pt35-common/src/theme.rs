@@ -83,10 +83,12 @@ pub struct Menu {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Pointer {
-    pub speed: f32,
-    pub accel: f32,
-    pub grid_levels: u8,
-    pub grid_labels: String,
+    /// Pixels the cursor moves per D-pad step.
+    pub step: i32,
+    /// Key repeat while the cursor is on the D-pad. Faster than navigating a
+    /// list, or the cursor crawls.
+    pub repeat_delay: u32,
+    pub repeat_rate: u32,
 }
 
 /// `auto` hides a widget when the hardware it reports on is absent — which is
@@ -199,10 +201,9 @@ impl Default for Menu {
 impl Default for Pointer {
     fn default() -> Self {
         Self {
-            speed: 380.0,
-            accel: 2.2,
-            grid_levels: 2,
-            grid_labels: "asdfghjkl".into(),
+            step: 16,
+            repeat_delay: 200,
+            repeat_rate: 40,
         }
     }
 }

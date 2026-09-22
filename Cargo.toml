@@ -7,7 +7,6 @@ members = [
     "crates/pt35-ui",
     "crates/pt35-bar",
     "crates/pt35-menu",
-    "crates/pt35-pointer",
     "crates/pt35-desktop",
 ]
 

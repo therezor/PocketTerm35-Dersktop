@@ -6,7 +6,7 @@
 
 use anyhow::{bail, Context, Result};
 use pt35_common::ipc::{
-    CpuProfile, Delta, PointerMode, PowerAction, Request, Response, Status, Toggle, WindowAction,
+    CpuProfile, Delta, ModeRequest, PowerAction, Request, Response, Status, Toggle, WindowAction,
 };
 
 mod client;
@@ -19,14 +19,13 @@ usage:
   pt35ctl launch APP
   pt35ctl volume +5 | -5 | 50 | mute
   pt35ctl brightness +10 | -10 | 50
-  pt35ctl pointer [toggle|on|off|grid]
+  pt35ctl mode [toggle|buttons|mouse]
   pt35ctl scale [1.0|0.75|cycle]
   pt35ctl window fit|close|next|prev|fullscreen
   pt35ctl screenshot
   pt35ctl cpu powersave|balanced|performance
   pt35ctl power screenoff|lock|logout|reboot|poweroff|menu
   pt35ctl touch on|off|toggle
-  pt35ctl buttons on|off|toggle
   pt35ctl reload
   pt35ctl status [--json]
 ";
@@ -101,17 +100,14 @@ fn parse(argv: &[&str]) -> Result<Request> {
             change: delta(value)?,
         },
 
-        ["pointer"] | ["pointer", "toggle"] => Request::Pointer {
-            mode: PointerMode::Toggle,
+        ["mode"] | ["mode", "toggle"] => Request::Mode {
+            mode: ModeRequest::Toggle,
         },
-        ["pointer", "on"] | ["pointer", "move"] => Request::Pointer {
-            mode: PointerMode::Move,
+        ["mode", "buttons"] => Request::Mode {
+            mode: ModeRequest::Buttons,
         },
-        ["pointer", "off"] => Request::Pointer {
-            mode: PointerMode::Off,
-        },
-        ["pointer", "grid"] => Request::Pointer {
-            mode: PointerMode::Grid,
+        ["mode", "mouse"] => Request::Mode {
+            mode: ModeRequest::Mouse,
         },
 
         ["scale"] | ["scale", "cycle"] => Request::Scale { value: None },
@@ -160,12 +156,6 @@ fn parse(argv: &[&str]) -> Result<Request> {
         },
 
         ["touch", action] => Request::Touch {
-            action: toggle(action)?,
-        },
-        ["buttons"] => Request::Buttons {
-            action: Toggle::Toggle,
-        },
-        ["buttons", action] => Request::Buttons {
             action: toggle(action)?,
         },
         ["reload"] => Request::Reload,
@@ -232,10 +222,7 @@ fn print_status(s: &Status) {
         }
     );
     println!("network     {}", s.network.as_deref().unwrap_or("-"));
-    println!(
-        "pointer     {}",
-        if s.pointer_armed { "armed" } else { "off" }
-    );
+    println!("mode        {}", s.input_mode.label());
 }
 
 #[cfg(test)]
@@ -277,9 +264,15 @@ mod tests {
             }
         );
         assert_eq!(
-            parse(&["pointer", "toggle"]).unwrap(),
-            Request::Pointer {
-                mode: PointerMode::Toggle
+            parse(&["mode", "toggle"]).unwrap(),
+            Request::Mode {
+                mode: ModeRequest::Toggle
+            }
+        );
+        assert_eq!(
+            parse(&["mode", "mouse"]).unwrap(),
+            Request::Mode {
+                mode: ModeRequest::Mouse
             }
         );
         assert_eq!(
@@ -314,8 +307,8 @@ mod tests {
         // Keep in step with config/pt35/menu.toml: every `action = "..."` there
         // must be a command this binary understands.
         for action in [
-            "buttons toggle",
-            "pointer toggle",
+            "mode toggle",
+            "mode mouse",
             "scale cycle",
             "cpu powersave",
             "cpu balanced",

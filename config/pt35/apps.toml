@@ -5,14 +5,8 @@
 # the value as GDK_DPI_SCALE and QT_SCALE_FACTOR: Qt and Chromium shrink their
 # whole UI, GTK3 shrinks only its text.
 #
-# `buttons` is true unless stated: A B X Y L R act as Enter, Escape, Tab,
-# fullscreen and app switching. With the patched keyboard firmware those buttons
-# are not letters, so this is safe even in a terminal. On stock firmware, set
-# `buttons = false` for anything you type into.
-#
-# `pointer = "on_demand"` means the app is easier with a cursor, not that it
-# gets one: an armed pointer holds the keyboard, so nothing else can be typed.
-# Quick > Mouse, or Super+p, arms it.
+# The face buttons behave the same in every app (see docs/KEYS.md), so there is
+# nothing per-app to say about them.
 #
 # `exec` must be a command that is useful with no arguments. A viewer that opens
 # on nothing shows a blank screen, so images and video are pointed at a folder.
@@ -31,7 +25,6 @@ exec      = "pcmanfm"
 match     = { app_id = "pcmanfm", class = "Pcmanfm" }
 workspace = 2
 scale     = 0.75
-pointer   = "on_demand"
 
 [app.editor]
 label     = "Editor"
@@ -52,7 +45,6 @@ exec      = "vlc --intf qt"
 match     = { app_id = "vlc", class = "vlc" }
 workspace = 5
 scale     = 0.75
-pointer   = "on_demand"
 
 [app.images]
 label     = "Images"
@@ -72,7 +64,6 @@ label     = "Browser"
 exec      = "chromium --ozone-platform=wayland --force-device-scale-factor=0.75"
 match     = { app_id = "chromium" }
 workspace = 8
-pointer   = "on_demand"
 
 [app.calculator]
 label     = "Calculator"
@@ -80,4 +71,3 @@ exec      = "galculator"
 match     = { app_id = "galculator", class = "Galculator" }
 workspace = 9
 scale     = 0.75
-pointer   = "on_demand"

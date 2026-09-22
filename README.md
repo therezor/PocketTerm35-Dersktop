@@ -22,7 +22,6 @@ default where a good one exists, because they are lighter and read better on a
                  │  CPU profile, idle policy, hooks, status feed
     pt35-bar ────┤  18px status strip (layer-shell, software-rendered)
     pt35-menu ───┤  fullscreen launcher / window switcher / settings / power
-    pt35-pointer ┤  D-pad cursor + two-press grid jump (wlr-virtual-pointer)
     pt35ctl ─────┘  the CLI every key binding and hook calls
 ```
 
@@ -61,14 +60,14 @@ downloading a release.
 | key | what it does |
 |---|---|
 | `Start` | open or close the menu — the hub for everything |
-| `Select` | switch to the next open app |
+| `Select` | switch between Buttons mode and Mouse mode |
+| `L` / `R` | previous / next app |
 | `Super`+`Space` | open the menu |
-| `Super`+`b` | button mode: A B X Y L R stop typing and act as buttons |
+| `Super`+`m` | switch between Buttons mode and Mouse mode |
 | `Super`+`Enter` | new terminal |
 | `Super`+`1`…`9` | go to that workspace (one app each) |
 | `Super`+`Tab` | next workspace |
 | `Super`+`q` | close the window |
-| `Super`+`p` | arm the keyboard pointer (`g` inside it = grid jump) |
 | `Super`+`f` | true fullscreen (hides the bar) |
 | `Super`+`r` | drag an oversized window back on screen |
 | `Super`+`s` | screenshot |
@@ -85,8 +84,8 @@ System defaults live in `/usr/share/pt35-desktop/pt35/`; anything you drop in
 | file | what it controls |
 |---|---|
 | `menu.toml` | the whole menu tree: submenus, apps, commands, `pt35ctl` actions |
-| `apps.toml` | per-app profile: command, workspace, output scale, pointer policy, env |
-| `theme.toml` | colours, font sizes, bar height, menu row height, pointer speed |
+| `apps.toml` | per-app profile: command, workspace, toolkit scale, env |
+| `theme.toml` | colours, font sizes, bar height, menu row height |
 | `~/.config/pt35/hooks/hook_*` | run on startup, low battery, app launch, shutdown |
 
 The one knob that matters most is `scale` in `apps.toml`. At `1.0` the panel is
@@ -97,7 +96,7 @@ GTK4 and Qt dialogs fit. `pt35d` switches it as you move between workspaces.
 
 Written against the hardware facts in [docs/hardware-facts.md](docs/hardware-facts.md).
 Phases 0 and 1 of the plan (probe, boot config, session, keymap) and the Rust
-shell (daemon, bar, menu, pointer) are implemented; the on-device verification
+shell (daemon, bar, menu) are implemented; the on-device verification
 pass is what turns the placeholders in `keyd/pocketterm35.conf` into real key
 codes. Run `sudo /usr/share/pt35-desktop/pt35-probe.sh > hardware-facts.md` on
 the unit and the rest follows from there.

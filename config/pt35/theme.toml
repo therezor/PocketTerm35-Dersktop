@@ -53,8 +53,9 @@ columns       = 3
 tile_height   = 86
 gap           = 10
 
+# Mouse mode. 16px at 40 repeats a second crosses the 640px panel in a second,
+# and still lands on a 24px close button.
 [pointer]
-speed         = 380.0    # px/s at full deflection
-accel         = 2.2      # exponent applied while a direction is held
-grid_levels   = 2
-grid_labels   = "asdfghjkl"
+step          = 16
+repeat_delay  = 200
+repeat_rate   = 40

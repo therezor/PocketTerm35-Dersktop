@@ -23,9 +23,9 @@ pub enum Request {
     Brightness {
         change: Delta,
     },
-    /// Arm / disarm the keyboard-driven pointer, or enter grid-jump mode.
-    Pointer {
-        mode: PointerMode,
+    /// Switch between the two input modes.
+    Mode {
+        mode: ModeRequest,
     },
     /// Set the sway output scale, or cycle through the configured ones.
     Scale {
@@ -36,10 +36,6 @@ pub enum Request {
     /// Close the focused window, or move focus between windows.
     Window {
         action: WindowAction,
-    },
-    /// Button mode: A B X Y L R act as buttons inside apps instead of typing.
-    Buttons {
-        action: Toggle,
     },
     Screenshot,
     Cpu {
@@ -103,12 +99,33 @@ pub enum WindowAction {
     Fullscreen,
 }
 
+/// The device has twelve controls and two things to do with them, so there are
+/// two modes and nothing else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputMode {
+    /// D-pad navigates, A is Enter, B is Escape. The default.
+    #[default]
+    Buttons,
+    /// D-pad moves the cursor, A and B are the mouse buttons.
+    Mouse,
+}
+
+impl InputMode {
+    /// What the bar shows.
+    pub fn label(self) -> &'static str {
+        match self {
+            InputMode::Buttons => "BTN",
+            InputMode::Mouse => "MOUSE",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PointerMode {
-    Off,
-    Move,
-    Grid,
+pub enum ModeRequest {
+    Buttons,
+    Mouse,
     Toggle,
 }
 
@@ -152,10 +169,8 @@ pub struct Status {
     pub volume_percent: Option<u8>,
     pub muted: Option<bool>,
     pub network: Option<String>,
-    pub pointer_armed: bool,
-    /// True while the face buttons are grabbed as buttons, false while they
-    /// type. The bar shows which, because the same key does two things.
-    pub button_mode: bool,
+    #[serde(default)]
+    pub input_mode: InputMode,
     pub scale: f32,
     pub cpu_profile: Option<CpuProfile>,
     /// Open windows, for the dock in the bar.
@@ -216,8 +231,8 @@ mod tests {
         roundtrip(Request::Window {
             action: WindowAction::Close,
         });
-        roundtrip(Request::Buttons {
-            action: Toggle::Toggle,
+        roundtrip(Request::Mode {
+            mode: ModeRequest::Toggle,
         });
     }
 

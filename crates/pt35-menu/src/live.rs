@@ -91,8 +91,7 @@ pub fn state_value(field: StateField, status: Option<&Status>) -> String {
         return "--".into();
     };
     match field {
-        StateField::Buttons => if status.button_mode { "BTN" } else { "TEXT" }.into(),
-        StateField::Pointer => if status.pointer_armed { "ON" } else { "OFF" }.into(),
+        StateField::Mode => status.input_mode.label().into(),
         StateField::Volume => value(Adjust::Volume, Some(status)),
         StateField::Brightness => value(Adjust::Brightness, Some(status)),
         StateField::Scale => value(Adjust::Scale, Some(status)),
@@ -155,12 +154,11 @@ mod tests {
     #[test]
     fn a_toggle_says_which_way_it_is_set() {
         let s = Status {
-            button_mode: true,
+            input_mode: pt35_common::ipc::InputMode::Mouse,
             ..status()
         };
-        assert_eq!(state_value(StateField::Buttons, Some(&s)), "BTN");
-        assert_eq!(state_value(StateField::Pointer, Some(&s)), "OFF");
-        assert_eq!(state_value(StateField::Buttons, None), "--");
+        assert_eq!(state_value(StateField::Mode, Some(&s)), "MOUSE");
+        assert_eq!(state_value(StateField::Mode, None), "--");
     }
 
     #[test]

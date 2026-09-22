@@ -35,18 +35,15 @@ Captured from the board, not guessed. See `docs/hardware-facts.md`.
 
 Six of the twelve buttons type letters, so input is modal, in two places.
 
-With the patched firmware no control is a character, so the modes only matter
-on a stock unit. The menu keeps them: nav mode (A opens, B back, X search, Y
-home, L/R page, 1-9 pick a row) and filter mode (letters type).
+Two modes, nothing else: Buttons (default) and Mouse. Buttons mode is D-pad as
+arrows, A Enter, B Escape, X Tab, Y fullscreen. Mouse mode is D-pad moving the
+cursor, A and B the clicks, X and Y the wheel. L and R switch app in both, Start
+is the menu and Select switches mode. Both are sway bindings on the firmware's
+keysyms (`pt35d`'s `modes.rs`), dropped while the menu is open because a sway
+binding beats any surface and the menu reads the same keys.
 
-In apps the compositor holds the six face buttons all the time (`pt35d`'s
-`buttons.rs`) and turns them into Enter, Escape, Tab, fullscreen and app
-prev/next. It drops them while the menu is open, because a sway binding beats
-any surface and the menu reads the same keys. Super+b or Quick > Buttons turns
-the grab off.
-
-Start opens and closes the menu from anywhere. Select switches to the next open
-app, and closes the menu on the way.
+The menu itself is still modal, for a stock unit where the letters are the
+buttons: nav mode (A opens, B back, X search, Y home) and filter mode.
 
 ## Layout
 

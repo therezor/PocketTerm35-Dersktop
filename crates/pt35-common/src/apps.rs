@@ -32,11 +32,6 @@ pub struct AppProfile {
     pub scale: f32,
     /// Open true-fullscreen (hides our bar) — for video and games.
     pub fullscreen: bool,
-    /// Whether the keyboard-driven pointer arms itself for this app.
-    pub pointer: PointerPolicy,
-    /// True when the face buttons act as buttons in this app. Default. Only an
-    /// app you type into (terminal, editor) sets it false.
-    pub buttons: bool,
     /// Extra environment for the child process.
     pub env: BTreeMap<String, String>,
 }
@@ -49,18 +44,6 @@ pub struct Match {
     pub title: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum PointerPolicy {
-    /// Never arm the pointer (keyboard-only app). The default.
-    #[default]
-    Off,
-    /// Do not arm it, but remember this app likes it (bar hint).
-    OnDemand,
-    /// Arm the pointer as soon as the app takes focus.
-    Auto,
-}
-
 impl Default for AppProfile {
     fn default() -> Self {
         Self {
@@ -70,8 +53,6 @@ impl Default for AppProfile {
             workspace: 0,
             scale: 1.0,
             fullscreen: false,
-            pointer: PointerPolicy::Off,
-            buttons: true,
             env: BTreeMap::new(),
         }
     }
@@ -188,7 +169,6 @@ exec = "chromium --ozone-platform=wayland"
 match = { app_id = "chromium" }
 workspace = 8
 scale = 0.75
-pointer = "auto"
 env = { FOO = "bar" }
 "#,
         )
@@ -196,7 +176,6 @@ env = { FOO = "bar" }
         table.validate().unwrap();
         let app = table.get("browser").unwrap();
         assert_eq!(app.scale, 0.75);
-        assert_eq!(app.pointer, PointerPolicy::Auto);
         assert_eq!(app.sway_criteria(), "[app_id=\"chromium\"]");
         assert_eq!(app.env["FOO"], "bar");
     }
@@ -218,18 +197,8 @@ env = { FOO = "bar" }
         let table: AppTable = toml::from_str("[app.x]\nexec = \"true\"\n").unwrap();
         let app = table.get("x").unwrap();
         assert_eq!(app.scale, 1.0);
-        assert_eq!(app.pointer, PointerPolicy::Off);
         assert!(!app.fullscreen);
         table.validate().unwrap();
-    }
-
-    #[test]
-    fn buttons_are_on_unless_a_profile_opts_out() {
-        let table: AppTable =
-            toml::from_str("[app.x]\nexec = \"true\"\n[app.y]\nexec = \"true\"\nbuttons = false\n")
-                .unwrap();
-        assert!(table.get("x").unwrap().buttons);
-        assert!(!table.get("y").unwrap().buttons);
     }
 
     #[test]

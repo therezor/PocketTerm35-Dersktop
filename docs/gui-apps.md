@@ -43,6 +43,5 @@ fits no other way. Nothing does it automatically.
 1. Try `pt35ctl scale 0.75` by hand: the panel gives clients 853x640 logical.
    The shell shrinks with it, so this is a last resort, not a default.
 2. `Super`+`r` (`pt35ctl window fit`) drags an oversized window back on screen.
-3. Arm the pointer (`Super`+`p`) and use grid jump (`g`) to reach controls that
-   are only clickable.
+3. Switch to Mouse mode (Select) for controls that only answer a cursor.
 4. If it is still unusable, record it here and suggest the terminal alternative.

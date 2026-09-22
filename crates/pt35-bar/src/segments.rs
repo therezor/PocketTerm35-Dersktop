@@ -16,22 +16,15 @@ pub struct Segment {
 pub fn right(status: Option<&Status>, theme: &Theme, clock: &str) -> Vec<Segment> {
     let mut out = Vec::new();
     if let Some(status) = status {
-        // The same six keys either type or act as buttons, so the bar has to
-        // say which. It is the one piece of state you cannot see any other way.
+        // The D-pad either navigates or moves a cursor, and the same buttons
+        // either confirm or click. Nothing else on screen says which.
         out.push(Segment {
-            text: if status.button_mode { "BTN" } else { "TXT" }.into(),
-            color: if status.button_mode {
-                theme.color.accent
-            } else {
-                theme.color.muted
+            text: status.input_mode.label().into(),
+            color: match status.input_mode {
+                pt35_common::ipc::InputMode::Mouse => theme.color.warning,
+                pt35_common::ipc::InputMode::Buttons => theme.color.accent,
             },
         });
-        if status.pointer_armed {
-            out.push(Segment {
-                text: "ptr".into(),
-                color: theme.color.accent,
-            });
-        }
         if (status.scale - 1.0).abs() > 0.01 {
             out.push(Segment {
                 text: format!("{:.2}x", status.scale),
@@ -112,7 +105,7 @@ mod tests {
         let segments = right(Some(&status()), &theme, "12:34");
         assert_eq!(
             segments.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(),
-            ["TXT", "12:34"]
+            ["BTN", "12:34"]
         );
     }
 
@@ -135,31 +128,29 @@ mod tests {
     }
 
     #[test]
-    fn says_whether_the_face_buttons_type_or_act() {
+    fn says_which_mode_the_d_pad_is_in() {
         let theme = Theme::default();
         let mut s = status();
         assert!(right(Some(&s), &theme, "12:34")
             .iter()
-            .any(|seg| seg.text == "TXT"));
-        s.button_mode = true;
+            .any(|seg| seg.text == "BTN"));
+        s.input_mode = pt35_common::ipc::InputMode::Mouse;
         assert!(right(Some(&s), &theme, "12:34")
             .iter()
-            .any(|seg| seg.text == "BTN"));
+            .any(|seg| seg.text == "MOUSE"));
     }
 
     #[test]
-    fn surfaces_a_non_native_scale_and_the_pointer() {
+    fn surfaces_a_non_native_scale() {
         let theme = Theme::default();
         let status = Status {
             scale: 0.75,
-            pointer_armed: true,
             ..status()
         };
         let texts: Vec<String> = right(Some(&status), &theme, "12:34")
             .into_iter()
             .map(|s| s.text)
             .collect();
-        assert!(texts.contains(&"ptr".to_string()));
         assert!(texts.contains(&"0.75x".to_string()));
     }
 }

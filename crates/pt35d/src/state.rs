@@ -1,9 +1,10 @@
 //! Session state and the actions that change it.
 
 use anyhow::{bail, Result};
-use pt35_common::apps::{AppTable, PointerPolicy};
+use pt35_common::apps::AppTable;
 use pt35_common::ipc::{
-    CpuProfile, Delta, PointerMode, PowerAction, Request, Response, Status, Toggle, WindowAction,
+    CpuProfile, Delta, InputMode, ModeRequest, PowerAction, Request, Response, Status, Toggle,
+    WindowAction,
 };
 use pt35_common::menu::MenuTree;
 use pt35_common::theme::Theme;
@@ -22,13 +23,12 @@ pub struct Session {
     pub status: Status,
     sway: Option<Sway>,
     menu_proc: Option<Child>,
-    /// False until the face-button binds have been sent once. Nothing changes
-    /// workspace at startup, so waiting for a workspace change leaves the
-    /// buttons typing.
-    buttons_applied: bool,
-    pointer_proc: Option<Child>,
-    /// Whether button mode was on before the menu took the keyboard.
-    buttons_before_menu: bool,
+    /// False until the mode binds have been sent once. Nothing changes
+    /// workspace at startup, so waiting for a workspace change would leave the
+    /// buttons doing nothing.
+    mode_applied: bool,
+    /// The mode to go back to when the menu closes.
+    mode_before_menu: InputMode,
 }
 
 impl Session {
@@ -46,9 +46,8 @@ impl Session {
             },
             sway: None,
             menu_proc: None,
-            buttons_applied: false,
-            pointer_proc: None,
-            buttons_before_menu: false,
+            mode_applied: false,
+            mode_before_menu: InputMode::Buttons,
         };
         if let Err(e) = session.menu.validate() {
             log::error!("menu.toml is inconsistent ({e}); the menu key will show an error page");
@@ -113,17 +112,6 @@ impl Session {
         }
     }
 
-    /// Whether the face buttons act as buttons on this workspace. They do
-    /// everywhere except in an app you type into, so an unclaimed workspace
-    /// keeps them.
-    pub fn buttons_for_workspace(apps: &AppTable, workspace: u8) -> bool {
-        apps.apps
-            .values()
-            .find(|app| app.workspace == workspace)
-            .map(|app| app.buttons)
-            .unwrap_or(true)
-    }
-
     /// True once sway has gone. The daemon must not outlive it: a stale pt35d
     /// holds the socket and the next session cannot start.
     ///
@@ -148,16 +136,14 @@ impl Session {
         self.status.windows = self.window_list();
         self.spread_windows();
         if let Ok((workspace, app)) = self.sway().and_then(|s| s.focus()) {
-            let moved = workspace != self.status.workspace;
             self.status.workspace = workspace;
             self.status.app = app;
-            if (moved || !self.buttons_applied) && self.menu_proc.is_none() {
-                let buttons = Self::buttons_for_workspace(&self.apps, workspace);
-                if buttons != self.status.button_mode || !self.buttons_applied {
-                    match self.set_button_mode(buttons) {
-                        Ok(()) => self.buttons_applied = true,
-                        Err(e) => log::warn!("button mode: {e}"),
-                    }
+            // Nothing changes workspace at startup, so the binds have to go
+            // out on the first tick or the buttons do nothing until you move.
+            if !self.mode_applied && self.menu_proc.is_none() {
+                match self.set_mode(self.status.input_mode) {
+                    Ok(()) => self.mode_applied = true,
+                    Err(e) => log::warn!("input mode: {e}"),
                 }
             }
         } else {
@@ -168,15 +154,8 @@ impl Session {
         if let Some(child) = self.menu_proc.as_mut() {
             if matches!(child.try_wait(), Ok(Some(_))) {
                 self.menu_proc = None;
-                self.restore_buttons();
+                self.restore_mode();
             }
-        }
-        if !matches!(
-            self.pointer_proc.as_mut().map(|c| c.try_wait()),
-            Some(Ok(None))
-        ) {
-            self.pointer_proc = None;
-            self.status.pointer_armed = false;
         }
         self.low_battery_hook();
     }
@@ -275,8 +254,16 @@ impl Session {
                 Ok(Response::Ok)
             }
 
-            Request::Pointer { mode } => {
-                self.set_pointer(mode)?;
+            Request::Mode { mode } => {
+                let target = match mode {
+                    ModeRequest::Buttons => InputMode::Buttons,
+                    ModeRequest::Mouse => InputMode::Mouse,
+                    ModeRequest::Toggle => match self.status.input_mode {
+                        InputMode::Buttons => InputMode::Mouse,
+                        InputMode::Mouse => InputMode::Buttons,
+                    },
+                };
+                self.set_mode(target)?;
                 Ok(Response::Ok)
             }
 
@@ -341,16 +328,6 @@ impl Session {
                 Ok(Response::Ok)
             }
 
-            Request::Buttons { action } => {
-                let want = match action {
-                    Toggle::On => true,
-                    Toggle::Off => false,
-                    Toggle::Toggle => !self.status.button_mode,
-                };
-                self.set_button_mode(want)?;
-                Ok(Response::Ok)
-            }
-
             Request::Touch { action } => {
                 let arg = match action {
                     Toggle::On => "enabled",
@@ -394,14 +371,14 @@ impl Session {
                 let _ = child.kill();
                 let _ = child.wait();
             }
-            self.restore_buttons();
+            self.restore_mode();
         }
         if want_open {
-            // The menu reads the letters itself, so the compositor must not
-            // be holding them while it is up.
-            if self.status.button_mode {
-                self.buttons_before_menu = true;
-                let _ = self.set_button_mode(false);
+            // The menu reads the same keys itself, and a sway binding beats
+            // any surface, so the compositor must let go while it is up.
+            self.mode_before_menu = self.status.input_mode;
+            for command in crate::modes::release() {
+                let _ = self.sway_command(&command);
             }
             let mut cmd = Command::new("pt35-menu");
             if let Some(page) = page {
@@ -412,63 +389,20 @@ impl Session {
         Ok(())
     }
 
-    /// Grab or release the six letter buttons.
-    fn set_button_mode(&mut self, on: bool) -> Result<()> {
-        let commands = if on {
-            crate::buttons::enable()
-        } else {
-            crate::buttons::disable()
-        };
-        for command in commands {
+    /// Put the device in one mode or the other.
+    fn set_mode(&mut self, mode: InputMode) -> Result<()> {
+        for command in crate::modes::apply(mode, &self.theme.pointer.clone()) {
             self.sway_command(&command)?;
         }
-        self.status.button_mode = on;
+        self.status.input_mode = mode;
         Ok(())
     }
 
-    fn restore_buttons(&mut self) {
-        if self.buttons_before_menu {
-            self.buttons_before_menu = false;
-            let _ = self.set_button_mode(true);
+    fn restore_mode(&mut self) {
+        let mode = self.mode_before_menu;
+        if let Err(e) = self.set_mode(mode) {
+            log::warn!("input mode: {e}");
         }
-    }
-
-    fn set_pointer(&mut self, mode: PointerMode) -> Result<()> {
-        let running = matches!(
-            self.pointer_proc.as_mut().map(|c| c.try_wait()),
-            Some(Ok(None))
-        );
-        let target = match mode {
-            PointerMode::Toggle if running => PointerMode::Off,
-            PointerMode::Toggle => PointerMode::Move,
-            other => other,
-        };
-        if running {
-            if let Some(mut child) = self.pointer_proc.take() {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-        }
-        match target {
-            PointerMode::Off => self.status.pointer_armed = false,
-            PointerMode::Move | PointerMode::Grid => {
-                let arg = if matches!(target, PointerMode::Grid) {
-                    "grid"
-                } else {
-                    "move"
-                };
-                self.pointer_proc = Some(
-                    Command::new("pt35-pointer")
-                        .arg("--mode")
-                        .arg(arg)
-                        .stdin(Stdio::null())
-                        .spawn()?,
-                );
-                self.status.pointer_armed = true;
-            }
-            PointerMode::Toggle => unreachable!("resolved above"),
-        }
-        Ok(())
     }
 
     fn launch(&mut self, id: &str) -> Result<()> {
@@ -514,9 +448,6 @@ impl Session {
         }
         cmd.spawn()?;
 
-        if app.pointer == PointerPolicy::Auto {
-            let _ = self.set_pointer(PointerMode::Move);
-        }
         hooks::fire("launch", &[("PT35_APP", id.to_string())]);
         Ok(())
     }
@@ -713,20 +644,6 @@ mod tests {
         assert_eq!(next_scale(0.75), 0.6);
         assert_eq!(next_scale(0.6), 1.0);
         assert_eq!(next_scale(1.37), 1.0, "an unknown scale returns to native");
-    }
-
-    #[test]
-    fn a_workspace_takes_the_button_mode_of_the_app_that_owns_it() {
-        let apps: AppTable = toml::from_str(
-            "[app.term]\nexec = \"foot\"\nworkspace = 1\nbuttons = false\n[app.pix]\nexec = \"imv\"\nworkspace = 6\n",
-        )
-        .unwrap();
-        assert!(!Session::buttons_for_workspace(&apps, 1));
-        assert!(Session::buttons_for_workspace(&apps, 6));
-        assert!(
-            Session::buttons_for_workspace(&apps, 4),
-            "an unclaimed workspace keeps the buttons"
-        );
     }
 
     fn window(id: i64, workspace: u8, focused: bool) -> pt35_common::ipc::WindowInfo {
