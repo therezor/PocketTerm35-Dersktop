@@ -81,6 +81,12 @@ exec --no-startup-id foot
 bindsym $mod+space  exec $menu
 bindsym Menu        exec $menu
 
+# Fallbacks on Alt, in case this unit has no physical Super key: without them a
+# missing Mod4 would leave the session with no way to open anything.
+bindsym Mod1+space  exec $menu
+bindsym Mod1+Return exec $term
+bindsym Mod1+Tab    workspace next_on_output
+
 bindsym $mod+Return exec $term
 bindsym $mod+q      kill
 bindsym $mod+f      fullscreen toggle
