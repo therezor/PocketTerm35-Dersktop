@@ -66,6 +66,10 @@ pub enum Command {
     Action(String),
     /// Act on one item of a dynamic screen (focus a window, join a network…).
     Dynamic { builtin: Builtin, payload: String },
+    /// A shipped helper script behind a quick-panel switch. Not an app: it is
+    /// not remembered, not deduplicated, and does not hold the desktop's menu
+    /// off waiting for a window that will never appear.
+    Helper(String),
 }
 
 /// Result of feeding a key into the model.
@@ -479,7 +483,7 @@ impl Model {
                     "app" => Step::Run(Command::App(rest)),
                     "exec" => Step::Run(Command::Exec(rest)),
                     // A switch stays: watching it flip is the point.
-                    "sh" => Step::RunStay(Command::Exec(rest)),
+                    "sh" => Step::RunStay(Command::Helper(rest)),
                     "ctl" => Step::RunStay(Command::Action(rest)),
                     // The D-pad is the whole interaction for a slider.
                     _ => Step::Nothing,

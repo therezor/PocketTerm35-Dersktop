@@ -26,6 +26,10 @@ pub fn plan(command: &Command) -> Plan {
         // appears.
         Command::Exec(cmd) => Plan::Ctl(vec!["exec".into(), cmd.clone()]),
         Command::Action(args) => Plan::Ctl(args.split_whitespace().map(str::to_string).collect()),
+        // Straight to the shell. A helper is one of ours, it opens no window,
+        // and routing it through the daemon would file it under "apps you
+        // recently opened".
+        Command::Helper(cmd) => Plan::Shell(cmd.clone()),
         Command::Dynamic { builtin, payload } => dynamic(*builtin, payload),
     }
 }
@@ -127,6 +131,16 @@ mod tests {
             panic!("expected a shell plan");
         };
         assert!(cmd.contains(r"'My Net'\''s AP'"), "{cmd}");
+    }
+
+    #[test]
+    fn a_quick_panel_helper_goes_straight_to_the_shell() {
+        // Not through the daemon: toggling Wi-Fi is not an app launch and must
+        // not turn up in the launcher's recents.
+        assert_eq!(
+            plan(&Command::Helper("pt35-quick wifi toggle".into())),
+            Plan::Shell("pt35-quick wifi toggle".into())
+        );
     }
 
     #[test]
