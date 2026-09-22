@@ -62,21 +62,50 @@ impl App for Bar {
         let status = self.feed.get();
         let size = self.theme.font.size_bar;
         let pad = self.theme.bar.padding_x as i32;
-        // Baseline: centre the cap height in the strip.
         let baseline = (canvas.height as f32 / 2.0 + size * 0.36).round() as i32;
+        let centre = canvas.height as i32 / 2;
+        let pill_h = (canvas.height as i32 - 8).max(14);
 
         let mut x = pad;
-        for segment in segments::left(status.as_ref(), &self.theme) {
+        for (index, segment) in segments::left(status.as_ref(), &self.theme)
+            .into_iter()
+            .enumerate()
+        {
+            // The workspace number gets a pill. It is the one thing on the bar
+            // that changes as you move, so it has to be findable without reading.
+            if index == 0 {
+                let width = self.font.measure(&segment.text, size) as i32;
+                let pill_w = (width + 16).max(pill_h);
+                canvas.rounded_rect(
+                    x,
+                    centre - pill_h / 2,
+                    pill_w as u32,
+                    pill_h as u32,
+                    (pill_h / 2) as u32,
+                    segment.color,
+                );
+                self.font.draw(
+                    canvas,
+                    &segment.text,
+                    x + (pill_w - width) / 2,
+                    baseline,
+                    size,
+                    self.theme.color.accent_fg,
+                );
+                x += pill_w + pad;
+                continue;
+            }
             let text = self.font.elide(&segment.text, size, canvas.width / 2);
             x = self
                 .font
                 .draw(canvas, &text, x, baseline, size, segment.color)
-                + pad * 2;
+                + pad;
         }
 
-        // The right-hand side is laid out backwards from the edge so the clock
-        // never moves when a widget appears or disappears.
+        // Laid out backwards from the edge so the clock never moves when a
+        // widget appears or disappears.
         let mut right = canvas.width as i32 - pad;
+        let mut first = true;
         for segment in segments::right(status.as_ref(), &self.theme, &self.clock)
             .into_iter()
             .rev()
@@ -84,10 +113,20 @@ impl App for Bar {
             let width = self.font.measure(&segment.text, size) as i32;
             right -= width;
             if right <= x {
-                break; // out of room: drop the least important widgets
+                break;
             }
             self.font
                 .draw(canvas, &segment.text, right, baseline, size, segment.color);
+            if !first {
+                canvas.rect(
+                    right + width + pad - 1,
+                    centre - 1,
+                    2,
+                    2,
+                    self.theme.color.border,
+                );
+            }
+            first = false;
             right -= pad * 2;
         }
     }
