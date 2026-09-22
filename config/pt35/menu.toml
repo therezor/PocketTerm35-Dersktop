@@ -21,31 +21,31 @@ root = "main"
 title = "PT35"
 layout = "grid"
 entries = [
-  { label = "Apps",      goto = "apps",         glyph = "A",  tint = "#00ff88", note = "launcher" },
-  { label = "Windows",   builtin = "windows",   glyph = "W",  tint = "#29d67f", note = "running" },
-  { label = "Wi-Fi",     builtin = "wifi",      glyph = "≈", tint = "#22e0ff", note = "networks" },
-  { label = "Bluetooth", builtin = "bluetooth", glyph = "B", tint = "#7cffc4", note = "devices" },
-  { label = "Volume",    builtin = "audio",     glyph = "V",  tint = "#e3ff4f", note = "level" },
-  { label = "Settings",  goto = "settings",     glyph = "S",  tint = "#3f7a55", note = "system" },
-  { label = "Files",     app = "files",         glyph = "F",  tint = "#6bffb4", note = "browse" },
-  { label = "Terminal",  app = "terminal",      glyph = ">_", tint = "#00ff88", note = "shell" },
-  { label = "Power",     goto = "power",        glyph = "P",  tint = "#ff4d5e", note = "off" },
+  { label = "Apps",      goto = "apps",         glyph = "A",  tint = "#3ddc97", note = "launcher" },
+  { label = "Windows",   builtin = "windows",   glyph = "W",  tint = "#5fd0e8", note = "running" },
+  { label = "Wi-Fi",     builtin = "wifi",      glyph = "≈", tint = "#5fd0e8", note = "networks" },
+  { label = "Bluetooth", builtin = "bluetooth", glyph = "B", tint = "#9ad9c0", note = "devices" },
+  { label = "Volume",    builtin = "audio",     glyph = "V",  tint = "#e8c468", note = "level" },
+  { label = "Settings",  goto = "settings",     glyph = "S",  tint = "#7aa48e", note = "system" },
+  { label = "Files",     app = "files",         glyph = "F",  tint = "#9ad9c0", note = "browse" },
+  { label = "Terminal",  app = "terminal",      glyph = ">_", tint = "#3ddc97", note = "shell" },
+  { label = "Power",     goto = "power",        glyph = "P",  tint = "#ef6b73", note = "off" },
 ]
 
 [menu.apps]
 title = "Apps"
 layout = "grid"
 entries = [
-  { label = "Terminal", app = "terminal", glyph = ">_", tint = "#00ff88" },
-  { label = "Files",    app = "files",    glyph = "F",  tint = "#6bffb4" },
-  { label = "Editor",   app = "editor",   glyph = "E",  tint = "#29d67f" },
-  { label = "Monitor",  app = "monitor",  glyph = "M",  tint = "#e3ff4f" },
-  { label = "Music",    app = "music",    glyph = "♪", tint = "#7cffc4" },
-  { label = "Images",   app = "images",   glyph = "I", tint = "#22e0ff" },
-  { label = "Video",    app = "video",    glyph = "▶",  tint = "#00d9a3" },
-  { label = "Calc",     app = "calculator", glyph = "=", tint = "#6bffb4" },
-  { label = "Browser",  app = "browser",  glyph = "@",  tint = "#22e0ff" },
-  { label = "All apps", builtin = "desktop_entries", glyph = "…", tint = "#3f7a55" },
+  { label = "Terminal", app = "terminal", glyph = ">_", tint = "#3ddc97" },
+  { label = "Files",    app = "files",    glyph = "F",  tint = "#9ad9c0" },
+  { label = "Editor",   app = "editor",   glyph = "E",  tint = "#3ddc97" },
+  { label = "Monitor",  app = "monitor",  glyph = "M",  tint = "#e8c468" },
+  { label = "Music",    app = "music",    glyph = "♪", tint = "#9ad9c0" },
+  { label = "Images",   app = "images",   glyph = "I", tint = "#5fd0e8" },
+  { label = "Video",    app = "video",    glyph = "▶",  tint = "#3ddc97" },
+  { label = "Calc",     app = "calculator", glyph = "=", tint = "#e8c468" },
+  { label = "Browser",  app = "browser",  glyph = "@",  tint = "#5fd0e8" },
+  { label = "All apps", builtin = "desktop_entries", glyph = "…", tint = "#7aa48e" },
 ]
 
 [menu.settings]

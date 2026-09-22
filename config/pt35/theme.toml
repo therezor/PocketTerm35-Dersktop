@@ -1,55 +1,57 @@
 # pt35-desktop theme. Sizes are physical pixels on the 640x480 panel.
 # User override: ~/.config/pt35/theme.toml, merged over this file key by key.
 #
-# Phosphor green on near black. The panel is 3.5" at 640x480, about 9 px/mm, so
-# a 46px row is ~5mm: readable at arm's length and hittable with a thumb.
+# Mint on charcoal. Terminal green without the neon: a saturated #00ff88 buzzes
+# on an emissive panel this small, so the accent is toned down and the text is
+# off-white with a green cast. The panel is 3.5" at 640x480, about 9 px/mm, so a
+# 50px row is ~5.5mm: readable at arm's length, hittable with a thumb.
 
 [color]
-background      = "#05080a"
-background_alt  = "#0b1210"
-foreground      = "#b8ffcf"
-muted           = "#3f7a55"
-accent          = "#00ff88"
-accent_fg       = "#04140b"
-warning         = "#e3ff4f"
-critical        = "#ff4d5e"
-ok              = "#00ff88"
-border          = "#16302a"
+background      = "#0a1310"
+background_alt  = "#121f1a"
+foreground      = "#dcf3e5"
+muted           = "#7aa48e"
+accent          = "#3ddc97"
+accent_fg       = "#06130d"
+warning         = "#e8c468"
+critical        = "#ef6b73"
+ok              = "#3ddc97"
+border          = "#254236"
 
 # Face-button pills in the hint bar, matching the physical buttons.
-button_a        = "#00ff88"
-button_b        = "#ff4d5e"
-button_x        = "#22e0ff"
-button_y        = "#e3ff4f"
-button_neutral  = "#16302a"
+button_a        = "#3ddc97"
+button_b        = "#ef6b73"
+button_x        = "#5fd0e8"
+button_y        = "#e8c468"
+button_neutral  = "#254236"
 
 [font]
 family     = "DejaVu Sans"
-size_bar   = 14.0
-size_menu  = 21.0
-size_title = 22.0
-size_hint  = 13.0
+size_bar   = 15.0
+size_menu  = 23.0
+size_title = 24.0
+size_hint  = 14.0
 
 [bar]
-height        = 26
+height        = 28
 padding_x     = 10
 show_battery  = "auto"   # auto | always | never
 show_network  = true
 clock_format  = "%H:%M"
 
 [menu]
-# 480 - 26 (bar) - 44 (header) - 44 (hints) = 366px of body
+# 480 - 28 (bar) - 46 (header) - 46 (hints) = 360px of body
 rows_visible  = 7
-row_height    = 46
+row_height    = 50
 padding_x     = 14
 show_numbers  = true
 filter_hint   = "X to search"
-header_height = 44
-hint_height   = 44
-radius        = 10
+header_height = 46
+hint_height   = 46
+radius        = 12
 columns       = 3
-tile_height   = 80
-gap           = 8
+tile_height   = 86
+gap           = 10
 
 [pointer]
 speed         = 380.0    # px/s at full deflection

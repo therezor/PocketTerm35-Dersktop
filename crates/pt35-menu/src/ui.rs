@@ -229,6 +229,16 @@ impl Menu {
                     radius,
                     theme.color.accent,
                 );
+            } else if index + 1 < rows.len() {
+                // Hairline between rows. Without it a list of short labels reads
+                // as floating text.
+                canvas.rect(
+                    pad,
+                    y + row_h - 1,
+                    canvas.width - 2 * pad as u32,
+                    1,
+                    theme.color.border,
+                );
             }
             let fg = if selected {
                 theme.color.accent_fg
@@ -341,10 +351,10 @@ impl Menu {
                     tint,
                 );
                 canvas.rounded_rect(
-                    x,
-                    y,
-                    tile_w as u32,
-                    tile_h as u32,
+                    x + 1,
+                    y + 1,
+                    (tile_w - 2) as u32,
+                    (tile_h - 2) as u32,
                     radius,
                     theme.color.background_alt,
                 );

@@ -128,21 +128,21 @@ impl<'de> Deserialize<'de> for Rgb {
 impl Default for Colors {
     fn default() -> Self {
         Self {
-            background: Rgb(0x05, 0x08, 0x0a),
-            button_a: Rgb(0x00, 0xff, 0x88),
-            button_b: Rgb(0xff, 0x4d, 0x5e),
-            button_x: Rgb(0x22, 0xe0, 0xff),
-            button_y: Rgb(0xe3, 0xff, 0x4f),
-            button_neutral: Rgb(0x16, 0x30, 0x2a),
-            background_alt: Rgb(0x0b, 0x12, 0x10),
-            foreground: Rgb(0xb8, 0xff, 0xcf),
-            muted: Rgb(0x3f, 0x7a, 0x55),
-            accent: Rgb(0x00, 0xff, 0x88),
-            accent_fg: Rgb(0x04, 0x14, 0x0b),
-            warning: Rgb(0xe3, 0xff, 0x4f),
-            critical: Rgb(0xff, 0x4d, 0x5e),
-            ok: Rgb(0x00, 0xff, 0x88),
-            border: Rgb(0x16, 0x30, 0x2a),
+            background: Rgb(0x0a, 0x13, 0x10),
+            button_a: Rgb(0x3d, 0xdc, 0x97),
+            button_b: Rgb(0xef, 0x6b, 0x73),
+            button_x: Rgb(0x5f, 0xd0, 0xe8),
+            button_y: Rgb(0xe8, 0xc4, 0x68),
+            button_neutral: Rgb(0x25, 0x42, 0x36),
+            background_alt: Rgb(0x12, 0x1f, 0x1a),
+            foreground: Rgb(0xdc, 0xf3, 0xe5),
+            muted: Rgb(0x7a, 0xa4, 0x8e),
+            accent: Rgb(0x3d, 0xdc, 0x97),
+            accent_fg: Rgb(0x06, 0x13, 0x0d),
+            warning: Rgb(0xe8, 0xc4, 0x68),
+            critical: Rgb(0xef, 0x6b, 0x73),
+            ok: Rgb(0x3d, 0xdc, 0x97),
+            border: Rgb(0x25, 0x42, 0x36),
         }
     }
 }
@@ -151,10 +151,10 @@ impl Default for Fonts {
     fn default() -> Self {
         Self {
             family: "DejaVu Sans".into(),
-            size_bar: 14.0,
-            size_menu: 21.0,
-            size_title: 22.0,
-            size_hint: 13.0,
+            size_bar: 15.0,
+            size_menu: 23.0,
+            size_title: 24.0,
+            size_hint: 14.0,
         }
     }
 }
@@ -162,7 +162,7 @@ impl Default for Fonts {
 impl Default for Bar {
     fn default() -> Self {
         Self {
-            height: 26,
+            height: 28,
             padding_x: 10,
             show_battery: Visibility::Auto,
             show_network: true,
@@ -175,16 +175,16 @@ impl Default for Menu {
     fn default() -> Self {
         Self {
             rows_visible: 7,
-            row_height: 46,
+            row_height: 50,
             padding_x: 14,
             show_numbers: true,
             filter_hint: "X to search".into(),
-            header_height: 44,
-            hint_height: 44,
-            radius: 10,
+            header_height: 46,
+            hint_height: 46,
+            radius: 12,
             columns: 3,
-            tile_height: 80,
-            gap: 8,
+            tile_height: 86,
+            gap: 10,
         }
     }
 }

@@ -16,7 +16,7 @@ set $ctl  pt35ctl
 output * {
     mode 640x480
     scale 1
-    background #05080a solid_color
+    background #0a1310 solid_color
 }
 
 # 640x480 has no room for chrome: no borders, no gaps, no title bars.
