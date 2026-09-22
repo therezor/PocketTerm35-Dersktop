@@ -263,7 +263,14 @@ impl Session {
                         InputMode::Mouse => InputMode::Buttons,
                     },
                 };
-                self.set_mode(target)?;
+                // While the menu is up the keys belong to it. Remember the
+                // choice and let the close put it into effect.
+                if self.menu_proc.is_some() {
+                    self.mode_before_menu = target;
+                    self.status.input_mode = target;
+                } else {
+                    self.set_mode(target)?;
+                }
                 Ok(Response::Ok)
             }
 
