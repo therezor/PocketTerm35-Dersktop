@@ -89,9 +89,12 @@ impl Session {
 
     /// True once sway has gone. The daemon must not outlive it: a stale pt35d
     /// holds the socket and the next session cannot start.
+    ///
+    /// sway leaves its IPC socket file behind when it is killed, so the file
+    /// existing proves nothing. Connecting to it does.
     pub fn compositor_gone(&self) -> bool {
         match Sway::socket_path() {
-            Ok(path) => !path.exists(),
+            Ok(path) => std::os::unix::net::UnixStream::connect(path).is_err(),
             Err(_) => true,
         }
     }

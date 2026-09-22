@@ -36,6 +36,18 @@ export PT35_SHARE=/usr/share/pt35-desktop
 LOG_DIR="${XDG_RUNTIME_DIR}/pt35"
 mkdir -p "$LOG_DIR"
 
+# sway leaves its sockets behind when it is killed, and a leftover wayland-N
+# stops the next session from claiming the same name.
+for sock in "$XDG_RUNTIME_DIR"/sway-ipc.*.sock; do
+  [ -e "$sock" ] || continue
+  pid=${sock##*.}; pid=${sock%.sock}; pid=${pid##*.}
+  kill -0 "$pid" 2>/dev/null || rm -f "$sock"
+done
+for sock in "$XDG_RUNTIME_DIR"/wayland-[0-9]*; do
+  [ -S "$sock" ] || continue
+  fuser "$sock" >/dev/null 2>&1 || rm -f "$sock" "$sock.lock"
+done
+
 sway --unsupported-gpu >"$LOG_DIR/sway.log" 2>&1
 status=$?
 
