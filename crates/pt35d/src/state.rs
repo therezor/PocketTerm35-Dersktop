@@ -31,9 +31,6 @@ pub struct Session {
     mode_before_menu: InputMode,
     /// Exactly what is bound right now, so it can be taken back exactly.
     bound: Vec<crate::modes::Bind>,
-    /// When the last window was closed. The L+R chord leaves one stray release
-    /// behind it, and that would move focus straight after the close.
-    closed_at: Option<std::time::Instant>,
 }
 
 impl Session {
@@ -55,7 +52,6 @@ impl Session {
             mode_applied: false,
             mode_before_menu: InputMode::Buttons,
             bound: Vec::new(),
-            closed_at: None,
         };
         if let Err(e) = session.menu.validate() {
             log::error!("menu.toml is inconsistent ({e}); the menu key will show an error page");
@@ -164,6 +160,7 @@ impl Session {
             if matches!(child.try_wait(), Ok(Some(_))) {
                 self.menu_proc = None;
                 self.restore_mode();
+                self.ensure_focus();
             }
         }
         self.low_battery_hook();
@@ -321,14 +318,6 @@ impl Session {
                     // owns its own, so it does nothing here. Walk the same list
                     // the dock draws instead.
                     WindowAction::Next | WindowAction::Previous => {
-                        // The tail of an L+R chord, not a switch the user asked
-                        // for. sway runs one release binding after the chord.
-                        if self
-                            .closed_at
-                            .is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(400))
-                        {
-                            return Ok(Response::Ok);
-                        }
                         let _ = self.toggle_menu(Toggle::Off, None);
                         self.status.windows = self.window_list();
                         let forward = action == WindowAction::Next;
@@ -339,13 +328,19 @@ impl Session {
                         }
                     }
                     WindowAction::Close => {
+                        // Named, not a bare `kill`: after the menu has been up
+                        // nothing is focused, and a bare kill hits nothing.
+                        self.status.windows = self.window_list();
+                        let workspace = self.status.workspace;
+                        let target = self.current_window().map(|w| w.id);
                         // Closing leaves you on an empty workspace otherwise,
                         // because every app owns one.
-                        self.closed_at = Some(std::time::Instant::now());
-                        self.status.windows = self.window_list();
-                        let next = next_window(&self.status.windows, self.status.workspace, true);
-                        self.sway_command("kill")?;
-                        if let Some(id) = next {
+                        let next = next_window(&self.status.windows, workspace, true);
+                        match target {
+                            Some(id) => self.sway_command(&format!("[con_id={id}] kill"))?,
+                            None => return Ok(Response::Ok),
+                        }
+                        if let Some(id) = next.filter(|id| Some(*id) != target) {
                             let _ = self.sway_command(&format!("[con_id={id}] focus"));
                         }
                     }
@@ -423,6 +418,7 @@ impl Session {
                 let _ = child.wait();
             }
             self.restore_mode();
+            self.ensure_focus();
         }
         if want_open {
             // The menu reads the same keys itself, and a sway binding beats
@@ -454,6 +450,35 @@ impl Session {
         self.bound = wanted;
         self.status.input_mode = mode;
         Ok(())
+    }
+
+    /// The window a keypress means: the focused one, or the one on this
+    /// workspace when the menu has just taken focus away from everything.
+    fn current_window(&self) -> Option<&pt35_common::ipc::WindowInfo> {
+        self.status
+            .windows
+            .iter()
+            .find(|w| w.focused)
+            .or_else(|| {
+                self.status
+                    .windows
+                    .iter()
+                    .find(|w| w.workspace == self.status.workspace)
+            })
+            .or_else(|| self.status.windows.first())
+    }
+
+    /// Give focus back to a window. A layer surface that took the keyboard
+    /// leaves sway with no focused view when it goes, and then every command
+    /// that acts on "the focused window" does nothing.
+    fn ensure_focus(&mut self) {
+        self.status.windows = self.window_list();
+        if self.status.windows.iter().any(|w| w.focused) {
+            return;
+        }
+        if let Some(id) = self.current_window().map(|w| w.id) {
+            let _ = self.sway_command(&format!("[con_id={id}] focus"));
+        }
     }
 
     /// Hand every key back. The menu reads the same ones, and a sway binding
