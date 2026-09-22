@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Read and write the PocketTerm35 keyboard's firmware over its USB serial port.
+
+The keyboard is a CircuitPython board (an RP2040 running `code.py`). `boot.py`
+calls `storage.disable_usb_drive()`, so there is no CIRCUITPY drive to copy
+files to: the only way in is the REPL on /dev/ttyACM0. CircuitPython may write
+its own filesystem while the host cannot see it, which is what makes this work.
+
+  pt35-kbd dump code.py > /tmp/code.py   read a file off the keyboard
+  pt35-kbd write code.py firmware/code.py
+  pt35-kbd files                         list what is on it
+
+Interrupting `write` leaves the old file in place: the new one is written beside
+it and renamed at the end. If the keyboard ever stops responding as a keyboard,
+this port still answers, so a bad file can always be replaced.
+"""
+
+import argparse
+import binascii
+import hashlib
+import sys
+import time
+
+import serial
+
+PORT = "/dev/ttyACM0"
+CHUNK = 512
+# code.py logs to this port while it runs, so frame the payload and read only
+# what is inside the markers.
+START, END = b"<<<PT35", b">>>PT35"
+
+
+class Keyboard:
+    def __init__(self, port=PORT):
+        self.serial = serial.Serial(port, 115200, timeout=2)
+
+    def __enter__(self):
+        # Ctrl-C stops code.py, Ctrl-A is the raw REPL, which does not echo.
+        for _ in range(3):
+            self.serial.write(b"\x03")
+            if b">>>" in self._drain():
+                break
+        self.serial.write(b"\x01")
+        if b"raw REPL" not in self._drain():
+            raise SystemExit("the keyboard did not answer on its serial port")
+        return self
+
+    def __exit__(self, *_):
+        self.serial.write(b"\x02\x04")  # normal REPL, then reload code.py
+        self.serial.close()
+
+    def _drain(self, quiet=0.4):
+        """Read until the port has been silent for `quiet` seconds.
+
+        code.py logs to this port while it runs, so a reply can arrive with a
+        log line stuck to it. Draining first makes each exchange its own.
+        """
+        out = b""
+        last = time.time()
+        while time.time() - last < quiet:
+            chunk = self.serial.read(self.serial.in_waiting or 1)
+            if chunk:
+                out += chunk
+                last = time.time()
+        return out
+
+    def run(self, code, timeout=30):
+        self._drain(0.2)
+        self.serial.write(code.encode() + b"\x04")
+        out = b""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            out += self.serial.read(self.serial.in_waiting or 1)
+            if out.count(b"\x04") >= 2:
+                break
+        body, _, err = out.partition(b"\x04")
+        err = err.split(b"\x04")[0]
+        if err.strip():
+            raise RuntimeError(err.decode("utf-8", "replace").strip())
+        # Anything before the raw REPL's "OK" is a log line from code.py.
+        return body.split(b"OK", 1)[-1]
+
+
+def dump(kbd, name, attempts=3):
+    code = f"""
+import binascii
+f = open("/{name}", "rb")
+d = f.read()
+f.close()
+print("{START.decode()}")
+i = 0
+while i < len(d):
+    print(binascii.b2a_base64(d[i:i+600]).decode().strip())
+    i += 600
+print("{END.decode()}")
+"""
+    for attempt in range(attempts):
+        out = kbd.run(code)
+        if START in out and END in out:
+            payload = out.split(START, 1)[1].split(END, 1)[0]
+            try:
+                return b"".join(binascii.a2b_base64(line) for line in payload.split())
+            except binascii.Error:
+                pass
+        if attempt == attempts - 1:
+            raise SystemExit(f"could not read /{name} off the keyboard")
+        time.sleep(0.5)
+
+
+def write(kbd, name, data):
+    digest = hashlib.sha256(data).hexdigest()
+    kbd.run('import storage\ntry:\n    storage.remount("/", False)\nexcept RuntimeError:\n    pass')
+    kbd.run(f'f = open("/{name}.new", "wb")\nf.close()')
+    for start in range(0, len(data), CHUNK):
+        blob = binascii.b2a_base64(data[start : start + CHUNK]).decode().strip()
+        kbd.run(
+            f'import binascii\nf = open("/{name}.new", "ab")\nf.write(binascii.a2b_base64("{blob}"))\nf.close()'
+        )
+    kbd.run(f'import os\nos.rename("/{name}.new", "/{name}")')
+    if hashlib.sha256(dump(kbd, name)).hexdigest() != digest:
+        raise SystemExit(f"{name} on the keyboard does not match what was sent")
+    return digest
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=["dump", "write", "files"])
+    parser.add_argument("name", nargs="?", help="file on the keyboard, e.g. code.py")
+    parser.add_argument("source", nargs="?", help="local file to write")
+    parser.add_argument("--port", default=PORT)
+    args = parser.parse_args()
+
+    with Keyboard(args.port) as kbd:
+        if args.action == "files":
+            print(kbd.run("import os\nprint(os.listdir('/'))").decode().strip())
+        elif args.action == "dump":
+            sys.stdout.buffer.write(dump(kbd, args.name))
+        else:
+            with open(args.source, "rb") as handle:
+                data = handle.read()
+            digest = write(kbd, args.name, data)
+            print(f"wrote {len(data)} bytes to /{args.name}, sha256 {digest[:16]}")
+
+
+if __name__ == "__main__":
+    main()

@@ -9,9 +9,9 @@ export XDG_CURRENT_DESKTOP=sway
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
 # --- toolkit scaling -------------------------------------------------------
-# The panel is 640x480. pt35d flips the sway output scale per app profile
-# (1.0 for TUIs and our own UI, 0.75 => 853x640 logical for GUI apps that will
-# not shrink). These variables make each toolkit cooperate with that.
+# The panel is 640x480 and stays at scale 1. An app that needs to shrink does it
+# itself: pt35d passes its profile's scale as GDK_DPI_SCALE / QT_SCALE_FACTOR.
+# These are the session-wide defaults it overrides.
 export QT_QPA_PLATFORM=wayland
 export QT_WAYLAND_DISABLE_WINDOWDECORATION=1
 export QT_ENABLE_HIGHDPI_SCALING=0
@@ -51,10 +51,22 @@ done
 sway --unsupported-gpu >"$LOG_DIR/sway.log" 2>&1
 status=$?
 
-# sway's children are reparented to init when it exits. A surviving pt35d holds
-# the socket and the VT, and the next session then cannot start.
-for helper in pt35d pt35-bar pt35-menu pt35-pointer; do
-  pkill -x -u "$(id -u)" "$helper" 2>/dev/null || true
+# sway's children are reparented to init when it exits, and logind keeps the old
+# session scope alive while any of them run. A surviving pt35d holds the socket
+# and the VT so the next session cannot start, and a client whose compositor
+# vanished can spin on the dead socket at 100% CPU (imv does). Take the whole
+# login session down with sway.
+session_id=$(ps -o sess= -p "$$" 2>/dev/null | tr -d ' ')
+leftovers() {
+  [ -n "$session_id" ] || return 0
+  ps -o pid= -s "$session_id" 2>/dev/null | tr -d ' ' | grep -v "^$$\$" || true
+}
+for signal in TERM KILL; do
+  pids=$(leftovers)
+  [ -n "$pids" ] || break
+  # shellcheck disable=SC2086
+  kill -"$signal" $pids 2>/dev/null || true
+  sleep 1
 done
 
 exit "$status"
