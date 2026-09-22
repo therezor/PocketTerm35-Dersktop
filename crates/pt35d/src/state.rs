@@ -302,7 +302,8 @@ impl Session {
                         let _ = self.toggle_menu(Toggle::Off, None);
                         self.status.windows = self.window_list();
                         let forward = action == WindowAction::Next;
-                        match next_window(&self.status.windows, forward) {
+                        let workspace = self.status.workspace;
+                        match next_window(&self.status.windows, workspace, forward) {
                             Some(id) => self.sway_command(&format!("[con_id={id}] focus"))?,
                             None => return Ok(Response::Ok),
                         }
@@ -587,13 +588,21 @@ fn on_path(binary: &str) -> bool {
 
 /// The window to focus when the user asks for the next or previous app.
 ///
-/// `windows` is the dock's order. Wraps, and picks the first window when
-/// nothing is focused.
-pub fn next_window(windows: &[pt35_common::ipc::WindowInfo], forward: bool) -> Option<i64> {
+/// `windows` is the dock's order. Wraps. Nothing is focused while the keyboard
+/// pointer holds the keyboard, so the current workspace is the fallback anchor.
+pub fn next_window(
+    windows: &[pt35_common::ipc::WindowInfo],
+    workspace: u8,
+    forward: bool,
+) -> Option<i64> {
     if windows.is_empty() {
         return None;
     }
-    let Some(current) = windows.iter().position(|w| w.focused) else {
+    let current = windows
+        .iter()
+        .position(|w| w.focused)
+        .or_else(|| windows.iter().rposition(|w| w.workspace == workspace));
+    let Some(current) = current else {
         return Some(windows[0].id);
     };
     if windows.len() == 1 {
@@ -719,17 +728,26 @@ mod tests {
     #[test]
     fn next_window_wraps_around_the_dock() {
         let list = [window(1, 1, false), window(2, 2, true), window(3, 3, false)];
-        assert_eq!(next_window(&list, true), Some(3));
-        assert_eq!(next_window(&list, false), Some(1));
+        assert_eq!(next_window(&list, 2, true), Some(3));
+        assert_eq!(next_window(&list, 2, false), Some(1));
         let last = [window(1, 1, false), window(2, 2, true)];
-        assert_eq!(next_window(&last, true), Some(1));
-        assert_eq!(next_window(&[], true), None);
-        assert_eq!(next_window(&[window(9, 1, true)], true), None);
-        assert_eq!(
-            next_window(&[window(9, 1, false)], true),
-            Some(9),
-            "nothing focused means focus something"
-        );
+        assert_eq!(next_window(&last, 2, true), Some(1));
+        assert_eq!(next_window(&[], 1, true), None);
+        assert_eq!(next_window(&[window(9, 1, true)], 1, true), None);
+    }
+
+    #[test]
+    fn the_workspace_anchors_the_cycle_when_nothing_is_focused() {
+        // The keyboard pointer takes the keyboard, so no view is focused while
+        // it is armed. Select must still walk the dock instead of snapping back.
+        let list = [
+            window(1, 1, false),
+            window(2, 2, false),
+            window(3, 3, false),
+        ];
+        assert_eq!(next_window(&list, 2, true), Some(3));
+        assert_eq!(next_window(&list, 2, false), Some(1));
+        assert_eq!(next_window(&list, 7, true), Some(1), "nothing to anchor on");
     }
 
     #[test]
