@@ -55,7 +55,17 @@ mode can lose them.
 
 The menu is modal, for a stock unit where the letters are the buttons: nav mode
 (A opens, B back, X search, Y home) and filter mode. The D-pad sideways changes
-a quick setting and nothing else. Back is B.
+a quick setting and nothing else. Back is B, and from the top screen back means
+out, so no legend names Start: it is the same exit in one press.
+
+Start is bound by `pt35d`, not the sway config. A sway binding beats any
+surface, and the menu has to see the key to know what closing means on the
+screen you are looking at: on an empty desktop it goes to the top screen rather
+than leaving you with nothing. `$mod+space` stays bound in the config as the
+way back in if that handover ever fails.
+
+X on the window picker closes every window, behind a confirmation. Searching
+three tiles you can see is not worth a key; closing them is.
 
 ## Staying in step with sway
 

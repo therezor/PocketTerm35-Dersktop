@@ -73,13 +73,17 @@ workspace: pt35d moves a second window off a workspace that already has one.
 | D-pad up/down | move |
 | D-pad left/right | change a quick setting, or move in a grid |
 | A, Enter | open |
-| B, Backspace | back |
+| B, Backspace | back, and at the top screen, close |
 | X, `/` | search, then letters type |
 | Y | back to the top menu |
 | L / R | page |
 | 1-9 | pick that visible row |
 | Start, Escape | close |
 | touch | tap a tile, a row, a side button or a legend pill |
+
+B is the way out: back one screen, and out of the menu from the top one. Start
+does the same in one press from any depth, so the legend names only B. On the
+window picker, X closes every window and asks first.
 
 Left and Right never navigate. Back is B.
 
@@ -89,7 +93,8 @@ Backspace, or with Start, which clears the filter before it closes anything.
 ## The menu is the desktop
 
 With no window open, the menu comes up on its own and will not close: there is
-nothing behind it. Launch something and it goes.
+nothing behind it. Start and B take you back to the top screen instead. Launch
+something and it goes.
 
 ## The taskbar
 

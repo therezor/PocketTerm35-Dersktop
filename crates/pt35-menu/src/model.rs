@@ -360,12 +360,13 @@ impl Model {
         }
     }
 
-    /// Whether this screen's rows carry a 1-9 shortcut.
+    /// Whether this screen is asking you to confirm something.
     ///
-    /// Not on a confirmation: `2` would be an instant yes to something you were
-    /// being asked to think about.
-    pub fn numbered(&self) -> bool {
-        !matches!(
+    /// Such a screen drops its 1-9 shortcuts, because `2` would be an instant
+    /// yes to something you were being asked to think about, and its search,
+    /// because there is nothing to search in two rows.
+    pub fn is_confirm(&self) -> bool {
+        matches!(
             self.stack.last().map(|s| &s.source),
             Some(Source::Confirm { .. })
         )

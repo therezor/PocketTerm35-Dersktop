@@ -200,17 +200,9 @@ impl Session {
         self.status.muted = muted;
         self.status.network = self.hw.network();
         self.status.network_signal = self.hw.network_signal();
-        self.refresh_windows();
-        if !self.mode_applied && self.menu_proc.is_none() {
-            // Nothing changes workspace at startup, so the binds have to go
-            // out on the first tick or the buttons do nothing until you move.
-            match self.set_mode(self.status.input_mode) {
-                Ok(()) => self.mode_applied = true,
-                Err(e) => log::warn!("input mode: {e}"),
-            }
-        }
-        // Both helpers exit on their own, so reap them here or they pile up as
-        // zombies.
+        // Reap first. Both helpers exit on their own, and whether the menu is
+        // still up decides whether an empty desktop needs one: noticing it
+        // after the fact costs a whole extra tick of blank screen.
         if let Some(child) = self.menu_proc.as_mut() {
             if matches!(child.try_wait(), Ok(Some(_))) {
                 self.menu_proc = None;
@@ -221,6 +213,15 @@ impl Session {
         if let Some(child) = self.lock_proc.as_mut() {
             if matches!(child.try_wait(), Ok(Some(_))) {
                 self.lock_proc = None;
+            }
+        }
+        self.refresh_windows();
+        if !self.mode_applied && self.menu_proc.is_none() {
+            // Nothing changes workspace at startup, so the binds have to go
+            // out on the first tick or the buttons do nothing until you move.
+            match self.set_mode(self.status.input_mode) {
+                Ok(()) => self.mode_applied = true,
+                Err(e) => log::warn!("input mode: {e}"),
             }
         }
         self.low_battery_hook();

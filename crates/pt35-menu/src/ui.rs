@@ -462,10 +462,14 @@ impl Menu {
 
         let filtering = self.model.screen().list.mode() == Mode::Filter;
         let filter = self.model.screen().list.filter().to_string();
+        // Nothing to search on a two-row yes or no.
+        let searchable = !self.model.is_confirm();
         let (text, color) = if filtering {
             (format!("[{filter}_]"), theme.color.accent)
-        } else {
+        } else if searchable {
             (theme.menu.filter_hint.to_uppercase(), theme.color.muted)
+        } else {
+            (String::new(), theme.color.muted)
         };
         let width = self
             .mono
@@ -496,7 +500,7 @@ impl Menu {
         }
 
         let cursor = self.model.screen().list.cursor_row();
-        let numbers = theme.menu.show_numbers && self.model.numbered();
+        let numbers = theme.menu.show_numbers && !self.model.is_confirm();
         let radius = theme.menu.radius;
 
         for (index, row) in rows.iter().enumerate() {
@@ -1174,6 +1178,7 @@ impl Menu {
             // names a key which does nothing is worse than a shorter legend.
             .filter(|hint| !(rooted && hint.button == "Y"))
             .filter(|hint| !(pinned && hint.button == "B"))
+            .filter(|hint| !self.model.is_confirm() || hint.button != "X")
             .map(|hint| {
                 // At the top screen, back means out.
                 if rooted && hint.button == "B" {
