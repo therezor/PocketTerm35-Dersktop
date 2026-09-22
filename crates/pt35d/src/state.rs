@@ -23,6 +23,8 @@ pub struct Session {
     sway: Option<Sway>,
     menu_proc: Option<Child>,
     pointer_proc: Option<Child>,
+    /// Output scale to go back to once the menu closes.
+    scale_before_menu: Option<f32>,
 }
 
 impl Session {
@@ -41,6 +43,7 @@ impl Session {
             sway: None,
             menu_proc: None,
             pointer_proc: None,
+            scale_before_menu: None,
         };
         if let Err(e) = session.menu.validate() {
             log::error!("menu.toml is inconsistent ({e}); the menu key will show an error page");
@@ -160,6 +163,7 @@ impl Session {
         if let Some(child) = self.menu_proc.as_mut() {
             if matches!(child.try_wait(), Ok(Some(_))) {
                 self.menu_proc = None;
+                self.restore_scale();
             }
         }
         if !matches!(
@@ -330,8 +334,17 @@ impl Session {
                 let _ = child.kill();
                 let _ = child.wait();
             }
+            self.restore_scale();
         }
         if want_open {
+            // The shell's own UI is drawn for 640x480. An app profile may have
+            // left the output at 0.75, which would shrink the menu with it.
+            if (self.status.scale - 1.0).abs() > f32::EPSILON {
+                self.scale_before_menu = Some(self.status.scale);
+                if self.sway_command("output * scale 1").is_ok() {
+                    self.status.scale = 1.0;
+                }
+            }
             let mut cmd = Command::new("pt35-menu");
             if let Some(page) = page {
                 cmd.arg("--page").arg(page);
@@ -339,6 +352,18 @@ impl Session {
             self.menu_proc = Some(cmd.stdin(Stdio::null()).spawn()?);
         }
         Ok(())
+    }
+
+    fn restore_scale(&mut self) {
+        let Some(scale) = self.scale_before_menu.take() else {
+            return;
+        };
+        if self
+            .sway_command(&format!("output * scale {scale}"))
+            .is_ok()
+        {
+            self.status.scale = scale;
+        }
     }
 
     fn set_pointer(&mut self, mode: PointerMode) -> Result<()> {
