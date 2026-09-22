@@ -26,8 +26,13 @@ answer a cursor. Select switches between them and the bar says which you are in.
 | X | Tab | scroll up |
 | Y | fullscreen toggle | scroll down |
 | L / R | previous / next app | previous / next app |
+| L + R | close the window | close the window |
 | Start | menu | menu |
 | Select | switch mode | switch mode |
+
+L and R fire when you let go, not when you press: sway matches a binding as
+soon as its keys are down, so a press binding on L would run before R could
+join it and L+R would never be reached.
 
 Holding A in Mouse mode drags: the press and the release are sent separately.
 The D-pad repeats faster there (40/s against 8/s) so the cursor crosses the

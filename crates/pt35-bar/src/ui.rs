@@ -16,6 +16,8 @@ struct Bar {
     font: Font,
     mono: Font,
     feed: StatusFeed,
+    /// What the last frame was drawn from. Ticking is cheap, drawing is not.
+    drawn: Option<pt35_common::ipc::Status>,
     clock: String,
     hits: Vec<(i32, i32, Action)>,
 }
@@ -36,6 +38,7 @@ impl Bar {
             font,
             mono,
             feed,
+            drawn: None,
             clock,
             hits: Vec::new(),
         }
@@ -156,14 +159,18 @@ impl App for Bar {
     }
 
     fn tick_interval(&self) -> Option<Duration> {
-        Some(Duration::from_secs(1))
+        // Fast enough that a mode switch looks instant, and it costs nothing:
+        // a tick that finds no change does not draw.
+        Some(Duration::from_millis(150))
     }
 
     fn tick(&mut self) -> bool {
         let clock = now(&self.theme);
-        let changed = clock != self.clock;
+        let status = self.feed.get();
+        let changed = clock != self.clock || status != self.drawn;
         self.clock = clock;
-        changed || self.feed.get().is_some()
+        self.drawn = status;
+        changed
     }
 
     fn touch(&mut self, x: f64, _y: f64) -> bool {

@@ -119,9 +119,19 @@ fn handle_client(
         };
 
         let subscribe = matches!(request, Request::Subscribe);
-        let response = session.lock().expect("session").handle(request);
+        // Anything else may have changed what the bar draws. Waiting for the
+        // next poll would show the new mode up to two seconds late.
+        let changes = !matches!(request, Request::Subscribe | Request::Status);
+        let (response, status) = {
+            let mut session = session.lock().expect("session");
+            let response = session.handle(request);
+            (response, session.status.clone())
+        };
         writeln!(writer, "{}", serde_json::to_string(&response)?)?;
         writer.flush()?;
+        if changes && !subscribers.is_empty() {
+            subscribers.broadcast(&Event::Status(status));
+        }
 
         if subscribe {
             // This connection now belongs to the event stream until it drops.

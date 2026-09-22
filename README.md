@@ -61,7 +61,7 @@ downloading a release.
 |---|---|
 | `Start` | open or close the menu — the hub for everything |
 | `Select` | switch between Buttons mode and Mouse mode |
-| `L` / `R` | previous / next app |
+| `L` / `R` | previous / next app, together they close the window |
 | `Super`+`Space` | open the menu |
 | `Super`+`m` | switch between Buttons mode and Mouse mode |
 | `Super`+`Enter` | new terminal |

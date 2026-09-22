@@ -29,6 +29,11 @@ pub struct Session {
     mode_applied: bool,
     /// The mode to go back to when the menu closes.
     mode_before_menu: InputMode,
+    /// Exactly what is bound right now, so it can be taken back exactly.
+    bound: Vec<crate::modes::Bind>,
+    /// When the last window was closed. The L+R chord leaves one stray release
+    /// behind it, and that would move focus straight after the close.
+    closed_at: Option<std::time::Instant>,
 }
 
 impl Session {
@@ -48,6 +53,8 @@ impl Session {
             menu_proc: None,
             mode_applied: false,
             mode_before_menu: InputMode::Buttons,
+            bound: Vec::new(),
+            closed_at: None,
         };
         if let Err(e) = session.menu.validate() {
             log::error!("menu.toml is inconsistent ({e}); the menu key will show an error page");
@@ -299,6 +306,14 @@ impl Session {
                     // owns its own, so it does nothing here. Walk the same list
                     // the dock draws instead.
                     WindowAction::Next | WindowAction::Previous => {
+                        // The tail of an L+R chord, not a switch the user asked
+                        // for. sway runs one release binding after the chord.
+                        if self
+                            .closed_at
+                            .is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(400))
+                        {
+                            return Ok(Response::Ok);
+                        }
                         let _ = self.toggle_menu(Toggle::Off, None);
                         self.status.windows = self.window_list();
                         let forward = action == WindowAction::Next;
@@ -308,7 +323,10 @@ impl Session {
                             None => return Ok(Response::Ok),
                         }
                     }
-                    WindowAction::Close => self.sway_command("kill")?,
+                    WindowAction::Close => {
+                        self.closed_at = Some(std::time::Instant::now());
+                        self.sway_command("kill")?;
+                    }
                     WindowAction::Fullscreen => self.sway_command("fullscreen toggle")?,
                 }
                 Ok(Response::Ok)
@@ -384,9 +402,7 @@ impl Session {
             // The menu reads the same keys itself, and a sway binding beats
             // any surface, so the compositor must let go while it is up.
             self.mode_before_menu = self.status.input_mode;
-            for command in crate::modes::release() {
-                let _ = self.sway_command(&command);
-            }
+            let _ = self.unbind_all();
             let mut cmd = Command::new("pt35-menu");
             if let Some(page) = page {
                 cmd.arg("--page").arg(page);
@@ -397,17 +413,30 @@ impl Session {
     }
 
     /// Put the device in one mode or the other.
+    ///
+    /// One IPC round trip for the lot. Sending thirty commands one at a time
+    /// took long enough to see.
     fn set_mode(&mut self, mode: InputMode) -> Result<()> {
         let pointer = self.theme.pointer.clone();
-        for command in crate::modes::apply(mode, &pointer) {
-            // Unbinding a key the other mode never held is an error to sway and
-            // normal here: the two modes hold different keys.
-            let result = self.sway_command(&command);
-            if !command.starts_with("unbindsym") {
-                result?;
-            }
-        }
+        let wanted = crate::modes::binds(mode, &pointer);
+        let mut commands: Vec<String> = self.bound.iter().map(|b| b.unbind()).collect();
+        commands.extend(wanted.iter().map(|b| b.bind()));
+        commands.extend(crate::modes::settings(mode, &pointer));
+        self.sway_command(&commands.join(", "))?;
+        self.bound = wanted;
         self.status.input_mode = mode;
+        Ok(())
+    }
+
+    /// Hand every key back. The menu reads the same ones, and a sway binding
+    /// beats any surface.
+    fn unbind_all(&mut self) -> Result<()> {
+        if self.bound.is_empty() {
+            return Ok(());
+        }
+        let commands: Vec<String> = self.bound.iter().map(|b| b.unbind()).collect();
+        self.sway_command(&commands.join(", "))?;
+        self.bound.clear();
         Ok(())
     }
 

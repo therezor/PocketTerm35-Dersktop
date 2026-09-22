@@ -37,8 +37,8 @@ Six of the twelve buttons type letters, so input is modal, in two places.
 
 Two modes, nothing else: Buttons (default) and Mouse. Buttons mode is D-pad as
 arrows, A Enter, B Escape, X Tab, Y fullscreen. Mouse mode is D-pad moving the
-cursor, A and B the clicks, X and Y the wheel. L and R switch app in both, Start
-is the menu and Select switches mode. Both are sway bindings on the firmware's
+cursor, A and B the clicks, X and Y the wheel. L and R switch app in both and
+close the window together, Start is the menu and Select switches mode. Both are sway bindings on the firmware's
 keysyms (`pt35d`'s `modes.rs`), dropped while the menu is open because a sway
 binding beats any surface and the menu reads the same keys.
 
