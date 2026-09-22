@@ -33,7 +33,7 @@ size_title = 24.0
 size_hint  = 14.0
 
 [bar]
-height        = 28
+height        = 34
 padding_x     = 10
 show_battery  = "auto"   # auto | always | never
 show_network  = true

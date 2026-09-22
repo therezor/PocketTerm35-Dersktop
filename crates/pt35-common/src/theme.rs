@@ -169,7 +169,7 @@ impl Default for Fonts {
 impl Default for Bar {
     fn default() -> Self {
         Self {
-            height: 28,
+            height: 34,
             padding_x: 10,
             show_battery: Visibility::Auto,
             show_network: true,
