@@ -60,7 +60,10 @@ downloading a release.
 
 | key | what it does |
 |---|---|
-| `Super`+`Space` | open the menu — the hub for everything |
+| `Start` | open or close the menu — the hub for everything |
+| `Select` | switch to the next open app |
+| `Super`+`Space` | open the menu |
+| `Super`+`b` | button mode: A B X Y L R stop typing and act as buttons |
 | `Super`+`Enter` | new terminal |
 | `Super`+`1`…`9` | go to that workspace (one app each) |
 | `Super`+`Tab` | next workspace |
