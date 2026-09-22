@@ -258,10 +258,11 @@ impl App for Bar {
             .into_iter()
             .rev()
         {
-            let themed = segment
-                .icon
-                .map(|i| i.theme_name())
-                .filter(|name| self.icons.get(name, self.theme.icons.size_bar).is_some());
+            let themed = segment.icon.map(|i| i.theme_name()).filter(|name| {
+                self.icons
+                    .get_symbolic(name, self.theme.icons.size_bar)
+                    .is_some()
+            });
             let drawn = segment.icon.and_then(|icon| icon.width());
             let icon_width = match (&themed, drawn) {
                 (Some(_), _) => self.theme.icons.size_bar as i32 + 4,
@@ -284,7 +285,7 @@ impl App for Bar {
                 (Some(name), _) => {
                     let size_icon = self.theme.icons.size_bar;
                     let top = centre - size_icon as i32 / 2;
-                    if let Some(icon) = self.icons.get(name, size_icon) {
+                    if let Some(icon) = self.icons.get_symbolic(name, size_icon) {
                         icon.draw_tinted(canvas, right, top, segment.color);
                     }
                 }

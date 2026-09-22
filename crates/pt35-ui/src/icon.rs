@@ -89,6 +89,19 @@ impl Icons {
         })
     }
 
+    /// A status icon: one flat shape, made to be drawn in one colour. Papirus
+    /// keeps those under `<size>/symbolic/`, named `<name>-symbolic`, and the
+    /// full-colour icon of the same name is a poor stand-in when tinted.
+    pub fn get_symbolic(&mut self, name: &str, size: u32) -> Option<&Icon> {
+        let symbolic = format!("{name}-symbolic");
+        let key = if self.get(&symbolic, size).is_some() {
+            symbolic
+        } else {
+            name.to_string()
+        };
+        self.get(&key, size)
+    }
+
     pub fn get(&mut self, name: &str, size: u32) -> Option<&Icon> {
         let key = (name.to_string(), size);
         if !self.cache.contains_key(&key) {
@@ -113,6 +126,16 @@ fn find(themes: &[String], name: &str) -> Option<PathBuf> {
                     let candidate = category.path().join(&file);
                     if candidate.is_file() {
                         return Some(candidate);
+                    }
+                    // Papirus nests its symbolic set one level deeper.
+                    let Ok(nested) = std::fs::read_dir(category.path()) else {
+                        continue;
+                    };
+                    for sub in nested.flatten() {
+                        let candidate = sub.path().join(&file);
+                        if candidate.is_file() {
+                            return Some(candidate);
+                        }
                     }
                 }
             }
