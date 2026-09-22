@@ -8,27 +8,39 @@ use pt35_common::menu::Builtin;
 use pt35_common::paths;
 use std::io::{BufRead, BufReader, Write};
 
+/// Send one request and wait for the reply.
+#[cfg(unix)]
+pub fn request(req: &Request) -> Result<Response, String> {
+    use std::os::unix::net::UnixStream;
+
+    let stream = UnixStream::connect(paths::socket_path())
+        .map_err(|_| "pt35d is not running".to_string())?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_millis(2000)))
+        .map_err(|e| e.to_string())?;
+    let mut writer = &stream;
+    let line = serde_json::to_string(req).map_err(|e| e.to_string())?;
+    writeln!(writer, "{line}").map_err(|e| e.to_string())?;
+    writer.flush().map_err(|e| e.to_string())?;
+
+    let mut reply = String::new();
+    BufReader::new(&stream)
+        .read_line(&mut reply)
+        .map_err(|e| e.to_string())?;
+    serde_json::from_str(reply.trim_end()).map_err(|e| e.to_string())
+}
+
+#[cfg(not(unix))]
+pub fn request(_req: &Request) -> Result<Response, String> {
+    Err("no unix socket".into())
+}
+
 /// Status from pt35d, or `None` when the daemon is not answering.
 pub fn status() -> Option<Status> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::net::UnixStream;
-        let stream = UnixStream::connect(paths::socket_path()).ok()?;
-        stream
-            .set_read_timeout(Some(std::time::Duration::from_millis(400)))
-            .ok()?;
-        let mut writer = &stream;
-        writeln!(writer, "{}", serde_json::to_string(&Request::Status).ok()?).ok()?;
-        writer.flush().ok()?;
-        let mut line = String::new();
-        BufReader::new(&stream).read_line(&mut line).ok()?;
-        match serde_json::from_str(line.trim_end()).ok()? {
-            Response::Status(status) => Some(status),
-            _ => None,
-        }
+    match request(&Request::Status) {
+        Ok(Response::Status(status)) => Some(status),
+        _ => None,
     }
-    #[cfg(not(unix))]
-    None
 }
 
 /// Replace a tile's static note with what is true right now.

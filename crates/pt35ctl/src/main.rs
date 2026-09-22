@@ -6,7 +6,7 @@
 
 use anyhow::{bail, Context, Result};
 use pt35_common::ipc::{
-    CpuProfile, Delta, PointerMode, PowerAction, Request, Response, Status, Toggle,
+    CpuProfile, Delta, PointerMode, PowerAction, Request, Response, Status, Toggle, WindowAction,
 };
 
 mod client;
@@ -21,7 +21,7 @@ usage:
   pt35ctl brightness +10 | -10 | 50
   pt35ctl pointer [toggle|on|off|grid]
   pt35ctl scale [1.0|0.75|cycle]
-  pt35ctl window fit
+  pt35ctl window fit|close|next|prev|fullscreen
   pt35ctl screenshot
   pt35ctl cpu powersave|balanced|performance
   pt35ctl power screenoff|lock|logout|reboot|poweroff|menu
@@ -123,6 +123,18 @@ fn parse(argv: &[&str]) -> Result<Request> {
         },
 
         ["window", "fit"] => Request::WindowFit,
+        ["window", "close"] => Request::Window {
+            action: WindowAction::Close,
+        },
+        ["window", "next"] => Request::Window {
+            action: WindowAction::Next,
+        },
+        ["window", "prev"] => Request::Window {
+            action: WindowAction::Previous,
+        },
+        ["window", "fullscreen"] => Request::Window {
+            action: WindowAction::Fullscreen,
+        },
         ["screenshot"] => Request::Screenshot,
 
         ["cpu", profile] => Request::Cpu {
@@ -245,6 +257,18 @@ mod tests {
             }
         );
         assert_eq!(parse(&["window", "fit"]).unwrap(), Request::WindowFit);
+        assert_eq!(
+            parse(&["window", "close"]).unwrap(),
+            Request::Window {
+                action: WindowAction::Close
+            }
+        );
+        assert_eq!(
+            parse(&["window", "next"]).unwrap(),
+            Request::Window {
+                action: WindowAction::Next
+            }
+        );
         assert_eq!(
             parse(&["pointer", "toggle"]).unwrap(),
             Request::Pointer {

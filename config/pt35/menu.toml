@@ -42,8 +42,8 @@ entries = [
   { label = "Monitor",  app = "monitor",  glyph = "M",  tint = "#d29922" },
   { label = "Music",    app = "music",    glyph = "♪", tint = "#7c72ff" },
   { label = "Images",   app = "images",   glyph = "I", tint = "#48e6fe" },
-  { label = "PDF",      app = "pdf",      glyph = "P",  tint = "#f85149" },
   { label = "Video",    app = "video",    glyph = "▶",  tint = "#db61a2" },
+  { label = "Calc",     app = "calculator", glyph = "=", tint = "#e3ff4f" },
   { label = "Browser",  app = "browser",  glyph = "@",  tint = "#2f81f7" },
   { label = "All apps", builtin = "desktop_entries", glyph = "…", tint = "#8b949e" },
 ]

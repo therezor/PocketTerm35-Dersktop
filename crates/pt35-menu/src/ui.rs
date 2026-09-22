@@ -75,6 +75,7 @@ pub struct Menu {
     /// the layout and drift from it.
     row_hits: Vec<(i32, i32, i32, i32)>,
     hint_hits: Vec<(i32, i32, i32, &'static str)>,
+    error: Option<String>,
 }
 
 impl Menu {
@@ -87,6 +88,7 @@ impl Menu {
             windows: providers::items(pt35_common::menu::Builtin::Windows).len(),
             row_hits: Vec::new(),
             hint_hits: Vec::new(),
+            error: None,
         }
     }
 
@@ -106,10 +108,16 @@ impl Menu {
     }
 
     fn apply(&mut self, step: Step) -> bool {
+        self.error = None;
         match step {
             Step::Quit => false,
             Step::Run(command) => {
-                exec::perform(&command);
+                // A launch that fails must not close the menu: the screen would
+                // go back to an empty workspace with no word of what happened.
+                if let Err(message) = exec::perform(&command) {
+                    self.error = Some(message);
+                    return true;
+                }
                 false
             }
             Step::Open(builtin) => {
@@ -475,7 +483,25 @@ impl App for Menu {
     }
 
     fn draw(&mut self, canvas: &mut Canvas) {
-        let hint_top = canvas.height as i32 - self.theme.menu.hint_height as i32;
+        let mut hint_top = canvas.height as i32 - self.theme.menu.hint_height as i32;
+        if let Some(message) = self.error.clone() {
+            let size = self.theme.font.size_hint;
+            let height = 26;
+            let y = hint_top - height;
+            canvas.rect(0, y, canvas.width, height as u32, self.theme.color.critical);
+            let text =
+                self.font
+                    .elide(&message, size, canvas.width - 2 * self.theme.menu.padding_x);
+            self.font.draw(
+                canvas,
+                &text,
+                self.theme.menu.padding_x as i32,
+                y + 18,
+                size,
+                self.theme.color.background,
+            );
+            hint_top = y;
+        }
         let body_top = self.draw_header(canvas) + 8;
         match self.model.layout() {
             Layout::Grid => self.draw_tiles(canvas, body_top, hint_top - 4),

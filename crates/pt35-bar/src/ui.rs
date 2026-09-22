@@ -16,6 +16,16 @@ struct Bar {
     font: Font,
     feed: StatusFeed,
     clock: String,
+    /// Tap targets recorded by the last draw.
+    hits: Vec<(i32, i32, Action)>,
+}
+
+/// What a tap on the bar does.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Action {
+    Menu,
+    Switch,
+    Close,
 }
 
 impl Bar {
@@ -26,7 +36,36 @@ impl Bar {
             font,
             feed,
             clock,
+            hits: Vec::new(),
         }
+    }
+
+    fn button(
+        &mut self,
+        canvas: &mut Canvas,
+        x: i32,
+        glyph: &str,
+        fill: pt35_common::theme::Rgb,
+        ink: pt35_common::theme::Rgb,
+        action: Action,
+    ) -> i32 {
+        let size = self.theme.font.size_bar;
+        let centre = canvas.height as i32 / 2;
+        let height = (canvas.height as i32 - 6).max(16);
+        let width = (self.font.measure(glyph, size) as i32 + 16).max(height);
+        canvas.rounded_rect(
+            x,
+            centre - height / 2,
+            width as u32,
+            height as u32,
+            (height / 2) as u32,
+            fill,
+        );
+        let baseline = centre + (size * 0.36) as i32;
+        let text_x = x + (width - self.font.measure(glyph, size) as i32) / 2;
+        self.font.draw(canvas, glyph, text_x, baseline, size, ink);
+        self.hits.push((x, x + width, action));
+        x + width
     }
 }
 
@@ -37,16 +76,11 @@ fn now(theme: &Theme) -> String {
 }
 
 impl App for Bar {
-    // Deliberately the *alt* background: the strip should read as a separate
-    // surface from the app filling the rest of the panel.
-    #[allow(clippy::misnamed_getters)]
     fn background(&self) -> pt35_common::theme::Rgb {
-        self.theme.color.background_alt
+        self.theme.color.background
     }
 
     fn tick_interval(&self) -> Option<Duration> {
-        // Once a second: fine for a clock that shows minutes, and cheap enough
-        // that the bar stays invisible in `top`.
         Some(Duration::from_secs(1))
     }
 
@@ -54,8 +88,26 @@ impl App for Bar {
         let clock = now(&self.theme);
         let changed = clock != self.clock;
         self.clock = clock;
-        // Status may have changed under us at any time; repaint on the same beat.
         changed || self.feed.get().is_some()
+    }
+
+    fn touch(&mut self, x: f64, _y: f64) -> bool {
+        let x = x as i32;
+        let hit = self
+            .hits
+            .iter()
+            .find(|(left, right, _)| x >= *left && x < *right)
+            .map(|(_, _, action)| *action);
+        let args: &[&str] = match hit {
+            Some(Action::Menu) => &["menu", "toggle"],
+            Some(Action::Switch) => &["menu", "open", "windows"],
+            Some(Action::Close) => &["window", "close"],
+            None => return true,
+        };
+        if let Err(e) = std::process::Command::new("pt35ctl").args(args).spawn() {
+            log::error!("pt35ctl {}: {e}", args.join(" "));
+        }
+        true
     }
 
     fn draw(&mut self, canvas: &mut Canvas) {
@@ -64,47 +116,76 @@ impl App for Bar {
         let pad = self.theme.bar.padding_x as i32;
         let baseline = (canvas.height as f32 / 2.0 + size * 0.36).round() as i32;
         let centre = canvas.height as i32 / 2;
-        let pill_h = (canvas.height as i32 - 8).max(14);
+        self.hits.clear();
 
-        let mut x = pad;
+        // A hairline under the bar, the one bit of chrome that separates it from
+        // a fullscreen app.
+        canvas.rect(
+            0,
+            canvas.height as i32 - 1,
+            canvas.width,
+            1,
+            self.theme.color.border,
+        );
+
+        let mut x = pad / 2;
+        x = self.button(
+            canvas,
+            x,
+            "=",
+            self.theme.color.accent,
+            self.theme.color.accent_fg,
+            Action::Menu,
+        ) + 6;
+
         for (index, segment) in segments::left(status.as_ref(), &self.theme)
             .into_iter()
             .enumerate()
         {
-            // The workspace number gets a pill. It is the one thing on the bar
-            // that changes as you move, so it has to be findable without reading.
             if index == 0 {
                 let width = self.font.measure(&segment.text, size) as i32;
-                let pill_w = (width + 16).max(pill_h);
+                let height = (canvas.height as i32 - 8).max(14);
                 canvas.rounded_rect(
                     x,
-                    centre - pill_h / 2,
-                    pill_w as u32,
-                    pill_h as u32,
-                    (pill_h / 2) as u32,
-                    segment.color,
+                    centre - height / 2,
+                    (width + 14) as u32,
+                    height as u32,
+                    4,
+                    self.theme.color.background_alt,
                 );
                 self.font.draw(
                     canvas,
                     &segment.text,
-                    x + (pill_w - width) / 2,
+                    x + 7,
                     baseline,
                     size,
-                    self.theme.color.accent_fg,
+                    self.theme.color.accent,
                 );
-                x += pill_w + pad;
+                self.hits.push((x, x + width + 14, Action::Switch));
+                x += width + 14 + 6;
                 continue;
             }
-            let text = self.font.elide(&segment.text, size, canvas.width / 2);
+            let text = self.font.elide(&segment.text, size, canvas.width / 3);
             x = self
                 .font
                 .draw(canvas, &text, x, baseline, size, segment.color)
                 + pad;
         }
 
-        // Laid out backwards from the edge so the clock never moves when a
-        // widget appears or disappears.
-        let mut right = canvas.width as i32 - pad;
+        // Close sits hard against the right edge: the same corner every time,
+        // whatever else the bar is showing.
+        let close_w = (self.font.measure("x", size) as i32 + 16).max(canvas.height as i32 - 6);
+        let close_x = canvas.width as i32 - close_w - pad / 2;
+        self.button(
+            canvas,
+            close_x,
+            "x",
+            self.theme.color.critical,
+            self.theme.color.background,
+            Action::Close,
+        );
+
+        let mut right = close_x - pad;
         let mut first = true;
         for segment in segments::right(status.as_ref(), &self.theme, &self.clock)
             .into_iter()
@@ -132,7 +213,6 @@ impl App for Bar {
     }
 }
 
-/// Load the configuration, connect to pt35d and put the bar on screen.
 pub fn run() -> Result<()> {
     let theme: Theme = pt35_common::load_config("pt35/theme.toml").unwrap_or_default();
     let font = Font::load(&theme.font.family)?;

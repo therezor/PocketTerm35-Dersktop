@@ -33,6 +33,10 @@ pub enum Request {
     },
     /// Force the focused window back inside 640x480.
     WindowFit,
+    /// Close the focused window, or move focus between windows.
+    Window {
+        action: WindowAction,
+    },
     Screenshot,
     Cpu {
         profile: CpuProfile,
@@ -84,6 +88,15 @@ impl std::str::FromStr for Delta {
                 .map_err(|_| format!("bad value {s:?}: want +N, -N, N or 'mute'")),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowAction {
+    Close,
+    Next,
+    Previous,
+    Fullscreen,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -178,6 +191,9 @@ mod tests {
             action: PowerAction::Poweroff,
         });
         roundtrip(Request::Status);
+        roundtrip(Request::Window {
+            action: WindowAction::Close,
+        });
     }
 
     #[test]

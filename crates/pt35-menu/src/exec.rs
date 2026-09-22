@@ -57,19 +57,32 @@ pub fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r"'\''"))
 }
 
-pub fn perform(command: &Command) {
+/// Carry out a command. The error is what the menu shows on screen, so it has
+/// to read as a sentence, not as a debug dump.
+pub fn perform(command: &Command) -> Result<(), String> {
     match plan(command) {
-        Plan::Nothing => {}
-        Plan::Ctl(args) => {
-            if let Err(e) = std::process::Command::new("pt35ctl").args(&args).spawn() {
-                log::error!("pt35ctl {}: {e}", args.join(" "));
+        Plan::Nothing => Ok(()),
+        // Launching goes through the daemon so the reply can be waited for: a
+        // missing binary is reported instead of leaving a blank workspace.
+        Plan::Ctl(args) if args.first().map(String::as_str) == Some("launch") => {
+            let app = args.get(1).cloned().unwrap_or_default();
+            match crate::live::request(&pt35_common::ipc::Request::Launch { app }) {
+                Ok(pt35_common::ipc::Response::Error { message }) => Err(message),
+                Ok(_) => Ok(()),
+                Err(message) => Err(message),
             }
         }
-        Plan::Shell(cmd) => {
-            if let Err(e) = std::process::Command::new("sh").arg("-c").arg(&cmd).spawn() {
-                log::error!("sh -c {cmd:?}: {e}");
-            }
-        }
+        Plan::Ctl(args) => std::process::Command::new("pt35ctl")
+            .args(&args)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("pt35ctl: {e}")),
+        Plan::Shell(cmd) => std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&cmd)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("{cmd}: {e}")),
     }
 }
 

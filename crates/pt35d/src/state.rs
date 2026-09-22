@@ -3,7 +3,7 @@
 use anyhow::{bail, Result};
 use pt35_common::apps::{AppTable, PointerPolicy};
 use pt35_common::ipc::{
-    CpuProfile, Delta, PointerMode, PowerAction, Request, Response, Status, Toggle,
+    CpuProfile, Delta, PointerMode, PowerAction, Request, Response, Status, Toggle, WindowAction,
 };
 use pt35_common::menu::MenuTree;
 use pt35_common::theme::Theme;
@@ -228,6 +228,17 @@ impl Session {
                 Ok(Response::Ok)
             }
 
+            Request::Window { action } => {
+                let command = match action {
+                    WindowAction::Close => "kill",
+                    WindowAction::Next => "focus next",
+                    WindowAction::Previous => "focus prev",
+                    WindowAction::Fullscreen => "fullscreen toggle",
+                };
+                self.sway_command(command)?;
+                Ok(Response::Ok)
+            }
+
             Request::Screenshot => {
                 let path = screenshot_path();
                 let status = Command::new("grim")
@@ -347,6 +358,14 @@ impl Session {
             .ok_or_else(|| anyhow::anyhow!("no app profile {id:?} in apps.toml"))?
             .clone();
 
+        // A missing binary used to switch to an empty workspace and leave a
+        // blank screen. Say what is wrong instead.
+        if let Some(binary) = command_binary(&app.exec) {
+            if !on_path(&binary) {
+                bail!("{binary} is not installed");
+            }
+        }
+
         if app.workspace > 0 {
             self.sway_command(&format!("workspace number {}", app.workspace))?;
         }
@@ -430,6 +449,29 @@ fn run_or_fail(argv: &[&str]) -> Result<()> {
     Ok(())
 }
 
+/// The binary an `exec` line runs, skipping a `sh -c` wrapper.
+pub fn command_binary(exec: &str) -> Option<String> {
+    let mut words = exec.split_whitespace();
+    let first = words.next()?;
+    if first == "sh" || first == "bash" {
+        // sh -c '<real command> ...': take the first word inside the quotes.
+        let rest = exec.split_once("-c")?.1.trim();
+        let inner = rest.trim_start_matches(['\'', '"']);
+        return inner.split_whitespace().next().map(str::to_string);
+    }
+    Some(first.to_string())
+}
+
+fn on_path(binary: &str) -> bool {
+    if binary.starts_with('/') {
+        return std::path::Path::new(binary).exists();
+    }
+    let Some(path) = std::env::var_os("PATH") else {
+        return true;
+    };
+    std::env::split_paths(&path).any(|dir| dir.join(binary).exists())
+}
+
 /// The scales worth cycling through on a 640x480 panel: native, then the two
 /// that GUI apps need (853x640 and 1067x800 logical).
 pub fn next_scale(current: f32) -> f32 {
@@ -496,6 +538,20 @@ scale = 0.75
             1.0,
             "an unclaimed workspace returns to native"
         );
+    }
+
+    #[test]
+    fn finds_the_binary_behind_an_exec_line() {
+        assert_eq!(command_binary("foot").as_deref(), Some("foot"));
+        assert_eq!(
+            command_binary("chromium --ozone-platform=wayland").as_deref(),
+            Some("chromium")
+        );
+        assert_eq!(
+            command_binary("sh -c 'imv-wayland \"$HOME/Pictures\"'").as_deref(),
+            Some("imv-wayland")
+        );
+        assert_eq!(command_binary("").as_deref(), None);
     }
 
     #[test]

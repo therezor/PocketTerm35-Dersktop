@@ -16,7 +16,7 @@ set $ctl  pt35ctl
 output * {
     mode 640x480
     scale 1
-    background #101418 solid_color
+    background #05080a solid_color
 }
 
 # 640x480 has no room for chrome: no borders, no gaps, no title bars.
@@ -80,8 +80,14 @@ exec --no-startup-id foot
 # keysyms — all shell behaviour is bound here, never in keyd.
 
 # The menu is the hub: one key opens launcher / switcher / settings / power.
+#
+# Select (KEY_SYSRQ) is the global menu key. It carries no character, so it is
+# safe to grab even while typing. Start is deliberately NOT grabbed here: the
+# menu needs it as Confirm, and a compositor binding would eat it first.
 bindsym $mod+space  exec $menu
 bindsym Menu        exec $menu
+bindsym Print       exec $menu
+bindsym Sys_Req     exec $menu
 
 # Fallbacks on Alt, in case this unit has no physical Super key: without them a
 # missing Mod4 would leave the session with no way to open anything.
@@ -91,6 +97,7 @@ bindsym Mod1+Tab    workspace next_on_output
 
 bindsym $mod+Return exec $term
 bindsym $mod+q      kill
+bindsym $mod+w      exec $ctl menu open windows
 bindsym $mod+f      fullscreen toggle
 bindsym $mod+t      floating toggle
 # force an oversized window back on-screen

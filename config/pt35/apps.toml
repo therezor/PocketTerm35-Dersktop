@@ -1,11 +1,14 @@
 # pt35-desktop application profiles.
 #
-# pt35d applies a profile when the app is launched and reverts it when its
-# workspace loses focus. `scale` is the sway OUTPUT scale, which is global —
-# switching it re-lays-out the whole screen, so it changes on workspace focus,
-# not per window. 0.75 gives clients an ~853x640 logical surface.
+# pt35d applies a profile when the app launches and switches the output scale
+# back when focus leaves its workspace. `scale` is the sway OUTPUT scale, which
+# is global: 0.75 gives clients an ~853x640 logical surface, which is what makes
+# GTK dialogs fit on a 640x480 panel.
 #
-# User override: ~/.config/pt35/apps.toml (merged per app id).
+# `exec` must be a command that is useful with no arguments. A viewer that opens
+# on nothing shows a blank screen, so images and video are pointed at a folder.
+#
+# User override: ~/.config/pt35/apps.toml, merged per app id.
 
 [app.terminal]
 label     = "Terminal"
@@ -16,62 +19,61 @@ scale     = 1.0
 
 [app.files]
 label     = "Files"
-# yazi is not in Debian Trixie; the pt35-apps package ships a static build.
-exec      = "foot -a pt35-files yazi"
-match     = { app_id = "pt35-files" }
+exec      = "pcmanfm"
+match     = { class = "Pcmanfm" }
 workspace = 2
-scale     = 1.0
+scale     = 0.75
+pointer   = "auto"
 
 [app.editor]
 label     = "Editor"
-exec      = "foot -a pt35-editor hx"
-match     = { app_id = "pt35-editor" }
+exec      = "mousepad"
+match     = { class = "Mousepad" }
 workspace = 3
-scale     = 1.0
+scale     = 0.75
 
 [app.monitor]
-label     = "System Monitor"
-exec      = "foot -a pt35-monitor btm --basic"
+label     = "Monitor"
+exec      = "foot -a pt35-monitor top"
 match     = { app_id = "pt35-monitor" }
 workspace = 4
 scale     = 1.0
 
 [app.music]
 label     = "Music"
-exec      = "foot -a pt35-music ncmpcpp"
-match     = { app_id = "pt35-music" }
+exec      = "vlc --intf qt"
+match     = { class = "vlc" }
 workspace = 5
-scale     = 1.0
+scale     = 0.75
+pointer   = "auto"
 
 [app.images]
 label     = "Images"
-exec      = "imv"
+exec      = "sh -c 'imv-wayland \"${HOME}/Pictures\"'"
 match     = { app_id = "imv" }
 workspace = 6
 scale     = 1.0
-pointer   = "on_demand"
-
-[app.pdf]
-label     = "PDF"
-exec      = "zathura"
-match     = { app_id = "org.pwmt.zathura" }
-workspace = 6
-scale     = 0.75
-pointer   = "on_demand"
 
 [app.video]
 label      = "Video"
-exec       = "mpv --player-operation-mode=pseudo-gui"
+exec       = "mpv --player-operation-mode=pseudo-gui --idle=yes"
 match      = { app_id = "mpv" }
 workspace  = 7
 scale      = 1.0
 fullscreen = true
 
 [app.browser]
-label   = "Browser"
-exec    = "chromium --ozone-platform=wayland --force-device-scale-factor=0.75 --window-size=853,640"
-match   = { app_id = "chromium" }
+label     = "Browser"
+exec      = "chromium --ozone-platform=wayland --force-device-scale-factor=0.75 --window-size=853,640"
+match     = { app_id = "chromium" }
 workspace = 8
-scale   = 0.75
-pointer = "auto"
-env     = { CHROME_EXTRA_FLAGS = "--enable-features=UseOzonePlatform" }
+scale     = 0.75
+pointer   = "auto"
+
+[app.calculator]
+label     = "Calculator"
+exec      = "galculator"
+match     = { class = "Galculator" }
+workspace = 9
+scale     = 0.75
+pointer   = "auto"

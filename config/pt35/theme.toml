@@ -1,23 +1,29 @@
 # pt35-desktop theme. Sizes are physical pixels on the 640x480 panel.
 # User override: ~/.config/pt35/theme.toml, merged over this file key by key.
 #
-# The panel is 3.5" at 640x480 — roughly 9 px/mm — so a 46px row is about 5mm
-# and comfortable both to read at arm's length and to hit with a thumb.
+# Phosphor green on near black. The panel is 3.5" at 640x480, about 9 px/mm, so
+# a 46px row is ~5mm: readable at arm's length and hittable with a thumb.
 
 [color]
-background      = "#0d1117"
-background_alt  = "#161b22"
-foreground      = "#e6edf3"
-muted           = "#8b949e"
-accent          = "#2f81f7"
-accent_fg       = "#ffffff"
-warning         = "#d29922"
-critical        = "#f85149"
-ok              = "#3fb950"
-border          = "#30363d"
+background      = "#05080a"
+background_alt  = "#0b1210"
+foreground      = "#b8ffcf"
+muted           = "#3f7a55"
+accent          = "#00ff88"
+accent_fg       = "#04140b"
+warning         = "#e3ff4f"
+critical        = "#ff4d5e"
+ok              = "#00ff88"
+border          = "#16302a"
+
+# Face-button pills in the hint bar, matching the physical buttons.
+button_a        = "#00ff88"
+button_b        = "#ff4d5e"
+button_x        = "#22e0ff"
+button_y        = "#e3ff4f"
+button_neutral  = "#16302a"
 
 [font]
-# One bundled font, rasterised by fontdue. No fontconfig, no shaping engine.
 family     = "DejaVu Sans"
 size_bar   = 14.0
 size_menu  = 21.0
@@ -32,7 +38,7 @@ show_network  = true
 clock_format  = "%H:%M"
 
 [menu]
-# 480 - 26 (bar) - 44 (header) - 44 (hints) = 366px of list, 7 rows of 46 + slack
+# 480 - 26 (bar) - 44 (header) - 44 (hints) = 366px of body
 rows_visible  = 7
 row_height    = 46
 padding_x     = 14
@@ -41,6 +47,9 @@ filter_hint   = "X to search"
 header_height = 44
 hint_height   = 44
 radius        = 10
+columns       = 3
+tile_height   = 80
+gap           = 8
 
 [pointer]
 speed         = 380.0    # px/s at full deflection

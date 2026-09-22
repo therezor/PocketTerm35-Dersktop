@@ -61,7 +61,7 @@ fn gui_apps_that_need_room_ask_for_a_smaller_scale() {
     // The 640x480 panel only fits GTK/Qt dialogs at a fractional output scale.
     // Anything launching a known-big GUI app must say so in its profile.
     let apps: AppTable = load("apps.toml");
-    for id in ["browser", "pdf"] {
+    for id in ["browser", "files"] {
         let app = apps
             .get(id)
             .unwrap_or_else(|| panic!("missing app profile {id:?}"));
