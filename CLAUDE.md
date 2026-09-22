@@ -38,24 +38,52 @@ Two modes, nothing else: Buttons (default) and Mouse.
 
 Buttons mode is the D-pad as arrows, A Enter, B Escape, X Tab, Y fullscreen.
 Mouse mode is the D-pad moving the cursor, A and B the clicks, X and Y the
-wheel. In both: L and R switch app, L+R closes the window, Start is the menu
-and Select switches mode.
+wheel. In both: L sends the keyboard Menu key so the app opens its own context
+menu, R is the window picker, Start is the menu and Select switches mode.
 
-Both are sway bindings on the firmware's keysyms (`pt35d`'s `modes.rs`),
+Nothing closes a window from a shoulder. Closing is `$mod+q`, the bar's `x`, or
+Y on the window picker. A button under the index finger is too easy to catch by
+accident to throw away what is on screen.
+
+L only works because sway does not bind `Menu` and `xkb_options compose:menu` is
+off. Either one would eat the keysym before the app saw it.
+
+L and R are sway bindings on the firmware's keysyms (`pt35d`'s `modes.rs`),
 dropped while the menu is open because a sway binding beats any surface and the
-menu reads the same keys. L and R fire on release so the chord is reachable.
+menu reads the same keys. Start and Select are in the sway config instead, so no
+mode can lose them.
 
 The menu itself is still modal, for a stock unit where the letters are the
-buttons: nav mode (A opens, B back, X search, Y home) and filter mode.
+buttons: nav mode (A opens, B back, X search, Y home) and filter mode. The D-pad
+sideways changes a quick setting and does nothing else. It is not Back: B is.
+
+## Staying in step with sway
+
+`pt35d` subscribes to sway's `window` and `workspace` events (`events.rs`) and
+rebuilds the window list on each one. The 2 second poll is for hardware only.
+Polling for windows is what left a closed window sitting in the dock.
+
+`kill` is a request, not a deletion: sway answers it before the client has gone.
+So closing drops the window locally and lets the event put the truth back. An app
+that refuses to close reappears, which is what you want it to do.
+
+With nothing open the menu is the desktop: it opens on its own and refuses to
+close. A launch holds that off for five seconds, or the menu lands on top of
+every app you start.
 
 ## Layout
 
 640x480 leaves no room for chrome that is not earning its place.
 
 - No tiling. One window owns the screen; pt35d moves a second window on a
-  workspace to a free one. Not sway `fullscreen`, which would hide the dock.
-- The top bar is a dock: one slot per open window, tap to focus, menu button
-  left, close button right.
+  workspace to a free one. Not sway `fullscreen`, which would hide the bar.
+- The top bar is a taskbar: one slot per open window carrying its icon and its
+  name, tap to focus, menu button left, close button right. Names shrink and
+  then drop to icons as windows are added, but a window never loses its slot.
+  There is no "nothing open" text: with no windows the menu covers the bar.
+- A toast takes the slot area for a couple of seconds. It is the only feedback a
+  key binding gets, since `pt35ctl` from a binding writes to a stderr nobody
+  reads.
 - Bar 34px, menu header 46px, hint bar 46px, list rows 50px, tiles 86px.
 - Corners are 2px. Squared, not rounded.
 - Mint on charcoal, mono for readouts and sans for labels. Geometry and colour

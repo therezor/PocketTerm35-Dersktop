@@ -26,6 +26,9 @@ pub struct Row {
     pub icon: String,
     pub tint: Option<Rgb>,
     pub submenu: bool,
+    /// What activating this row does, for a caller that needs to know. Empty
+    /// on a row that came from `menu.toml` rather than a provider.
+    pub payload: String,
 }
 
 /// The window picker is a grid: you recognise an app by its shape faster than
@@ -188,6 +191,7 @@ impl Model {
                         .unwrap_or_default(),
                     tint: entry.and_then(|e| e.tint),
                     submenu: self.leads_deeper(&screen.source, index),
+                    payload: item.map(|i| i.payload.clone()).unwrap_or_default(),
                 }
             })
             .collect()
@@ -319,12 +323,36 @@ impl Model {
 
     fn push_confirm(&mut self, command: Command, label: &str) {
         let rows = self.rows;
+        // Spelled out, not "No" and "Yes". Half a second of reading is the
+        // whole point of a confirmation, and the row you land on says what it
+        // will do rather than making you look back at the title.
+        let no = "No, go back".to_string();
+        let yes = format!("Yes, {}", label.to_lowercase());
         self.stack.push(Screen {
             title: format!("{label}?"),
-            list: ListState::new(vec!["No".into(), "Yes".into()], rows),
+            list: ListState::new(vec![no, yes], rows),
             source: Source::Confirm { command },
             layout: Layout::List,
         });
+    }
+
+    /// Whether this screen's rows carry a 1-9 shortcut.
+    ///
+    /// Not on a confirmation: `2` would be an instant yes to something you were
+    /// being asked to think about.
+    pub fn numbered(&self) -> bool {
+        !matches!(
+            self.stack.last().map(|s| &s.source),
+            Some(Source::Confirm { .. })
+        )
+    }
+
+    /// The builtin behind the current screen, if it is a dynamic one.
+    pub fn dynamic_builtin(&self) -> Option<Builtin> {
+        match self.stack.last().map(|screen| &screen.source) {
+            Some(Source::Dynamic { builtin, .. }) => Some(*builtin),
+            _ => None,
+        }
     }
 
     /// Refresh the items of the dynamic screen on top, keeping it open.
@@ -339,6 +367,23 @@ impl Model {
         let screen = self.screen_mut();
         screen.list = list;
         screen.source = Source::Dynamic { builtin, items };
+    }
+
+    /// Drop one row of the current dynamic screen, by payload.
+    ///
+    /// Used after a window is asked to close. Waiting for the daemon to notice
+    /// would take a tree read that cannot see the future: sway answers `kill`
+    /// before the client has gone.
+    pub fn drop_dynamic(&mut self, payload: &str) {
+        let Some(Source::Dynamic { items, .. }) = self.stack.last().map(|s| &s.source) else {
+            return;
+        };
+        let items: Vec<crate::providers::Item> = items
+            .iter()
+            .filter(|item| item.payload != payload)
+            .cloned()
+            .collect();
+        self.replace_dynamic(items);
     }
 
     /// Activate the nth row of the drawn window. Used by a tap.
@@ -398,28 +443,14 @@ impl Model {
                 let _ = rows;
                 self.activate(index)
             }
-            // A list leaves Left and Right to the screen: on a quick setting
-            // they are the control, everywhere else they are back and open.
-            Outcome::Left | Outcome::Right => {
-                let up = matches!(outcome, Outcome::Right);
-                match self.focused_adjust() {
-                    Some(adjust) => Step::Adjust(adjust, up),
-                    None if up => match self.screen().list.selected() {
-                        Some(index) => self.activate(index),
-                        None => Step::Nothing,
-                    },
-                    // Left goes up a screen, and stops at the top. Leaving the
-                    // menu is B, Start or Select: a D-pad nudge must not do it.
-                    None => {
-                        if self.stack.len() > 1 {
-                            self.stack.pop();
-                            Step::Redraw
-                        } else {
-                            Step::Nothing
-                        }
-                    }
-                }
-            }
+            // Left and Right change a quick setting in place, and do nothing
+            // anywhere else. They used to be a second Back and a second Open,
+            // which the hint bar never said and a thumb on the D-pad triggered
+            // by accident. Back is B.
+            Outcome::Left | Outcome::Right => match self.focused_adjust() {
+                Some(adjust) => Step::Adjust(adjust, matches!(outcome, Outcome::Right)),
+                None => Step::Nothing,
+            },
         }
     }
 
@@ -543,6 +574,23 @@ entries = [
 
     fn press(model: &mut Model, sym: u32) -> Step {
         model.handle(&Key::new(sym))
+    }
+
+    #[test]
+    fn the_d_pad_sideways_does_not_navigate() {
+        // It used to: Left popped a screen and Right opened the row under the
+        // cursor. Nothing on screen said so, and a thumb resting on the D-pad
+        // hit both. Back is B.
+        let mut model = model();
+        assert_eq!(press(&mut model, sym::RETURN), Step::Redraw);
+        assert_eq!(model.depth(), 2, "now one level down");
+        assert_eq!(press(&mut model, sym::LEFT), Step::Nothing);
+        assert_eq!(model.depth(), 2, "Left is not Back");
+        assert_eq!(press(&mut model, sym::RIGHT), Step::Nothing);
+        assert_eq!(model.depth(), 2, "Right is not Open");
+        // B still is.
+        assert_eq!(model.handle(&Key::with_text('b' as u32, 'b')), Step::Redraw);
+        assert_eq!(model.depth(), 1);
     }
 
     #[test]

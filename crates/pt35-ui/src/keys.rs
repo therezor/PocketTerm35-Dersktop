@@ -18,8 +18,12 @@
 //! On stock firmware six of the twelve are typeable, which forces a modal
 //! design: in [`Mode::Nav`] letters act as buttons, in [`Mode::Filter`] they
 //! type. Start and Select carry no character, so they mean the same thing in
-//! both modes. Both leave the menu: Start opened it and closes it again,
-//! Select switches app. Confirm is A or Enter.
+//! both modes.
+//!
+//! Start closes the menu it opened. Select switches input mode and is bound in
+//! the sway config, and a sway binding beats any surface, so the menu normally
+//! never sees it. It is still handled here for a unit where that binding is
+//! missing. Confirm is A or Enter, back is B.
 
 /// A key press, as the Wayland keyboard reports it (xkb keysym + printable text).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -174,9 +178,11 @@ pub enum Mode {
 pub enum Navigation {
     Up,
     Down,
-    /// D-pad left. A list treats it as Back, a grid moves one tile.
+    /// D-pad left. A grid moves one tile. A list uses it to change a setting in
+    /// place, and otherwise ignores it: back is B, and a nudge on the D-pad
+    /// must not throw away the screen you are looking at.
     Left,
-    /// D-pad right. A list treats it as Activate, a grid moves one tile.
+    /// D-pad right. The mirror of [`Navigation::Left`].
     Right,
     PageUp,
     PageDown,
@@ -186,7 +192,7 @@ pub enum Navigation {
     Activate,
     /// Start / Select / Escape — leave the menu entirely.
     Cancel,
-    /// B / Left / Backspace on an empty filter — up one level.
+    /// B or Backspace on an empty filter — up one level. Not Left.
     Back,
     /// X — start typing a filter.
     StartFilter,

@@ -16,6 +16,15 @@ pub enum Request {
     Launch {
         app: String,
     },
+    /// Run a command line, the way a `.desktop` entry's `Exec=` gives it.
+    ///
+    /// Through the daemon rather than straight from the menu, so that a missing
+    /// binary is reported, an app that is already open is focused instead of
+    /// started twice, and the desktop knows something is on its way and does not
+    /// reopen the menu over it.
+    Exec {
+        command: String,
+    },
     /// Relative (`+5`, `-5`) or absolute (`50`) volume, or mute toggle.
     Volume {
         change: Delta,
@@ -55,12 +64,139 @@ pub enum Request {
     Subscribe,
 }
 
+impl Request {
+    /// Parse a `pt35ctl` argument list.
+    ///
+    /// Lives here rather than in `pt35ctl` so the menu can build the same
+    /// request from the same words without shelling out, and so a `menu.toml`
+    /// `action =` string has exactly one meaning.
+    pub fn from_ctl(argv: &[&str]) -> Result<Request, String> {
+        Ok(match argv {
+            ["menu"] | ["menu", "toggle"] => Request::Menu {
+                action: Toggle::Toggle,
+                page: None,
+            },
+            ["menu", "open"] => Request::Menu {
+                action: Toggle::On,
+                page: None,
+            },
+            ["menu", "close"] => Request::Menu {
+                action: Toggle::Off,
+                page: None,
+            },
+            ["menu", "open", page] => Request::Menu {
+                action: Toggle::On,
+                page: Some((*page).to_string()),
+            },
+            ["menu", page] => Request::Menu {
+                action: Toggle::On,
+                page: Some((*page).to_string()),
+            },
+
+            ["launch", app] => Request::Launch {
+                app: (*app).to_string(),
+            },
+            ["exec", rest @ ..] if !rest.is_empty() => Request::Exec {
+                command: rest.join(" "),
+            },
+
+            ["volume", value] => Request::Volume {
+                change: value.parse::<Delta>()?,
+            },
+            ["brightness", value] => Request::Brightness {
+                change: value.parse::<Delta>()?,
+            },
+
+            ["mode"] | ["mode", "toggle"] => Request::Mode {
+                mode: ModeRequest::Toggle,
+            },
+            ["mode", "buttons"] => Request::Mode {
+                mode: ModeRequest::Buttons,
+            },
+            ["mode", "mouse"] => Request::Mode {
+                mode: ModeRequest::Mouse,
+            },
+
+            ["scale"] | ["scale", "cycle"] => Request::Scale { value: None },
+            ["scale", value] => Request::Scale {
+                value: Some(value.parse().map_err(|_| format!("bad scale {value:?}"))?),
+            },
+
+            ["window", "fit"] => Request::WindowFit,
+            ["window", "close"] => Request::Window {
+                action: WindowAction::Close,
+            },
+            ["window", "next"] => Request::Window {
+                action: WindowAction::Next,
+            },
+            ["window", "prev"] => Request::Window {
+                action: WindowAction::Previous,
+            },
+            ["window", "focus", id] => Request::Window {
+                action: WindowAction::Focus(
+                    id.parse()
+                        .map_err(|_| format!("{id:?} is not a container id"))?,
+                ),
+            },
+            ["window", "close", id] => Request::Window {
+                action: WindowAction::CloseId(
+                    id.parse()
+                        .map_err(|_| format!("{id:?} is not a container id"))?,
+                ),
+            },
+            ["window", "fullscreen"] => Request::Window {
+                action: WindowAction::Fullscreen,
+            },
+            ["screenshot"] => Request::Screenshot,
+
+            ["cpu", profile] => Request::Cpu {
+                profile: match *profile {
+                    "powersave" => CpuProfile::Powersave,
+                    "balanced" => CpuProfile::Balanced,
+                    "performance" => CpuProfile::Performance,
+                    other => return Err(format!("unknown cpu profile {other:?}")),
+                },
+            },
+
+            ["power", action] => Request::Power {
+                action: match *action {
+                    "screenoff" => PowerAction::ScreenOff,
+                    "lock" => PowerAction::Lock,
+                    "logout" => PowerAction::Logout,
+                    "reboot" => PowerAction::Reboot,
+                    "poweroff" => PowerAction::Poweroff,
+                    "menu" => PowerAction::Menu,
+                    other => return Err(format!("unknown power action {other:?}")),
+                },
+            },
+
+            ["touch", action] => Request::Touch {
+                action: Toggle::from_ctl(action)?,
+            },
+            ["reload"] => Request::Reload,
+
+            other => return Err(format!("unknown command: {}", other.join(" "))),
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Toggle {
     On,
     Off,
     Toggle,
+}
+
+impl Toggle {
+    pub fn from_ctl(value: &str) -> Result<Self, String> {
+        match value {
+            "on" => Ok(Toggle::On),
+            "off" => Ok(Toggle::Off),
+            "toggle" => Ok(Toggle::Toggle),
+            other => Err(format!("expected on|off|toggle, got {other:?}")),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -97,6 +233,12 @@ pub enum WindowAction {
     Next,
     Previous,
     Fullscreen,
+    /// Focus one window by container id. The dock and the window picker use
+    /// this rather than calling `swaymsg` themselves, so the daemon learns
+    /// about the change and tells the bar at once.
+    Focus(i64),
+    /// Close one window by container id, whichever one has focus.
+    CloseId(i64),
 }
 
 /// The device has twelve controls and two things to do with them, so there are
@@ -135,6 +277,16 @@ pub enum CpuProfile {
     Powersave,
     Balanced,
     Performance,
+}
+
+impl CpuProfile {
+    pub fn label(self) -> &'static str {
+        match self {
+            CpuProfile::Powersave => "powersave",
+            CpuProfile::Balanced => "balanced",
+            CpuProfile::Performance => "performance",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -276,6 +428,129 @@ mod tests {
                 assert!(got.battery_percent.is_none());
             }
             other => panic!("unexpected {other:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod ctl_tests {
+    use super::*;
+
+    #[test]
+    fn parses_the_bindings_used_in_the_sway_config() {
+        assert_eq!(
+            Request::from_ctl(&["menu", "toggle"]).unwrap(),
+            Request::Menu {
+                action: Toggle::Toggle,
+                page: None
+            }
+        );
+        assert_eq!(
+            Request::from_ctl(&["volume", "+5"]).unwrap(),
+            Request::Volume {
+                change: Delta::Relative(5)
+            }
+        );
+        assert_eq!(
+            Request::from_ctl(&["brightness", "-10"]).unwrap(),
+            Request::Brightness {
+                change: Delta::Relative(-10)
+            }
+        );
+        assert_eq!(
+            Request::from_ctl(&["window", "fit"]).unwrap(),
+            Request::WindowFit
+        );
+        assert_eq!(
+            Request::from_ctl(&["window", "focus", "34"]).unwrap(),
+            Request::Window {
+                action: WindowAction::Focus(34)
+            }
+        );
+        assert_eq!(
+            Request::from_ctl(&["window", "close", "34"]).unwrap(),
+            Request::Window {
+                action: WindowAction::CloseId(34)
+            }
+        );
+        assert!(Request::from_ctl(&["window", "focus", "nope"]).is_err());
+        assert_eq!(
+            Request::from_ctl(&["window", "close"]).unwrap(),
+            Request::Window {
+                action: WindowAction::Close
+            }
+        );
+        assert_eq!(
+            Request::from_ctl(&["window", "next"]).unwrap(),
+            Request::Window {
+                action: WindowAction::Next
+            }
+        );
+        assert_eq!(
+            Request::from_ctl(&["mode", "toggle"]).unwrap(),
+            Request::Mode {
+                mode: ModeRequest::Toggle
+            }
+        );
+        assert_eq!(
+            Request::from_ctl(&["mode", "mouse"]).unwrap(),
+            Request::Mode {
+                mode: ModeRequest::Mouse
+            }
+        );
+        assert_eq!(
+            Request::from_ctl(&["power", "menu"]).unwrap(),
+            Request::Power {
+                action: PowerAction::Menu
+            }
+        );
+        assert_eq!(
+            Request::from_ctl(&["cpu", "balanced"]).unwrap(),
+            Request::Cpu {
+                profile: CpuProfile::Balanced
+            }
+        );
+        assert_eq!(
+            Request::from_ctl(&["scale"]).unwrap(),
+            Request::Scale { value: None }
+        );
+        assert_eq!(
+            Request::from_ctl(&["scale", "0.75"]).unwrap(),
+            Request::Scale { value: Some(0.75) }
+        );
+    }
+
+    #[test]
+    fn rejects_nonsense() {
+        assert!(Request::from_ctl(&["fly", "me", "to", "the", "moon"]).is_err());
+        assert!(Request::from_ctl(&["volume", "loud"]).is_err());
+        assert!(Request::from_ctl(&["cpu", "turbo"]).is_err());
+        assert!(Request::from_ctl(&["touch", "maybe"]).is_err());
+    }
+
+    #[test]
+    fn every_menu_toml_action_parses() {
+        // Keep in step with config/pt35/menu.toml: every `action = "..."` there
+        // must be a command this binary understands.
+        for action in [
+            "mode toggle",
+            "mode mouse",
+            "scale cycle",
+            "cpu powersave",
+            "cpu balanced",
+            "cpu performance",
+            "touch toggle",
+            "screenshot",
+            "reload",
+            "power screenoff",
+            "power lock",
+            "power logout",
+            "power reboot",
+            "power poweroff",
+        ] {
+            let argv: Vec<&str> = action.split_whitespace().collect();
+            Request::from_ctl(&argv)
+                .unwrap_or_else(|e| panic!("menu action {action:?} does not parse: {e}"));
         }
     }
 }

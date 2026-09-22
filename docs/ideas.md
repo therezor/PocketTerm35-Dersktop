@@ -21,16 +21,21 @@ docs and code were read for this project. What was taken, and what is still open
 - **Power button opens a menu.** `HandlePowerKey=ignore`, long press still
   powers off.
 
+## Also taken
+
+- **Toasts.** A notification takes the taskbar's slot area for a couple of
+  seconds. It is the only feedback a key binding can get.
+- **Placeholder for slow lists.** Wi-Fi and Bluetooth push their screen with
+  "Scanning..." and fill it from a worker thread, so the menu never freezes.
+- **Per-screen hint legends.** Four of them, picked by what is on screen, with
+  `L/R Page` dropped when the list already fits.
+- **Recents.** The five things you launched last go to the top of the launcher.
+  Without it the order came from a `BTreeMap` of app ids.
+
 ## Open
 
-- **Toasts.** Short confirmation of an action that has no visible result
-  ("Screenshot saved").
-- **Spinner for slow lists.** A Wi-Fi scan takes seconds; an empty list looks
-  broken.
-- **"Daemon offline" screen.** The bar says `pt35d?` today. A full screen state
-  is harder to miss.
-- **Per-screen hint legends.** Our legend is the same everywhere. Their `HINTS`
-  table gives each screen its own.
+- **"Daemon offline" screen.** The bar says `pt35d?` and an empty menu screen
+  says "pt35d is not answering". A full screen state would be harder to miss.
 - **Button remapping in Settings**, seeded from a capture tool, for units whose
   firmware differs.
 - **Hide the cursor by default.** They ship a udev rule that stops the HID mouse

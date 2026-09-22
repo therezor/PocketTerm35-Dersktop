@@ -2,9 +2,13 @@
 //!
 //! Twelve controls, two things to do with them. In Buttons mode the D-pad is
 //! the arrow keys and A is Enter; in Mouse mode the D-pad moves the cursor and
-//! A is a left click. L switches mode and R closes the window, in both. Start
-//! (the menu) and Select (the window manager) are bound in the sway config, so
-//! neither mode can lose them.
+//! A is a left click. L is the keyboard Menu key and R is the window picker, in
+//! both. Start (the menu) and Select (the mode switch) are bound in the sway
+//! config, so neither mode can lose them.
+//!
+//! Nothing closes a window from a shoulder. A button you hit by accident should
+//! not throw away what is on screen: closing is `$mod+q`, the bar's `x`, and Y
+//! on the window picker.
 //!
 //! Both modes are plain sway bindings on the keysyms the patched firmware
 //! sends, so nothing runs in the background and the letters keep typing. Enter,
@@ -12,7 +16,7 @@
 //! the clicks and the cursor moves are sway's own `seat cursor` commands.
 
 use pt35_common::ipc::InputMode;
-use pt35_common::theme::Pointer;
+use pt35_common::theme::{Buttons, Pointer};
 
 /// The one seat. sway names it `seat0` unless a config says otherwise, and ours
 /// does not.
@@ -53,12 +57,19 @@ const Y: &str = "XF86Launch7";
 const L: &str = "XF86Tools";
 const R: &str = "XF86Launch5";
 
-/// What both modes share: L switches mode, R closes the window. Neither
-/// repeats: holding R must not close every window you own.
+/// What both modes share.
+///
+/// L is the Menu key, the one a keyboard puts next to the right Ctrl: it opens
+/// whatever the focused app calls a context menu. That is the only way to reach
+/// a right-click menu in Buttons mode. sway must not bind `Menu` itself, or the
+/// binding would eat the keysym before the app saw it.
+///
+/// R is the window picker. Neither repeats: holding a shoulder should do one
+/// thing, not a hundred.
 fn common() -> Vec<Bind> {
     vec![
-        Bind::new("--no-repeat", L, "exec pt35ctl mode toggle"),
-        Bind::new("--no-repeat", R, "exec pt35ctl window close"),
+        Bind::new("--no-repeat", L, "exec wtype -k Menu"),
+        Bind::new("--no-repeat", R, "exec pt35ctl menu open windows"),
     ]
 }
 
@@ -112,13 +123,13 @@ pub fn binds(mode: InputMode, pointer: &Pointer) -> Vec<Bind> {
 }
 
 /// Everything else a mode needs from sway, after the bindings.
-pub fn settings(mode: InputMode, pointer: &Pointer) -> Vec<String> {
+pub fn settings(mode: InputMode, pointer: &Pointer, buttons: &Buttons) -> Vec<String> {
     match mode {
         // One press of the D-pad, one row.
         InputMode::Buttons => vec![
-            "input type:keyboard repeat_delay 500".into(),
-            "input type:keyboard repeat_rate 8".into(),
-            format!("seat {SEAT} hide_cursor 1500"),
+            format!("input type:keyboard repeat_delay {}", buttons.repeat_delay),
+            format!("input type:keyboard repeat_rate {}", buttons.repeat_rate),
+            format!("seat {SEAT} hide_cursor {}", buttons.hide_cursor),
         ],
         InputMode::Mouse => vec![
             format!("input type:keyboard repeat_delay {}", pointer.repeat_delay),
@@ -145,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn the_shoulders_switch_mode_and_close_in_both_modes() {
+    fn the_shoulders_are_the_context_menu_and_the_picker_in_both_modes() {
         for mode in [InputMode::Buttons, InputMode::Mouse] {
             let binds = binds(mode, &Pointer::default());
             let find = |key: &str| {
@@ -154,10 +165,24 @@ mod tests {
                     .find(|b| b.key == key)
                     .unwrap_or_else(|| panic!("{key} is not bound in {mode:?}"))
             };
-            assert!(find(L).action.ends_with("mode toggle"));
-            assert!(find(R).action.ends_with("window close"));
-            // Holding R must not close every window you own.
+            assert_eq!(find(L).action, "exec wtype -k Menu");
+            assert_eq!(find(R).action, "exec pt35ctl menu open windows");
+            assert_eq!(find(L).flags, "--no-repeat");
             assert_eq!(find(R).flags, "--no-repeat");
+        }
+    }
+
+    #[test]
+    fn no_shoulder_closes_a_window() {
+        // A button under the index finger is too easy to catch by accident.
+        for mode in [InputMode::Buttons, InputMode::Mouse] {
+            for bind in binds(mode, &Pointer::default()) {
+                assert!(
+                    !bind.action.contains("window close"),
+                    "{} closes a window",
+                    bind.key
+                );
+            }
         }
     }
 

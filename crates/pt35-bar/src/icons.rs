@@ -15,8 +15,11 @@ const BOX: i32 = 13;
 pub enum Icon {
     /// Speaker plus four level bars, or a crossed-out speaker when muted.
     Volume { level: u8, muted: bool },
-    /// Four ascending bars. `None` is offline: every bar drawn empty.
-    Wifi { signal: Option<u8> },
+    /// Four ascending bars.
+    Wifi { signal: u8 },
+    /// Connected by a cable. There is no signal to report, and four empty bars
+    /// read as a dead link rather than a healthy one.
+    Wired,
     /// Which input mode the D-pad and the face buttons are in.
     Mode { mouse: bool },
 }
@@ -26,7 +29,8 @@ impl Icon {
     pub fn theme_name(&self) -> &'static str {
         match *self {
             Icon::Volume { level, muted } => pt35_ui::icon::volume_icon(level, muted),
-            Icon::Wifi { signal } => pt35_ui::icon::wifi_icon(signal),
+            Icon::Wifi { signal } => pt35_ui::icon::wifi_icon(Some(signal)),
+            Icon::Wired => "network-wired",
             Icon::Mode { mouse: true } => "input-mouse",
             Icon::Mode { mouse: false } => "input-keyboard",
         }
@@ -38,6 +42,7 @@ impl Icon {
         match self {
             Icon::Volume { .. } => Some(7 + 2 + bars_width(4, 2, 1)),
             Icon::Wifi { .. } => Some(bars_width(4, 3, 1)),
+            Icon::Wired => Some(bars_width(4, 3, 1)),
             Icon::Mode { .. } => None,
         }
     }
@@ -68,7 +73,17 @@ impl Icon {
                     count: 4,
                     width: 3,
                     gap: 1,
-                    lit: signal.map(|s| filled(s, 4)).unwrap_or(0),
+                    lit: filled(signal, 4),
+                }
+                .draw(canvas, x, y, on, off);
+            }
+            // A cable is up or it is not, so every bar is lit.
+            Icon::Wired => {
+                Meter {
+                    count: 4,
+                    width: 3,
+                    gap: 1,
+                    lit: 4,
                 }
                 .draw(canvas, x, y, on, off);
             }
@@ -150,7 +165,7 @@ mod tests {
                 level: 50,
                 muted: false,
             },
-            Icon::Wifi { signal: Some(80) },
+            Icon::Wifi { signal: 80 },
         ] {
             assert!(
                 (14..=24).contains(&icon.width().expect("drawn")),

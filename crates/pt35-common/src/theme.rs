@@ -10,6 +10,7 @@ pub struct Theme {
     pub bar: Bar,
     pub menu: Menu,
     pub pointer: Pointer,
+    pub buttons: Buttons,
     pub icons: IconTheme,
 }
 
@@ -93,6 +94,29 @@ pub struct Pointer {
     /// list, or the cursor crawls.
     pub repeat_delay: u32,
     pub repeat_rate: u32,
+}
+
+/// Buttons mode: the D-pad is the arrow keys, so it repeats at reading speed
+/// rather than pointer speed.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Buttons {
+    /// One press of the D-pad, one row. Faster and a press skips two.
+    pub repeat_delay: u32,
+    pub repeat_rate: u32,
+    /// Milliseconds of stillness before the cursor is hidden. There is no
+    /// cursor to speak of in this mode, so it goes quickly.
+    pub hide_cursor: u32,
+}
+
+impl Default for Buttons {
+    fn default() -> Self {
+        Self {
+            repeat_delay: 500,
+            repeat_rate: 8,
+            hide_cursor: 1500,
+        }
+    }
 }
 
 /// Icons come from an installed freedesktop theme; the shell ships none. Every

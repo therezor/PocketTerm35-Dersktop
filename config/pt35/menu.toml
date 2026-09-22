@@ -52,7 +52,7 @@ title = "Power"
 entries = [
   { label = "Screen off", action = "power screenoff" },
   { label = "Lock",       action = "power lock" },
-  { label = "Log out",    action = "power logout" },
+  { label = "Log out",    action = "power logout", confirm = true },
   { label = "Reboot",     action = "power reboot", confirm = true },
   { label = "Shut down",  action = "power poweroff", confirm = true },
 ]

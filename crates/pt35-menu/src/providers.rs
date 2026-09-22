@@ -3,6 +3,7 @@
 //! Each provider is split in two: a pure parser (tested here) and a thin
 //! wrapper that actually runs the command or walks the filesystem.
 
+use pt35_common::apps::{initials, pretty_app};
 use pt35_common::menu::Builtin;
 use std::process::Command;
 
@@ -45,6 +46,31 @@ pub fn title(builtin: Builtin) -> &'static str {
         Builtin::DesktopEntries => "All apps",
         Builtin::About => "About",
     }
+}
+
+/// Whether this screen's rows come from something that can take a while.
+///
+/// A Wi-Fi scan is seconds of `nmcli`, and the quick panel shells out to
+/// `bluetoothctl` twice. Doing that before the first frame meant the menu
+/// looked frozen, or worse, empty and broken.
+pub fn is_slow(builtin: Builtin) -> bool {
+    matches!(builtin, Builtin::Wifi | Builtin::Bluetooth | Builtin::Quick)
+}
+
+/// What to show while [`is_slow`] work is still running.
+pub fn placeholder(builtin: Builtin) -> Items {
+    let label = match builtin {
+        Builtin::Wifi => "Scanning...",
+        Builtin::Bluetooth => "Looking for devices...",
+        _ => "Reading...",
+    };
+    vec![Item {
+        label: label.into(),
+        payload: String::new(),
+        note: String::new(),
+        glyph: "read".into(),
+        icon: String::new(),
+    }]
 }
 
 pub fn items(builtin: Builtin) -> Items {
@@ -96,7 +122,33 @@ fn launcher() -> Items {
             out.push(entry);
         }
     }
+    promote_recent(&mut out, &recents());
     out
+}
+
+/// Move the things you opened last to the top, in that order.
+///
+/// `AppTable` is a `BTreeMap`, so without this the launcher is sorted by app
+/// id: an order nobody chose and nobody remembers.
+pub fn promote_recent(items: &mut Items, recent: &[String]) {
+    // Walk the recents backwards so the newest ends up at index 0.
+    for payload in recent.iter().rev() {
+        if let Some(at) = items.iter().position(|item| &item.payload == payload) {
+            let item = items.remove(at);
+            items.insert(0, item);
+        }
+    }
+}
+
+fn recents() -> Vec<String> {
+    let Ok(text) = std::fs::read_to_string(pt35_common::paths::recents_path()) else {
+        return Vec::new();
+    };
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 // ----------------------------------------------------------------- system
@@ -304,6 +356,24 @@ pub fn quick() -> Items {
             icon: "display-brightness".into(),
         },
         Item {
+            // The one knob that decides whether a GTK dialog fits on a 3.5"
+            // panel. It was reachable only from a terminal.
+            label: "Scale".into(),
+            payload: "adjust:scale".into(),
+            note: format!("{:.2}x", status.as_ref().map(|s| s.scale).unwrap_or(1.0)),
+            glyph: "read".into(),
+            icon: "preferences-desktop-display".into(),
+        },
+        Item {
+            // For a window that came up bigger than the panel and put its own
+            // buttons off the bottom edge.
+            label: "Fit window".into(),
+            payload: "ctl:window fit".into(),
+            note: String::new(),
+            glyph: "button".into(),
+            icon: "view-fullscreen".into(),
+        },
+        Item {
             label: "Networks".into(),
             payload: "screen:wifi".into(),
             note: String::new(),
@@ -368,7 +438,7 @@ fn windows() -> Items {
         .iter()
         .map(|w| Item {
             label: pretty_app(&w.app),
-            payload: format!("[con_id={}]", w.id),
+            payload: format!("con:{}", w.id),
             note: w.title.clone(),
             glyph: if w.glyph.is_empty() {
                 initials(&w.app)
@@ -378,22 +448,6 @@ fn windows() -> Items {
             icon: w.icon.clone(),
         })
         .collect()
-}
-
-/// `pt35-monitor` is what sway calls it; "Monitor" is what it is.
-fn pretty_app(app: &str) -> String {
-    let name = app.trim_start_matches("pt35-");
-    let mut chars = name.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-        None => "Window".to_string(),
-    }
-}
-
-/// Two letters for an app with no profile, the same rule the dock uses.
-fn initials(app: &str) -> String {
-    let name = app.trim_start_matches("pt35-");
-    name.chars().take(2).collect::<String>().to_uppercase()
 }
 
 // ------------------------------------------------------------------- wifi
@@ -582,6 +636,35 @@ fn run(bin: &str, args: &[&str]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn the_last_thing_you_opened_is_at_the_top() {
+        let mut items: Items = ["app:browser", "app:editor", "app:terminal", "exec:htop"]
+            .iter()
+            .map(|p| Item::new(*p, *p))
+            .collect();
+        promote_recent(
+            &mut items,
+            &["app:terminal".into(), "exec:htop".into(), "app:gone".into()],
+        );
+        let order: Vec<&str> = items.iter().map(|i| i.payload.as_str()).collect();
+        assert_eq!(
+            order,
+            ["app:terminal", "exec:htop", "app:browser", "app:editor"]
+        );
+    }
+
+    #[test]
+    fn nothing_recent_leaves_the_order_alone() {
+        let mut items: Items = ["a", "b"].iter().map(|p| Item::new(*p, *p)).collect();
+        promote_recent(&mut items, &[]);
+        assert_eq!(items[0].payload, "a");
+    }
+}
+
+#[cfg(test)]
+mod provider_tests {
     use super::*;
 
     #[test]

@@ -21,7 +21,10 @@ pub enum Plan {
 pub fn plan(command: &Command) -> Plan {
     match command {
         Command::App(id) => Plan::Ctl(vec!["launch".into(), id.clone()]),
-        Command::Exec(cmd) => Plan::Shell(cmd.clone()),
+        // Through the daemon: it checks the binary exists, focuses a copy that
+        // is already open, and holds the desktop's menu off until the window
+        // appears. A bare `sh -c` did none of that and could not fail.
+        Command::Exec(cmd) => Plan::Ctl(vec!["exec".into(), cmd.clone()]),
         Command::Action(args) => Plan::Ctl(args.split_whitespace().map(str::to_string).collect()),
         Command::Dynamic { builtin, payload } => dynamic(*builtin, payload),
     }
@@ -32,7 +35,12 @@ fn dynamic(builtin: Builtin, payload: &str) -> Plan {
         return Plan::Nothing;
     }
     match builtin {
-        Builtin::Windows => Plan::Shell(format!("swaymsg '{payload} focus'")),
+        // Through the daemon rather than straight to swaymsg, so it knows the
+        // focus moved and the dock does not wait for the next tree read.
+        Builtin::Windows => match payload.strip_prefix("con:") {
+            Some(id) => Plan::Ctl(vec!["window".into(), "focus".into(), id.into()]),
+            None => Plan::Nothing,
+        },
         // Joining a network may need a passphrase, so it happens in a terminal
         // the user can actually type into.
         Builtin::Wifi => Plan::Shell(format!(
@@ -63,21 +71,19 @@ pub fn shell_quote(value: &str) -> String {
 pub fn perform(command: &Command) -> Result<(), String> {
     match plan(command) {
         Plan::Nothing => Ok(()),
-        // Launching goes through the daemon so the reply can be waited for: a
-        // missing binary is reported instead of leaving a blank workspace.
-        Plan::Ctl(args) if args.first().map(String::as_str) == Some("launch") => {
-            let app = args.get(1).cloned().unwrap_or_default();
-            match crate::live::request(&pt35_common::ipc::Request::Launch { app }) {
+        // Over the socket rather than by forking `pt35ctl`, so the reply is
+        // waited for and a failure has somewhere to go. Forking gave a launch
+        // with a missing binary, or a volume key with no audio backend, exactly
+        // the same silence as a success.
+        Plan::Ctl(args) => {
+            let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+            let request = pt35_common::ipc::Request::from_ctl(&argv)?;
+            match crate::live::request(&request) {
                 Ok(pt35_common::ipc::Response::Error { message }) => Err(message),
                 Ok(_) => Ok(()),
                 Err(message) => Err(message),
             }
         }
-        Plan::Ctl(args) => std::process::Command::new("pt35ctl")
-            .args(&args)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("pt35ctl: {e}")),
         Plan::Shell(cmd) => std::process::Command::new("sh")
             .arg("-c")
             .arg(&cmd)
@@ -104,13 +110,13 @@ mod tests {
     }
 
     #[test]
-    fn focusing_a_window_uses_its_container_id() {
+    fn focusing_a_window_goes_through_the_daemon() {
         assert_eq!(
             plan(&Command::Dynamic {
                 builtin: Builtin::Windows,
-                payload: "[con_id=34]".into()
+                payload: "con:34".into()
             }),
-            Plan::Shell("swaymsg '[con_id=34] focus'".into())
+            Plan::Ctl(vec!["window".into(), "focus".into(), "34".into()])
         );
     }
 

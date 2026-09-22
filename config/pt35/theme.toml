@@ -45,7 +45,8 @@ show_network  = true
 clock_format  = "%H:%M"
 
 [menu]
-# 480 - 28 (bar) - 46 (header) - 46 (hints) = 360px of body
+# 480 - 34 (bar) - 46 (header) - 46 (hints) = 354px of body. pt35-menu
+# recomputes this and clamps, so the number here is a ceiling, not a promise.
 rows_visible  = 7
 row_height    = 50
 padding_x     = 14
@@ -71,3 +72,11 @@ size_tile     = 32
 step          = 16
 repeat_delay  = 200
 repeat_rate   = 40
+
+# Buttons mode. Slower, because one press of the D-pad should move one row.
+# `hide_cursor` is milliseconds of stillness; there is no cursor worth keeping
+# in this mode.
+[buttons]
+repeat_delay  = 500
+repeat_rate   = 8
+hide_cursor   = 1500

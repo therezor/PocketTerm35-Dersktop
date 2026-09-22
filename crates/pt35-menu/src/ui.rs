@@ -12,6 +12,8 @@ use pt35_ui::canvas::Canvas;
 use pt35_ui::font::Font;
 use pt35_ui::keys::{Key, Mode};
 use pt35_ui::layer::{self, App, SurfaceSpec};
+use std::sync::mpsc::Receiver;
+use std::time::Duration;
 
 use crate::model::{Model, Step};
 use crate::{exec, providers};
@@ -33,6 +35,11 @@ struct SideButton {
     icon: &'static str,
     tint: fn(&pt35_common::theme::Colors) -> Rgb,
 }
+
+/// How often the menu wakes up.
+const TICK: Duration = Duration::from_millis(250);
+/// How many of those ticks go by between reads of the daemon.
+const POLL_TICKS: u8 = 4;
 
 const SIDE: &[SideButton] = &[
     SideButton {
@@ -97,13 +104,14 @@ const WINDOW_HINTS: &[Hint] = &[
         button: "B",
         action: "Back",
     },
+    // "Close" twice meant two different things on the same bar.
     Hint {
         button: "Y",
-        action: "Close",
+        action: "Close app",
     },
     Hint {
         button: "Start",
-        action: "Close",
+        action: "Close menu",
     },
 ];
 
@@ -126,18 +134,25 @@ const QUICK_HINTS: &[Hint] = &[
     },
 ];
 
+// Start here clears the search rather than closing the menu: the list decides
+// that before the model ever sees the key. Saying "Close" was a lie you found
+// out about by pressing it.
 const FILTER_HINTS: &[Hint] = &[
     Hint {
         button: "Enter",
         action: "Open",
     },
     Hint {
-        button: "Start",
-        action: "Close",
-    },
-    Hint {
         button: "^v",
         action: "Move",
+    },
+    Hint {
+        button: "Start",
+        action: "Clear",
+    },
+    Hint {
+        button: "Bksp",
+        action: "Exit",
     },
 ];
 
@@ -158,8 +173,19 @@ pub struct Menu {
     /// Hit boxes recorded by the last draw, so touch never has to re-derive
     /// the layout and drift from it.
     row_hits: Vec<(i32, i32, i32, i32)>,
+    /// The launcher's side column, same idea. Touch is the way back in when the
+    /// RP2040 that owns the keyboard drops off the USB bus, and Windows,
+    /// Settings and Power were unreachable that way.
+    side_hits: Vec<(i32, i32, i32, i32, usize)>,
     hint_hits: Vec<(i32, i32, i32, &'static str)>,
     error: Option<String>,
+    /// A slow provider still running on a worker thread, and the screen it
+    /// belongs to. The menu draws a placeholder until it lands.
+    loading: Option<(pt35_common::menu::Builtin, Receiver<providers::Items>)>,
+    /// Ticks since the daemon was last asked. See [`Menu::tick`].
+    since_poll: u8,
+    /// App profiles, for matching a launcher row to an open window.
+    apps: pt35_common::apps::AppTable,
 }
 
 impl Menu {
@@ -185,9 +211,46 @@ impl Menu {
             windows: status.as_ref().map(|s| s.windows.len()).unwrap_or(0),
             status,
             row_hits: Vec::new(),
+            side_hits: Vec::new(),
             hint_hits: Vec::new(),
             error: None,
+            loading: None,
+            since_poll: 0,
+            apps: pt35_common::load_config("pt35/apps.toml").unwrap_or_default(),
         }
+    }
+
+    /// Whether a launcher row already has a window open.
+    ///
+    /// The daemon focuses rather than duplicating when you pick one of these,
+    /// and used to give you no way of knowing that before you pressed it.
+    fn is_running(&self, payload: &str) -> bool {
+        let Some(status) = self.status.as_ref() else {
+            return false;
+        };
+        let Some(binary) = payload
+            .strip_prefix("exec:")
+            .and_then(pt35_common::apps::command_binary)
+            .map(|b| b.rsplit('/').next().unwrap_or(&b).to_lowercase())
+        else {
+            return match payload.strip_prefix("app:") {
+                Some(id) => self
+                    .apps
+                    .get(id)
+                    .is_some_and(|app| status.windows.iter().any(|w| app.matches_app(&w.app))),
+                None => false,
+            };
+        };
+        status
+            .windows
+            .iter()
+            .any(|w| w.app.to_lowercase() == binary)
+    }
+
+    /// True when this menu is standing in for a desktop, because nothing else
+    /// is open. It cannot be closed then: there would be nothing behind it.
+    fn is_desktop(&self) -> bool {
+        self.windows == 0 && self.model.depth() == 1
     }
 
     fn on_launcher(&self) -> bool {
@@ -200,13 +263,34 @@ impl Menu {
         )
     }
 
+    /// Push a builtin screen, reading its rows off the Wayland thread when they
+    /// are slow to come by.
+    fn open(&mut self, builtin: pt35_common::menu::Builtin) {
+        if !providers::is_slow(builtin) {
+            self.model.push_dynamic(
+                builtin,
+                providers::title(builtin),
+                providers::items(builtin),
+            );
+            return;
+        }
+        self.model.push_dynamic(
+            builtin,
+            providers::title(builtin),
+            providers::placeholder(builtin),
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(providers::items(builtin));
+        });
+        self.loading = Some((builtin, rx));
+    }
+
     fn open_side(&mut self, index: usize) -> bool {
         self.side = None;
         match SIDE.get(index).map(|button| button.target) {
             Some(Side::Screen(builtin)) => {
-                let items = providers::items(builtin);
-                self.model
-                    .push_dynamic(builtin, providers::title(builtin), items);
+                self.open(builtin);
                 true
             }
             Some(Side::Page(page)) => {
@@ -218,8 +302,15 @@ impl Menu {
     }
 
     /// Feed a tap to the model as if the matching button had been pressed.
+    ///
+    /// A pill that is drawn and hit-tested but does nothing is worse than no
+    /// pill: `L/R` and `<>` used to be exactly that.
     fn press(&mut self, button: &str) -> bool {
         let key = match button {
+            "L/R" => Key::new(pt35_ui::keys::sym::PAGE_DOWN),
+            "<>" => Key::new(pt35_ui::keys::sym::RIGHT),
+            "Bksp" => Key::new(pt35_ui::keys::sym::BACKSPACE),
+            "^v" => Key::new(pt35_ui::keys::sym::DOWN),
             "A" => Key::with_text('a' as u32, 'a'),
             "B" => Key::with_text('b' as u32, 'b'),
             "X" => Key::with_text('x' as u32, 'x'),
@@ -232,39 +323,82 @@ impl Menu {
         self.apply(step)
     }
 
+    /// Ask the daemon to do something and wait for the reply. Waiting is the
+    /// point: the daemon has applied the change by the time it answers, so the
+    /// value on screen can be re-read with no sleep.
+    fn ctl(&mut self, args: &[&str]) -> Result<(), String> {
+        let request = pt35_common::ipc::Request::from_ctl(args)?;
+        match crate::live::request(&request) {
+            Ok(pt35_common::ipc::Response::Error { message }) => Err(message),
+            Ok(_) => Ok(()),
+            Err(message) => Err(message),
+        }
+    }
+
+    /// Re-read the daemon and rebuild the current screen from it.
+    ///
+    /// Both halves matter. The rows of a page screen read `self.status` as they
+    /// draw, but a builtin screen's rows were built by its provider and are
+    /// frozen: without the rebuild, toggling Wi-Fi or Touch leaves the pill on
+    /// its old value, which is the opposite of watching it flip.
+    fn resync(&mut self) {
+        self.status = crate::live::status();
+        self.windows = self.status.as_ref().map_or(0, |s| s.windows.len());
+        if let Some(builtin) = self.model.dynamic_builtin() {
+            self.model.replace_dynamic(providers::items(builtin));
+        }
+    }
+
     fn apply(&mut self, step: Step) -> bool {
         self.error = None;
         match step {
-            Step::Close(criteria) => {
-                let cmd = format!("swaymsg '{criteria} kill'");
-                if let Err(e) = std::process::Command::new("sh").arg("-c").arg(&cmd).spawn() {
-                    self.error = Some(format!("{cmd}: {e}"));
+            Step::Close(payload) => {
+                match payload.strip_prefix("con:").and_then(|id| id.parse().ok()) {
+                    Some(id) => {
+                        let request = pt35_common::ipc::Request::Window {
+                            action: pt35_common::ipc::WindowAction::CloseId(id),
+                        };
+                        match crate::live::request(&request) {
+                            Ok(pt35_common::ipc::Response::Error { message }) => {
+                                self.error = Some(message)
+                            }
+                            Err(message) => self.error = Some(message),
+                            Ok(_) => {}
+                        }
+                    }
+                    None => self.error = Some("that row is not a window".into()),
                 }
-                // Rebuild the list: the window it named is going away.
-                std::thread::sleep(std::time::Duration::from_millis(150));
-                let items = providers::items(pt35_common::menu::Builtin::Windows);
-                self.model.replace_dynamic(items);
+                // Take the row out now. sway answers `kill` before the client
+                // has actually gone, so re-reading would show it still open. The
+                // tick puts it back if the app refused to close.
+                self.model.drop_dynamic(&payload);
                 true
             }
             Step::Adjust(adjust, up) => {
                 let args = adjust.step(up);
-                if let Err(e) = std::process::Command::new("pt35ctl").args(&args).spawn() {
-                    self.error = Some(format!("pt35ctl: {e}"));
+                let args: Vec<&str> = args.iter().map(String::as_str).collect();
+                if let Err(message) = self.ctl(&args) {
+                    self.error = Some(message);
                 }
-                // The value on screen comes from the daemon, so re-read it.
-                std::thread::sleep(std::time::Duration::from_millis(120));
-                self.status = crate::live::status();
+                self.resync();
                 true
             }
             Step::RunStay(command) => {
                 if let Err(message) = exec::perform(&command) {
                     self.error = Some(message);
                 }
-                // The value on the row comes from the daemon, so re-read it.
-                std::thread::sleep(std::time::Duration::from_millis(120));
-                self.status = crate::live::status();
+                // A shell payload is a detached script, so its effect lands after
+                // it has been spawned. Everything else went through the daemon,
+                // which had already applied it when it replied.
+                if matches!(exec::plan(&command), exec::Plan::Shell(_)) {
+                    std::thread::sleep(std::time::Duration::from_millis(120));
+                }
+                self.resync();
                 true
             }
+            // Nothing to go back to. Closing would leave a charcoal rectangle,
+            // and the daemon would reopen this a moment later anyway.
+            Step::Quit if self.is_desktop() => true,
             Step::Quit => false,
             Step::Run(command) => {
                 // A launch that fails must not close the menu: the screen would
@@ -276,9 +410,7 @@ impl Menu {
                 false
             }
             Step::Open(builtin) => {
-                let items = providers::items(builtin);
-                self.model
-                    .push_dynamic(builtin, providers::title(builtin), items);
+                self.open(builtin);
                 true
             }
             Step::Redraw | Step::Nothing => true,
@@ -353,26 +485,12 @@ impl Menu {
         self.row_hits.clear();
         let rows = self.model.visible_rows();
         if rows.is_empty() {
-            // An empty screen and an empty search are different problems.
-            let hint = if self.model.screen().list.mode() == Mode::Filter {
-                "no matches"
-            } else {
-                "nothing here"
-            };
-            let width = self.font.measure(hint, size) as i32;
-            self.font.draw(
-                canvas,
-                hint,
-                (canvas.width as i32 - width) / 2,
-                top + row_h,
-                size,
-                self.theme.color.muted,
-            );
+            self.draw_nothing_here(canvas, top, canvas.width as i32);
             return;
         }
 
         let cursor = self.model.screen().list.cursor_row();
-        let numbers = theme.menu.show_numbers;
+        let numbers = theme.menu.show_numbers && self.model.numbered();
         let radius = theme.menu.radius;
 
         for (index, row) in rows.iter().enumerate() {
@@ -458,25 +576,51 @@ impl Menu {
         }
 
         // Scroll indicator: a slim bar on the right, only when it means something.
-        let total = self.model.screen().list.len();
+        self.draw_scrollbar(canvas, canvas.width as i32, top, bottom);
+    }
+
+    /// What an empty screen says. Three screens out of four used to say nothing
+    /// at all, which reads as broken rather than empty.
+    fn draw_nothing_here(&mut self, canvas: &mut Canvas, top: i32, right: i32) {
+        let filtering = self.model.screen().list.mode() == Mode::Filter;
+        let text = if filtering {
+            "no matches"
+        } else if self.status.is_none() {
+            // Not the same thing as nothing being there. A dead daemon returns
+            // an empty list from every screen that asks it.
+            "pt35d is not answering"
+        } else {
+            "nothing here"
+        };
+        let size = self.theme.font.size_menu;
+        let pad = self.theme.menu.padding_x as i32;
+        let colour = if self.status.is_none() && !filtering {
+            self.theme.color.critical
+        } else {
+            self.theme.color.muted
+        };
+        let text = self.font.elide(text, size, (right - 2 * pad).max(0) as u32);
+        self.font.draw(canvas, &text, pad, top + 40, size, colour);
+    }
+
+    /// The only thing that says a list goes on past the bottom of the screen.
+    ///
+    /// `edge` is the right-hand boundary of the list, which is the panel edge on
+    /// most screens and the split on the launcher.
+    fn draw_scrollbar(&mut self, canvas: &mut Canvas, edge: i32, top: i32, bottom: i32) {
+        let Some(progress) = self.model.screen().list.scroll_progress() else {
+            return;
+        };
+        let theme = &self.theme;
+        let total = self.model.screen().list.len().max(1);
         let visible = self.model.screen().list.rows();
-        if total > visible {
-            let track_h = (bottom - top) as u32;
-            let thumb_h = ((visible as f32 / total as f32) * track_h as f32).max(24.0) as u32;
-            let first = self.model.screen().list.cursor_row();
-            let progress = (self.model.screen().list.selected().unwrap_or(0) as f32 - first as f32)
-                / (total as f32 - visible as f32).max(1.0);
-            let thumb_y = top + (progress.clamp(0.0, 1.0) * (track_h - thumb_h) as f32) as i32;
-            canvas.rect(canvas.width as i32 - 4, top, 2, track_h, theme.color.border);
-            canvas.rounded_rect(
-                canvas.width as i32 - 5,
-                thumb_y,
-                4,
-                thumb_h,
-                2,
-                theme.color.muted,
-            );
-        }
+        let track_h = (bottom - top).max(1) as u32;
+        let thumb_h = ((visible as f32 / total as f32) * track_h as f32)
+            .max(24.0)
+            .min(track_h as f32) as u32;
+        let thumb_y = top + (progress.clamp(0.0, 1.0) * (track_h - thumb_h) as f32) as i32;
+        canvas.rect(edge - 4, top, 2, track_h, theme.color.border);
+        canvas.rounded_rect(edge - 5, thumb_y, 4, thumb_h, 2, theme.color.muted);
     }
 
     /// Pill colour and text colour for a legend entry.
@@ -500,6 +644,11 @@ impl Menu {
         let tile_w = (canvas.width as i32 - pad * 2 - gap * (columns - 1)) / columns;
 
         let rows = self.model.visible_rows();
+        if rows.is_empty() {
+            self.row_hits.clear();
+            self.draw_nothing_here(canvas, top, canvas.width as i32);
+            return;
+        }
         // Grow the tiles to fill the body rather than leaving a dead band under
         // a short grid. Never shrink below the configured height.
         let lines = ((rows.len() as i32 + columns - 1) / columns).max(1);
@@ -664,6 +813,9 @@ impl Menu {
         let cursor = self.model.screen().list.cursor_index();
         let row_h = theme.menu.row_height as i32;
         self.row_hits.clear();
+        if rows.is_empty() {
+            self.draw_nothing_here(canvas, top, split);
+        }
         for (index, row) in rows.iter().enumerate() {
             let y = top + index as i32 * row_h;
             if y + row_h > bottom {
@@ -697,11 +849,20 @@ impl Menu {
                     theme.color.muted,
                 );
             }
+            // A dot for an app that already has a window. The daemon focuses
+            // rather than starting a second copy, and this is the only warning
+            // you get before you press.
+            let running = self.is_running(&row.payload);
+            let label_right = if running { split - 18 } else { split - 8 };
+            if running {
+                canvas.rounded_rect(split - 14, centre - 3, 6, 6, 3, theme.color.accent);
+            }
+
             let label_x = pad + icon_size as i32 + 12;
             let label = self.font.elide(
                 &row.label,
                 theme.font.size_menu,
-                (split - label_x - 8) as u32,
+                (label_right - label_x).max(0) as u32,
             );
             self.font.draw(
                 canvas,
@@ -716,6 +877,8 @@ impl Menu {
                 },
             );
         }
+
+        self.draw_scrollbar(canvas, split, top, bottom);
 
         // The side column is its own surface, not three boxes floating on the
         // list's background.
@@ -733,9 +896,19 @@ impl Menu {
         let inset = 8;
         let width = strip - inset * 2;
         let height = ((bottom - top) - gap * (SIDE.len() as i32 + 1)) / SIDE.len() as i32;
+        self.side_hits.clear();
         for (index, button) in SIDE.iter().enumerate() {
             let x = split + inset;
             let y = top + gap + index as i32 * (height + gap);
+            // The whole strip is the target, not just the drawn pill: a thumb on
+            // a 3.5" panel is wider than 8px of margin.
+            self.side_hits.push((
+                split,
+                y - gap / 2,
+                canvas.width as i32,
+                y + height + gap / 2,
+                index,
+            ));
             let focused = self.side == Some(index);
             let tint = (button.tint)(&theme.color);
             let centre = y + height / 2;
@@ -793,6 +966,10 @@ impl Menu {
         let rows = self.model.visible_rows();
         let cursor = self.model.screen().list.cursor_index();
         self.row_hits.clear();
+        if rows.is_empty() {
+            self.draw_nothing_here(canvas, top, canvas.width as i32);
+            return;
+        }
 
         let chips: Vec<usize> = rows
             .iter()
@@ -1014,9 +1191,14 @@ impl Menu {
         // L/R page through a list. Saying so when everything already fits is a
         // promise the screen does not keep.
         let paged = self.model.screen().list.len() > self.model.screen().list.rows();
+        // Nor is "Start: Close" a promise we keep when this is the desktop.
+        let rooted = self.model.depth() == 1;
+        let pinned = self.is_desktop();
         let hints: Vec<Hint> = hints
             .iter()
             .filter(|hint| paged || hint.button != "L/R")
+            .filter(|hint| !(pinned && hint.button == "Start"))
+            .filter(|hint| !(rooted && hint.button == "B"))
             .cloned()
             .collect();
         let size = theme.font.size_hint;
@@ -1077,6 +1259,57 @@ impl App for Menu {
         self.theme.color.background
     }
 
+    fn tick_interval(&self) -> Option<Duration> {
+        // Fast enough that a finished Wi-Fi scan appears the moment it lands.
+        // The daemon is only asked every fourth tick: a status read costs it a
+        // sway tree walk, and four a second of that is not free on a Pi.
+        Some(TICK)
+    }
+
+    fn tick(&mut self) -> bool {
+        let mut drawn = false;
+        // A slow provider finishing is worth a frame on its own.
+        if let Some((builtin, rx)) = &self.loading {
+            match rx.try_recv() {
+                Ok(items) => {
+                    if self.model.dynamic_builtin() == Some(*builtin) {
+                        self.model.replace_dynamic(items);
+                    }
+                    self.loading = None;
+                    drawn = true;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.loading = None;
+                    self.error = Some("that screen could not be read".into());
+                    drawn = true;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        // The menu used to read the daemon once, at startup, and believe it for
+        // as long as it was open. A window closing behind it, or a toggle
+        // flipping, never showed.
+        self.since_poll += 1;
+        if self.since_poll < POLL_TICKS {
+            return drawn;
+        }
+        self.since_poll = 0;
+        let status = crate::live::status();
+        if status == self.status {
+            return drawn;
+        }
+        self.status = status;
+        self.windows = self.status.as_ref().map_or(0, |s| s.windows.len());
+        // A dynamic screen's rows were built by its provider and are frozen, so
+        // a fresh Status is not enough on its own.
+        if let Some(builtin) = self.model.dynamic_builtin() {
+            if matches!(builtin, pt35_common::menu::Builtin::Windows) {
+                self.model.replace_dynamic(providers::items(builtin));
+            }
+        }
+        true
+    }
+
     fn key(&mut self, key: Key) -> bool {
         use pt35_ui::keys::{navigate, Navigation};
         if self.on_launcher() {
@@ -1113,6 +1346,11 @@ impl App for Menu {
         for (left, top, right, button) in self.hint_hits.clone() {
             if y >= top && x >= left && x < right {
                 return self.press(button);
+            }
+        }
+        for (left, top, right, bottom, index) in self.side_hits.clone() {
+            if x >= left && x < right && y >= top && y < bottom {
+                return self.open_side(index);
             }
         }
         for (index, (left, top, right, bottom)) in self.row_hits.clone().into_iter().enumerate() {
@@ -1152,6 +1390,9 @@ impl App for Menu {
                 ..
             }
         );
+        if !self.on_launcher() {
+            self.side_hits.clear();
+        }
         if quick {
             self.draw_quick(canvas, body_top, hint_top - 4);
         } else if self.on_launcher() {

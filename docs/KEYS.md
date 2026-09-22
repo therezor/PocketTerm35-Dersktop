@@ -25,10 +25,19 @@ answer a cursor. Select switches between them and the bar says which you are in.
 | B | Escape | right click |
 | X | Tab | scroll up |
 | Y | fullscreen toggle | scroll down |
-| L | close the window | close the window |
+| L | context menu | context menu |
 | R | window picker | window picker |
 | Start | menu | menu |
 | Select | switch mode | switch mode |
+
+L sends the keyboard **Menu** key, so the focused app opens its own context
+menu. In Buttons mode that is the only right-click there is. sway must not bind
+`Menu` itself, and `xkb_options compose:menu` must stay off, or the keysym never
+reaches the app.
+
+Nothing closes a window from a shoulder. A button under your index finger is too
+easy to catch by accident: closing is `Super`+`q`, the `x` at the right of the
+bar, or Y on the window picker.
 
 Holding A in Mouse mode drags: the press and the release are sent separately.
 The D-pad repeats faster there (40/s against 8/s) so the cursor crosses the
@@ -42,7 +51,7 @@ back while it is open, because it reads the same keys itself.
 
 | key | action |
 |---|---|
-| Super + Space, Menu key | open the menu |
+| Super + Space | open the menu |
 | Super + m | switch mode |
 | Super + Enter | terminal |
 | Super + q | close the window |
@@ -61,25 +70,43 @@ workspace: pt35d moves a second window off a workspace that already has one.
 
 | control | action |
 |---|---|
-| D-pad | move |
+| D-pad up/down | move |
+| D-pad left/right | change a quick setting, or move in a grid |
 | A, Enter | open |
 | B, Backspace | back |
-| X | search, then letters type |
+| X, `/` | search, then letters type |
 | Y | back to the top menu |
 | L / R | page |
 | 1-9 | pick that visible row |
 | Start, Escape | close |
-| touch | tap a tile, a row or a legend pill |
+| touch | tap a tile, a row, a side button or a legend pill |
 
-On the window switcher, Y closes the highlighted window. On a quick setting, the
-D-pad left and right change the value in place.
+Left and Right do **not** go back or open. Back is B. A thumb resting on the
+D-pad used to pop a screen or launch the row under the cursor, and nothing on
+screen said it would.
 
-## The dock
+On the window switcher, Y closes the highlighted window. Search is left with
+Backspace, or with Start, which clears the filter before it closes anything.
 
-The top bar is a dock: one slot per open window, the focused one filled. Tap a
-slot to switch, the `=` button opens the menu, the `x` button closes the focused
-window. The right-hand side is the input mode, the volume and the signal, as
-icons.
+## The menu is the desktop
+
+With no window open, the menu comes up on its own and will not close: there is
+nothing behind it. Launch something and it goes.
+
+## The taskbar
+
+The top bar is a taskbar: one slot per open window, with its icon and its name,
+the focused one filled. Names shrink as windows are added and drop to icons when
+there is no room left, but a window never loses its slot. Tap a slot to switch,
+the `=` button opens the menu, the `x` button closes the focused window.
+
+The right-hand side is the input mode, the volume and the signal, as icons. A
+wired connection draws a full meter rather than an empty Wi-Fi one.
+
+The taskbar is also where a confirmation lands. `pt35ctl` run from a key binding
+writes to a stderr nobody reads, so anything worth knowing ("Saved shot.png",
+"no audio backend on this system") takes the slot area for a couple of seconds
+and then gives it back.
 
 ## Icons
 

@@ -21,6 +21,11 @@ struct Bar {
     drawn: Option<pt35_common::ipc::Status>,
     clock: String,
     hits: Vec<(i32, i32, Action)>,
+    /// Helpers a tap started. std does not reap on drop, so without this every
+    /// tap leaves a zombie behind for as long as the bar lives.
+    children: Vec<std::process::Child>,
+    /// What the last frame drew over the dock, if anything.
+    toast: Option<crate::status::Toast>,
 }
 
 /// What a tap on the bar does.
@@ -44,11 +49,24 @@ impl Bar {
             drawn: None,
             clock,
             hits: Vec::new(),
+            children: Vec::new(),
+            toast: None,
         }
     }
 
-    /// One dock slot: the app's initial in a rounded square, filled when it has
-    /// focus and outlined when it does not.
+    fn run(&mut self, args: &[&str]) {
+        match std::process::Command::new("pt35ctl").args(args).spawn() {
+            Ok(child) => self.children.push(child),
+            Err(e) => log::error!("pt35ctl {}: {e}", args.join(" ")),
+        }
+    }
+
+    /// One dock slot: icon, then the app's name while there is room for it.
+    ///
+    /// Filled when it has focus, outlined when it does not. A name is what makes
+    /// this a taskbar rather than a row of coloured squares, so it is drawn
+    /// whenever the width allows.
+    #[allow(clippy::too_many_arguments)]
     fn slot(
         &mut self,
         canvas: &mut Canvas,
@@ -57,18 +75,15 @@ impl Bar {
         icon: &str,
         focused: bool,
         id: i64,
+        slot: segments::Slot,
     ) -> i32 {
         let size = self.theme.font.size_bar;
         let centre = canvas.height as i32 / 2;
         let box_h = (canvas.height as i32 - 8).max(18);
-        let icon_size = (box_h - 6).max(12) as u32;
+        let icon_size = self.icon_size(canvas);
         let has_icon = !icon.is_empty() && self.icons.get(icon, icon_size).is_some();
-        let label = initials(app);
-        let width = if has_icon {
-            (icon_size as i32 + 10).max(box_h)
-        } else {
-            (self.mono.measure(&label, size) as i32 + 14).max(box_h)
-        };
+        let radius = self.theme.menu.radius;
+        let width = slot.width;
         let y = centre - box_h / 2;
 
         if focused {
@@ -77,7 +92,7 @@ impl Bar {
                 y,
                 width as u32,
                 box_h as u32,
-                RADIUS,
+                radius,
                 self.theme.color.accent,
             );
         } else {
@@ -86,7 +101,7 @@ impl Bar {
                 y,
                 width as u32,
                 box_h as u32,
-                RADIUS,
+                radius,
                 self.theme.color.border,
             );
             canvas.rounded_rect(
@@ -94,7 +109,7 @@ impl Bar {
                 y + 1,
                 (width - 2) as u32,
                 (box_h - 2) as u32,
-                RADIUS,
+                radius,
                 self.theme.color.background,
             );
         }
@@ -103,25 +118,38 @@ impl Bar {
         } else {
             self.theme.color.muted
         };
-        if has_icon {
-            let inset = (width - icon_size as i32) / 2;
-            if let Some(icon) = self.icons.get(icon, icon_size) {
-                icon.draw(canvas, x + inset, centre - icon_size as i32 / 2);
-            }
-            self.hits.push((x, x + width, Action::Focus(id)));
-            return x + width + 6;
-        }
-        let text_x = x + (width - self.mono.measure(&label, size) as i32) / 2;
-        self.mono.draw(
-            canvas,
-            &label,
-            text_x,
-            centre + (size * 0.36) as i32,
-            size,
-            ink,
-        );
+        let baseline = centre + (size * 0.36) as i32;
         self.hits.push((x, x + width, Action::Focus(id)));
-        x + width + 4
+
+        // No room for a name. An icon stands in; without one, two letters do.
+        if slot.label_width == 0 {
+            if has_icon {
+                let inset = (width - icon_size as i32) / 2;
+                if let Some(icon) = self.icons.get(icon, icon_size) {
+                    icon.draw(canvas, x + inset, centre - icon_size as i32 / 2);
+                }
+            } else {
+                let label = pt35_common::apps::initials(app);
+                let text_x = x + (width - self.mono.measure(&label, size) as i32) / 2;
+                self.mono.draw(canvas, &label, text_x, baseline, size, ink);
+            }
+            return x + width + SLOT_GAP;
+        }
+
+        let mut text_x = x + SLOT_PAD;
+        if has_icon {
+            if let Some(drawn) = self.icons.get(icon, icon_size) {
+                drawn.draw(canvas, text_x, centre - icon_size as i32 / 2);
+            }
+            text_x += icon_size as i32 + ICON_GAP;
+        }
+        let label = self.font.elide(app, size, slot.label_width.max(0) as u32);
+        self.font.draw(canvas, &label, text_x, baseline, size, ink);
+        x + width + SLOT_GAP
+    }
+
+    fn icon_size(&self, canvas: &Canvas) -> u32 {
+        ((canvas.height as i32 - 8).max(18) - 6).max(12) as u32
     }
 
     fn button(
@@ -142,7 +170,7 @@ impl Bar {
             centre - height / 2,
             width as u32,
             height as u32,
-            RADIUS,
+            self.theme.menu.radius,
             fill,
         );
         let baseline = centre + (size * 0.36) as i32;
@@ -153,24 +181,12 @@ impl Bar {
     }
 }
 
-/// Square corners with the sharpness taken off. A deck panel is machined, not
-/// moulded.
-const RADIUS: u32 = 2;
-
-/// Two characters of an app id: "pcmanfm" -> "PC", "foot" -> "FO".
-fn initials(app: &str) -> String {
-    let cleaned: String = app
-        .trim_start_matches("org.")
-        .chars()
-        .filter(|c| c.is_alphanumeric())
-        .collect();
-    let text: String = cleaned.chars().take(2).collect();
-    if text.is_empty() {
-        "??".into()
-    } else {
-        text.to_uppercase()
-    }
-}
+/// Space between two dock slots.
+const SLOT_GAP: i32 = 6;
+/// Inset from a slot's edge to its contents.
+const SLOT_PAD: i32 = 6;
+/// Between a slot's icon and its name.
+const ICON_GAP: i32 = 5;
 
 fn now(theme: &Theme) -> String {
     chrono::Local::now()
@@ -190,11 +206,15 @@ impl App for Bar {
     }
 
     fn tick(&mut self) -> bool {
+        self.children
+            .retain_mut(|child| !matches!(child.try_wait(), Ok(Some(_))));
         let clock = now(&self.theme);
         let status = self.feed.get();
-        let changed = clock != self.clock || status != self.drawn;
+        let toast = self.feed.toast();
+        let changed = clock != self.clock || status != self.drawn || toast != self.toast;
         self.clock = clock;
         self.drawn = status;
+        self.toast = toast;
         changed
     }
 
@@ -206,9 +226,11 @@ impl App for Bar {
             .find(|(left, right, _)| x >= *left && x < *right)
             .map(|(_, _, action)| *action);
         match hit {
-            Some(Action::Menu) => spawn("pt35ctl", &["menu".into(), "toggle".into()]),
-            Some(Action::Close) => spawn("pt35ctl", &["window".into(), "close".into()]),
-            Some(Action::Focus(id)) => spawn("swaymsg", &[format!("[con_id={id}] focus")]),
+            Some(Action::Menu) => self.run(&["menu", "toggle"]),
+            Some(Action::Close) => self.run(&["window", "close"]),
+            // Through the daemon, not straight to swaymsg: it has to learn about
+            // the change or the dock keeps the old slot filled.
+            Some(Action::Focus(id)) => self.run(&["window", "focus", &id.to_string()]),
             None => {}
         }
         true
@@ -310,48 +332,76 @@ impl App for Bar {
             right -= 8;
         }
 
-        // The dock: one slot per open window, focused one filled.
-        match status.as_ref() {
-            Some(status) if !status.windows.is_empty() => {
-                for window in &status.windows {
-                    let app = if window.app.is_empty() {
-                        window.title.clone()
-                    } else {
-                        window.app.clone()
-                    };
-                    if x + 40 > right {
-                        break;
-                    }
-                    x = self.slot(canvas, x, &app, &window.icon, window.focused, window.id);
-                }
-            }
-            Some(_) => {
-                self.font.draw(
-                    canvas,
-                    "no windows",
-                    x,
-                    baseline,
-                    size,
-                    self.theme.color.muted,
-                );
-            }
-            None => {
-                self.font.draw(
-                    canvas,
-                    "pt35d?",
-                    x,
-                    baseline,
-                    size,
-                    self.theme.color.critical,
-                );
-            }
+        // A toast takes the dock's room for a couple of seconds. It is the only
+        // answer a key binding ever gets: `pt35ctl volume +5` from a binding
+        // writes its error to a stderr nobody reads.
+        if let Some(toast) = self.feed.toast() {
+            let colour = if toast.urgency >= 2 {
+                self.theme.color.critical
+            } else {
+                self.theme.color.accent
+            };
+            let room = (right - x - 8).max(0) as u32;
+            let text = self.font.elide(&toast.text, size, room);
+            self.font.draw(canvas, &text, x, baseline, size, colour);
+            return;
         }
-    }
-}
 
-fn spawn(binary: &str, args: &[String]) {
-    if let Err(e) = std::process::Command::new(binary).args(args).spawn() {
-        log::error!("{binary}: {e}");
+        // The dock: one slot per open window, focused one filled.
+        //
+        // No "nothing open" text. With no windows the menu is the desktop, and
+        // it covers this strip anyway.
+        let Some(status) = status.as_ref() else {
+            self.font.draw(
+                canvas,
+                "pt35d?",
+                x,
+                baseline,
+                size,
+                self.theme.color.critical,
+            );
+            return;
+        };
+
+        let icon_size = self.icon_size(canvas);
+        let box_h = (canvas.height as i32 - 8).max(18);
+        let names: Vec<String> = status
+            .windows
+            .iter()
+            .map(|w| {
+                if w.app.is_empty() {
+                    w.title.clone()
+                } else {
+                    pt35_common::apps::pretty_app(&w.app)
+                }
+            })
+            .collect();
+        let mut natural = Vec::with_capacity(names.len());
+        let mut fixed = Vec::with_capacity(names.len());
+        for (window, name) in status.windows.iter().zip(&names) {
+            let has_icon =
+                !window.icon.is_empty() && self.icons.get(&window.icon, icon_size).is_some();
+            let icon_cost = if has_icon {
+                icon_size as i32 + ICON_GAP
+            } else {
+                0
+            };
+            let base = (icon_cost + 2 * SLOT_PAD).max(box_h);
+            fixed.push(base);
+            natural.push(base + self.font.measure(name, size) as i32);
+        }
+        let slots = segments::dock(&natural, &fixed, right - x, SLOT_GAP);
+        for ((window, name), slot) in status.windows.iter().zip(&names).zip(slots) {
+            x = self.slot(
+                canvas,
+                x,
+                name,
+                &window.icon,
+                window.focused,
+                window.id,
+                slot,
+            );
+        }
     }
 }
 

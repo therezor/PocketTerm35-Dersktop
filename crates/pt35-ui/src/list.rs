@@ -30,10 +30,11 @@ pub enum Outcome {
     Cancel,
     /// Go up one level (B / Backspace in nav mode).
     Back,
-    /// D-pad left on a list. A plain list treats it as Back, a settings row
-    /// turns it into a decrement.
+    /// D-pad left on a single-column list. A settings row turns it into a
+    /// decrement; every other screen ignores it. A grid consumes it as movement
+    /// and never emits this.
     Left,
-    /// D-pad right on a list.
+    /// D-pad right on a single-column list. The mirror of [`Outcome::Left`].
     Right,
     /// The screen's own secondary action (Y).
     Secondary,
@@ -124,6 +125,26 @@ impl ListState {
     /// Row within the drawn window that is highlighted.
     pub fn cursor_row(&self) -> usize {
         self.selected.saturating_sub(self.offset)
+    }
+
+    /// First visible row, counted in filtered positions.
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    /// Where the drawn window sits, 0.0 at the top and 1.0 at the bottom.
+    /// `None` when everything fits and there is nothing to scroll.
+    ///
+    /// Measured from `offset`, not from `selected`: `selected` is an index into
+    /// the unfiltered item list, and a scrollbar driven by it ran off the end of
+    /// its own track as soon as a search narrowed the list.
+    pub fn scroll_progress(&self) -> Option<f32> {
+        let total = self.len();
+        let rows = self.page();
+        if total <= rows {
+            return None;
+        }
+        Some(self.offset as f32 / (total - rows) as f32)
     }
 
     pub fn handle(&mut self, key: &Key) -> Outcome {
@@ -391,6 +412,26 @@ mod tests {
         }
         assert!(list.is_empty());
         assert_eq!(list.handle(&Key::new(sym::RETURN)), Outcome::Nothing);
+    }
+
+    #[test]
+    fn the_scrollbar_measures_the_filtered_list() {
+        // The thumb used to be computed from `selected`, an index into the
+        // unfiltered items. With a filter on it ran past the end of the track.
+        let items: Vec<String> = (0..20).map(|n| format!("item {n}")).collect();
+        let mut list = ListState::new(items, 5);
+        assert_eq!(list.scroll_progress(), Some(0.0));
+        list.handle(&Key::new(sym::END));
+        assert_eq!(list.scroll_progress(), Some(1.0), "End is the bottom");
+        list.handle(&Key::with_text('x' as u32, 'x'));
+        for ch in "item 1".chars() {
+            list.handle(&Key::with_text(ch as u32, ch));
+        }
+        let progress = list.scroll_progress();
+        assert!(
+            progress.is_none_or(|p| (0.0..=1.0).contains(&p)),
+            "a filtered list still measures itself: {progress:?}"
+        );
     }
 
     #[test]

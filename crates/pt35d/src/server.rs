@@ -122,15 +122,21 @@ fn handle_client(
         // Anything else may have changed what the bar draws. Waiting for the
         // next poll would show the new mode up to two seconds late.
         let changes = !matches!(request, Request::Subscribe | Request::Status);
-        let (response, status) = {
+        let (response, status, notes) = {
             let mut session = session.lock().expect("session");
             let response = session.handle(request);
-            (response, session.status.clone())
+            let notes = session.take_notifications();
+            (response, session.status.clone(), notes)
         };
         writeln!(writer, "{}", serde_json::to_string(&response)?)?;
         writer.flush()?;
-        if changes && !subscribers.is_empty() {
-            subscribers.broadcast(&Event::Status(status));
+        if !subscribers.is_empty() {
+            if changes {
+                subscribers.broadcast(&Event::Status(status));
+            }
+            for note in &notes {
+                subscribers.broadcast(note);
+            }
         }
 
         if subscribe {

@@ -18,9 +18,9 @@ default where a good one exists, because they are lighter and read better on a
 ```
                 sway (Wayland + XWayland, Raspberry Pi wlroots)
                  │
-    pt35d ───────┼─ session daemon: sway IPC, battery, backlight, volume,
-                 │  CPU profile, idle policy, hooks, status feed
-    pt35-bar ────┤  18px status strip (layer-shell, software-rendered)
+    pt35d ───────┼─ session daemon: sway IPC and events, battery, backlight,
+                 │  volume, CPU profile, hooks, status feed
+    pt35-bar ────┤  34px taskbar and status strip (layer-shell, software-rendered)
     pt35-menu ───┤  fullscreen launcher / window switcher / settings / power
     pt35ctl ─────┘  the CLI every key binding and hook calls
 ```
@@ -55,13 +55,15 @@ downloading a release.
 
 ## Using it
 
-`Super` is whatever key keyd maps to it (see `/etc/keyd/pocketterm35.conf`).
+The keyboard has its own `Super`, next to the right Alt. `keyd` is installed but
+its service is left disabled: the firmware already sends standard keysyms.
 
 | key | what it does |
 |---|---|
-| `Start` | open or close the menu — the hub for everything |
+| `Start` | open or close the menu, the hub for everything |
 | `Select` | switch between Buttons mode and Mouse mode |
-| `L` / `R` | close the window / open the window picker |
+| `L` | the keyboard Menu key: the focused app's own context menu |
+| `R` | open the window picker |
 | `Super`+`Space` | open the menu |
 | `Super`+`m` | switch between Buttons mode and Mouse mode |
 | `Super`+`Enter` | new terminal |
@@ -72,9 +74,16 @@ downloading a release.
 | `Super`+`r` | drag an oversized window back on screen |
 | `Super`+`s` | screenshot |
 
-In the menu: D-pad or arrows move, `Enter` or `Right` activates, `1`–`9` jump
-straight to a row, typing filters, `Backspace`/`Left` goes up a level, `Esc`
-closes. See [docs/KEYS.md](docs/KEYS.md) for the full map.
+Nothing closes a window from a shoulder button: that is `Super`+`q`, the `x` at
+the right of the bar, or `Y` on the window picker.
+
+Close the last window and the menu takes the screen. It is the desktop, so it
+will not close until something is open behind it.
+
+In the menu: D-pad or arrows move, `A` or `Enter` activates, `1`–`9` jump
+straight to a row, `X` or typing filters, `B`/`Backspace` goes up a level, `Esc`
+closes. Left and Right change a quick setting in place and do nothing else. See
+[docs/KEYS.md](docs/KEYS.md) for the full map.
 
 ## Configuring it
 
@@ -90,7 +99,9 @@ System defaults live in `/usr/share/pt35-desktop/pt35/`; anything you drop in
 
 The one knob that matters most is `scale` in `apps.toml`. At `1.0` the panel is
 640×480; at `0.75` clients see an ~853×640 logical surface, which is what makes
-GTK4 and Qt dialogs fit. `pt35d` switches it as you move between workspaces.
+GTK4 and Qt dialogs fit. It is handed to the app as `GDK_DPI_SCALE` and
+`QT_SCALE_FACTOR`, so the shell does not shrink with it. The output scale itself
+is a separate knob, on the Settings panel and on `pt35ctl scale`.
 
 ## Status
 

@@ -13,6 +13,7 @@ use std::process::{Child, Command, Stdio};
 use pt35_common::sway::Sway;
 
 use crate::{audio, hardware::Hardware, hooks};
+use pt35_common::apps::{command_binary, on_path};
 
 pub struct Session {
     pub theme: Theme,
@@ -31,7 +32,22 @@ pub struct Session {
     mode_before_menu: InputMode,
     /// Exactly what is bound right now, so it can be taken back exactly.
     bound: Vec<crate::modes::Bind>,
+    /// swaylock, while it is up. It is a layer surface and not in the tree, so
+    /// without this the desktop reads as empty and the menu opens under it.
+    lock_proc: Option<Child>,
+    /// Notifications waiting to go out to the bar. Filled while a request is
+    /// being handled, drained by whoever is holding the lock afterwards.
+    pending: Vec<pt35_common::ipc::Event>,
+    /// Set when something was asked to start and no window has appeared yet.
+    /// Without it the menu reopens on top of every app you launch: the menu
+    /// exits, the window has not mapped, the desktop reads as empty.
+    launch_pending: Option<std::time::Instant>,
 }
+
+/// How long a launch suppresses the empty-desktop menu. Long enough for a slow
+/// GTK app on a Pi 4, short enough that a failed launch does not strand you on
+/// a blank screen.
+const LAUNCH_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl Session {
     pub fn new() -> Self {
@@ -52,6 +68,9 @@ impl Session {
             mode_applied: false,
             mode_before_menu: InputMode::Buttons,
             bound: Vec::new(),
+            lock_proc: None,
+            pending: Vec::new(),
+            launch_pending: Some(std::time::Instant::now()),
         };
         if let Err(e) = session.menu.validate() {
             log::error!("menu.toml is inconsistent ({e}); the menu key will show an error page");
@@ -116,6 +135,20 @@ impl Session {
         }
     }
 
+    /// A query, with the same reconnect-once retry a command gets. A failed read
+    /// can leave the reply unconsumed and every later reply misaligned, so the
+    /// connection is thrown away rather than reused.
+    fn sway_query(&mut self, kind: pt35_common::sway::MessageType) -> Result<String> {
+        match self.sway().and_then(|s| s.request(kind, "")) {
+            Ok(json) => Ok(json),
+            Err(first) => {
+                log::debug!("sway query failed ({first}); reconnecting");
+                self.sway = None;
+                self.sway()?.request(kind, "")
+            }
+        }
+    }
+
     /// True once sway has gone. The daemon must not outlive it: a stale pt35d
     /// holds the socket and the next session cannot start.
     ///
@@ -138,21 +171,14 @@ impl Session {
         self.status.muted = muted;
         self.status.network = self.hw.network();
         self.status.network_signal = self.hw.network_signal();
-        self.status.windows = self.window_list();
-        self.spread_windows();
-        if let Ok((workspace, app)) = self.sway().and_then(|s| s.focus()) {
-            self.status.workspace = workspace;
-            self.status.app = app;
+        self.refresh_windows();
+        if !self.mode_applied && self.menu_proc.is_none() {
             // Nothing changes workspace at startup, so the binds have to go
             // out on the first tick or the buttons do nothing until you move.
-            if !self.mode_applied && self.menu_proc.is_none() {
-                match self.set_mode(self.status.input_mode) {
-                    Ok(()) => self.mode_applied = true,
-                    Err(e) => log::warn!("input mode: {e}"),
-                }
+            match self.set_mode(self.status.input_mode) {
+                Ok(()) => self.mode_applied = true,
+                Err(e) => log::warn!("input mode: {e}"),
             }
-        } else {
-            self.sway = None;
         }
         // Both helpers exit on their own, so reap them here or they pile up as
         // zombies.
@@ -163,20 +189,49 @@ impl Session {
                 self.ensure_focus();
             }
         }
+        if let Some(child) = self.lock_proc.as_mut() {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                self.lock_proc = None;
+            }
+        }
         self.low_battery_hook();
     }
 
+    /// Everything that depends on the sway tree. Called on every sway window or
+    /// workspace event, and once per poll as a safety net.
+    ///
+    /// Deliberately free of hardware reads: an event can arrive many times a
+    /// second and `audio::state` spawns a subprocess.
+    pub fn refresh_windows(&mut self) {
+        if let Some(windows) = self.window_list() {
+            self.status.windows = windows;
+        }
+        self.spread_windows();
+        match self.sway().and_then(|s| s.focus()) {
+            Ok((workspace, app)) => {
+                self.status.workspace = workspace;
+                self.status.app = app;
+            }
+            Err(_) => self.sway = None,
+        }
+        self.open_menu_on_empty_desktop();
+    }
+
     /// Open windows, for the dock in the bar.
-    fn window_list(&mut self) -> Vec<pt35_common::ipc::WindowInfo> {
-        let reply = self
-            .sway()
-            .and_then(|s| s.request(pt35_common::sway::MessageType::GetTree, ""));
-        let Ok(json) = reply else { return Vec::new() };
-        let Ok(tree) = serde_json::from_str::<serde_json::Value>(&json) else {
-            return Vec::new();
+    ///
+    /// `None` means sway did not answer. The caller keeps whatever it had: one
+    /// dropped reply used to blank the whole dock until the next poll.
+    fn window_list(&mut self) -> Option<Vec<pt35_common::ipc::WindowInfo>> {
+        let json = match self.sway_query(pt35_common::sway::MessageType::GetTree) {
+            Ok(json) => json,
+            Err(e) => {
+                log::debug!("window list: {e}");
+                return None;
+            }
         };
+        let tree = serde_json::from_str::<serde_json::Value>(&json).ok()?;
         let apps = self.apps.clone();
-        pt35_common::sway::windows(&tree)
+        let list = pt35_common::sway::windows(&tree)
             .into_iter()
             .map(|w| pt35_common::ipc::WindowInfo {
                 id: w.id,
@@ -198,7 +253,8 @@ impl Session {
                 focused: w.focused,
                 floating: w.floating,
             })
-            .collect()
+            .collect();
+        Some(list)
     }
 
     /// Give every tiled window its own workspace. Without this, a second
@@ -222,18 +278,44 @@ impl Session {
         }
     }
 
+    /// Queue a line for the bar to show and then forget.
+    ///
+    /// The only feedback a key binding has. `pt35ctl volume +5` from a binding
+    /// writes its error to a stderr nobody reads, so "no audio backend" looked
+    /// exactly like a working volume key.
+    pub fn notify(&mut self, summary: impl Into<String>, urgency: u8) {
+        self.pending.push(pt35_common::ipc::Event::Notification {
+            summary: summary.into(),
+            body: String::new(),
+            urgency,
+        });
+    }
+
+    /// Take everything queued since the last call.
+    pub fn take_notifications(&mut self) -> Vec<pt35_common::ipc::Event> {
+        std::mem::take(&mut self.pending)
+    }
+
     pub fn handle(&mut self, request: Request) -> Response {
         match self.dispatch(request) {
             Ok(response) => response,
-            Err(e) => Response::Error {
-                message: format!("{e:#}"),
-            },
+            Err(e) => {
+                let message = format!("{e:#}");
+                self.notify(message.clone(), 2);
+                Response::Error { message }
+            }
         }
     }
 
     fn dispatch(&mut self, request: Request) -> Result<Response> {
         match request {
-            Request::Status => Ok(Response::Status(self.status.clone())),
+            // Read the tree rather than answering from the cache. The menu
+            // builds its window picker from this and used to get a list up to
+            // one poll old, which is how a closed window kept a row.
+            Request::Status => {
+                self.sync_windows();
+                Ok(Response::Status(self.status.clone()))
+            }
             Request::Subscribe => Ok(Response::Status(self.status.clone())),
 
             Request::Menu { action, page } => {
@@ -243,6 +325,11 @@ impl Session {
 
             Request::Launch { app } => {
                 self.launch(&app)?;
+                Ok(Response::Ok)
+            }
+
+            Request::Exec { command } => {
+                self.exec(&command)?;
                 Ok(Response::Ok)
             }
 
@@ -300,6 +387,7 @@ impl Session {
                 }
                 self.sway_command(&format!("output * scale {scale}"))?;
                 self.status.scale = scale;
+                self.notify(format!("Scale {scale:.2}x"), 0);
                 Ok(Response::Ok)
             }
 
@@ -319,31 +407,25 @@ impl Session {
                     // the dock draws instead.
                     WindowAction::Next | WindowAction::Previous => {
                         let _ = self.toggle_menu(Toggle::Off, None);
-                        self.status.windows = self.window_list();
+                        self.sync_windows();
                         let forward = action == WindowAction::Next;
                         let workspace = self.status.workspace;
                         match next_window(&self.status.windows, workspace, forward) {
-                            Some(id) => self.sway_command(&format!("[con_id={id}] focus"))?,
+                            Some(id) => self.focus_window(id)?,
                             None => return Ok(Response::Ok),
                         }
                     }
+                    WindowAction::Focus(id) => self.focus_window(id)?,
                     WindowAction::Close => {
                         // Named, not a bare `kill`: after the menu has been up
                         // nothing is focused, and a bare kill hits nothing.
-                        self.status.windows = self.window_list();
-                        let workspace = self.status.workspace;
-                        let target = self.current_window().map(|w| w.id);
-                        // Closing leaves you on an empty workspace otherwise,
-                        // because every app owns one.
-                        let next = next_window(&self.status.windows, workspace, true);
-                        match target {
-                            Some(id) => self.sway_command(&format!("[con_id={id}] kill"))?,
-                            None => return Ok(Response::Ok),
-                        }
-                        if let Some(id) = next.filter(|id| Some(*id) != target) {
-                            let _ = self.sway_command(&format!("[con_id={id}] focus"));
-                        }
+                        self.sync_windows();
+                        let Some(target) = self.current_window().map(|w| w.id) else {
+                            return Ok(Response::Ok);
+                        };
+                        self.close_window(target)?;
                     }
+                    WindowAction::CloseId(id) => self.close_window(id)?,
                     WindowAction::Fullscreen => self.sway_command("fullscreen toggle")?,
                 }
                 Ok(Response::Ok)
@@ -359,6 +441,8 @@ impl Session {
                 match status {
                     Ok(s) if s.success() => {
                         hooks::fire("screenshot", &[("PT35_SCREENSHOT", path.clone())]);
+                        let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+                        self.notify(format!("Saved {name}"), 0);
                         Ok(Response::Ok)
                     }
                     _ => bail!("grim failed (is it installed?)"),
@@ -367,6 +451,7 @@ impl Session {
 
             Request::Cpu { profile } => {
                 self.set_cpu(profile)?;
+                self.notify(format!("CPU: {}", profile.label()), 0);
                 Ok(Response::Ok)
             }
 
@@ -381,6 +466,7 @@ impl Session {
                 let arg = if on { "enabled" } else { "disabled" };
                 self.sway_command(&format!("input type:touch events {arg}"))?;
                 self.status.touch_enabled = on;
+                self.notify(if on { "Touch on" } else { "Touch off" }, 0);
                 Ok(Response::Ok)
             }
 
@@ -397,6 +483,7 @@ impl Session {
                 self.apps.validate()?;
                 self.apply_assignments();
                 hooks::fire("reload", &[]);
+                self.notify("Config reloaded", 0);
                 Ok(Response::Ok)
             }
         }
@@ -407,11 +494,21 @@ impl Session {
             self.menu_proc.as_mut().map(|c| c.try_wait()),
             Some(Ok(None))
         );
-        let want_open = match action {
+        let mut want_open = match action {
             Toggle::On => true,
             Toggle::Off => false,
             Toggle::Toggle => !running,
         };
+        // With nothing open the menu is the desktop, so it cannot be dismissed:
+        // closing it would leave a blank screen, and the next sway event would
+        // reopen it anyway.
+        if !want_open && self.status.windows.is_empty() && self.launch_pending.is_none() {
+            want_open = true;
+        }
+        if running && want_open && action != Toggle::On {
+            // Already showing what was asked for.
+            return Ok(());
+        }
         if running {
             if let Some(mut child) = self.menu_proc.take() {
                 let _ = child.kill();
@@ -441,42 +538,113 @@ impl Session {
     /// every command after it into the binding.
     fn set_mode(&mut self, mode: InputMode) -> Result<()> {
         let pointer = self.theme.pointer.clone();
+        let buttons = self.theme.buttons.clone();
         let wanted = crate::modes::binds(mode, &pointer);
         self.unbind_all()?;
-        for bind in &wanted {
+        // Record each bind as it lands, not all of them at the end. A failure
+        // halfway used to leave live bindings that `unbind_all` would never take
+        // back, because `bound` was still empty and it returns early on that.
+        for bind in wanted {
             self.sway_command(&bind.bind())?;
+            self.bound.push(bind);
         }
-        self.sway_command(&crate::modes::settings(mode, &pointer).join(", "))?;
-        self.bound = wanted;
+        self.sway_command(&crate::modes::settings(mode, &pointer, &buttons).join(", "))?;
         self.status.input_mode = mode;
         Ok(())
     }
 
+    /// Re-read the window list, keeping the old one if sway does not answer.
+    fn sync_windows(&mut self) {
+        if let Some(windows) = self.window_list() {
+            self.status.windows = windows;
+        }
+    }
+
+    fn focus_window(&mut self, id: i64) -> Result<()> {
+        self.sway_command(&format!("[con_id={id}] focus"))?;
+        self.sync_windows();
+        Ok(())
+    }
+
+    /// Ask one window to close, then take it out of the list at once.
+    ///
+    /// `kill` is a request, not a deletion: sway sends `xdg_toplevel.close` and
+    /// answers success straight away, while the container lives until the client
+    /// destroys its surface. Re-reading the tree here would return the window we
+    /// just killed, which is the whole bug. So drop it locally and let the
+    /// `window::close` event put the truth back. An app that refuses to close,
+    /// say to ask about unsaved work, reappears, which is correct.
+    fn close_window(&mut self, id: i64) -> Result<()> {
+        // Closing leaves you on an empty workspace otherwise, because every app
+        // owns one.
+        let next = next_window(&self.status.windows, self.status.workspace, true);
+        self.sway_command(&format!("[con_id={id}] kill"))?;
+        self.status.windows.retain(|w| w.id != id);
+        if let Some(next) = next.filter(|next| *next != id) {
+            let _ = self.sway_command(&format!("[con_id={next}] focus"));
+            for window in &mut self.status.windows {
+                window.focused = window.id == next;
+            }
+        }
+        self.open_menu_on_empty_desktop();
+        Ok(())
+    }
+
+    /// With nothing open the menu is the desktop. Anything else is a charcoal
+    /// rectangle with a dock that has no slots in it.
+    fn open_menu_on_empty_desktop(&mut self) {
+        // A window appearing is what ends the wait for one.
+        if !self.status.windows.is_empty() {
+            self.launch_pending = None;
+            return;
+        }
+        let pending = self
+            .launch_pending
+            .is_some_and(|at| at.elapsed() < LAUNCH_GRACE);
+        if !should_open_menu(
+            true,
+            self.menu_proc.is_some(),
+            self.lock_proc.is_some(),
+            pending,
+        ) {
+            return;
+        }
+        self.launch_pending = None;
+        if let Err(e) = self.toggle_menu(Toggle::On, None) {
+            log::warn!("opening the menu on an empty desktop: {e}");
+        }
+    }
+
     /// The window a keypress means: the focused one, or the one on this
     /// workspace when the menu has just taken focus away from everything.
+    ///
+    /// No fall back to the first window in the list. Pressing close on an empty
+    /// workspace used to kill something on another one.
     fn current_window(&self) -> Option<&pt35_common::ipc::WindowInfo> {
-        self.status
-            .windows
-            .iter()
-            .find(|w| w.focused)
-            .or_else(|| {
-                self.status
-                    .windows
-                    .iter()
-                    .find(|w| w.workspace == self.status.workspace)
-            })
-            .or_else(|| self.status.windows.first())
+        self.status.windows.iter().find(|w| w.focused).or_else(|| {
+            self.status
+                .windows
+                .iter()
+                .find(|w| w.workspace == self.status.workspace)
+        })
     }
 
     /// Give focus back to a window. A layer surface that took the keyboard
     /// leaves sway with no focused view when it goes, and then every command
     /// that acts on "the focused window" does nothing.
     fn ensure_focus(&mut self) {
-        self.status.windows = self.window_list();
+        self.sync_windows();
         if self.status.windows.iter().any(|w| w.focused) {
             return;
         }
-        if let Some(id) = self.current_window().map(|w| w.id) {
+        // Anything is better than nothing here, so this one does fall back to
+        // the first window in the list. `current_window` must not: it decides
+        // what gets closed.
+        let id = self
+            .current_window()
+            .or_else(|| self.status.windows.first())
+            .map(|w| w.id);
+        if let Some(id) = id {
             let _ = self.sway_command(&format!("[con_id={id}] focus"));
         }
     }
@@ -509,10 +677,10 @@ impl Session {
 
         // Launching an app that is already open used to start a second copy.
         // Four imv processes, each holding a core, came from exactly that.
-        self.status.windows = self.window_list();
+        self.sync_windows();
         if let Some(open) = self.status.windows.iter().find(|w| app.matches_app(&w.app)) {
             let id = open.id;
-            self.sway_command(&format!("[con_id={id}] focus"))?;
+            self.focus_window(id)?;
             return Ok(());
         }
 
@@ -542,8 +710,49 @@ impl Session {
             cmd.env(key, value);
         }
         cmd.spawn()?;
+        // The window has not mapped yet, so the desktop still reads as empty.
+        // Hold the menu off until it appears.
+        self.launch_pending = Some(std::time::Instant::now());
+        crate::recents::record(&format!("app:{id}"));
 
         hooks::fire("launch", &[("PT35_APP", id.to_string())]);
+        Ok(())
+    }
+
+    /// Run a bare command line, with the checks a profiled app gets.
+    fn exec(&mut self, command: &str) -> Result<()> {
+        let binary = command_binary(command)
+            .ok_or_else(|| anyhow::anyhow!("{command:?} is not a command"))?;
+
+        // `sh -c` always succeeds, so a menu row for a program that is not
+        // installed used to close the menu and show nothing at all.
+        if !on_path(&binary) {
+            bail!("{binary} is not installed");
+        }
+
+        // The same no-second-copy rule an `apps.toml` entry gets. A .desktop
+        // row had none, so it started another one every time.
+        self.sync_windows();
+        let leaf = binary.rsplit('/').next().unwrap_or(&binary).to_lowercase();
+        if let Some(open) = self
+            .status
+            .windows
+            .iter()
+            .find(|w| w.app.to_lowercase() == leaf)
+        {
+            let id = open.id;
+            self.focus_window(id)?;
+            return Ok(());
+        }
+
+        Command::new("sh")
+            .arg("-c")
+            .arg(command)
+            .stdin(Stdio::null())
+            .spawn()?;
+        self.launch_pending = Some(std::time::Instant::now());
+        crate::recents::record(&format!("exec:{command}"));
+        hooks::fire("launch", &[("PT35_APP", command.to_string())]);
         Ok(())
     }
 
@@ -578,10 +787,13 @@ impl Session {
             PowerAction::Lock => {
                 // The Pi cannot suspend; "lock" is a blank screen plus swaylock
                 // when it is installed.
-                if Command::new("swaylock").arg("-f").spawn().is_err() {
-                    self.sway_command("output * dpms off")?;
+                match Command::new("swaylock").spawn() {
+                    Ok(child) => {
+                        self.lock_proc = Some(child);
+                        Ok(())
+                    }
+                    Err(_) => self.sway_command("output * dpms off"),
                 }
-                Ok(())
             }
             PowerAction::Logout => self.sway_command("exit"),
             PowerAction::Reboot => {
@@ -596,35 +808,23 @@ impl Session {
     }
 }
 
+/// Whether an empty desktop should bring the menu up.
+///
+/// Four ways it should not. The menu is already there. swaylock is up, and it
+/// is a layer surface so the tree looks empty under it. Something was just
+/// asked to start and its window has not mapped yet, which is the race that
+/// used to drop the menu on top of every app you launched. Or something is
+/// actually open.
+pub fn should_open_menu(empty: bool, menu_up: bool, locked: bool, launch_pending: bool) -> bool {
+    empty && !menu_up && !locked && !launch_pending
+}
+
 fn run_or_fail(argv: &[&str]) -> Result<()> {
     let status = Command::new(argv[0]).args(&argv[1..]).status()?;
     if !status.success() {
         bail!("{} failed", argv.join(" "));
     }
     Ok(())
-}
-
-/// The binary an `exec` line runs, skipping a `sh -c` wrapper.
-pub fn command_binary(exec: &str) -> Option<String> {
-    let mut words = exec.split_whitespace();
-    let first = words.next()?;
-    if first == "sh" || first == "bash" {
-        // sh -c '<real command> ...': take the first word inside the quotes.
-        let rest = exec.split_once("-c")?.1.trim();
-        let inner = rest.trim_start_matches(['\'', '"']);
-        return inner.split_whitespace().next().map(str::to_string);
-    }
-    Some(first.to_string())
-}
-
-fn on_path(binary: &str) -> bool {
-    if binary.starts_with('/') {
-        return std::path::Path::new(binary).exists();
-    }
-    let Some(path) = std::env::var_os("PATH") else {
-        return true;
-    };
-    std::env::split_paths(&path).any(|dir| dir.join(binary).exists())
 }
 
 /// The window to focus when the user asks for the next or previous app.
@@ -734,6 +934,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_desktop_menu_knows_when_to_stay_out_of_the_way() {
+        assert!(should_open_menu(true, false, false, false));
+        assert!(
+            !should_open_menu(false, false, false, false),
+            "a window is open"
+        );
+        assert!(!should_open_menu(true, true, false, false), "already up");
+        assert!(!should_open_menu(true, false, true, false), "locked");
+        assert!(
+            !should_open_menu(true, false, false, true),
+            "a launch is on its way; do not land on top of it"
+        );
+    }
+
+    #[test]
     fn scale_cycles_through_the_useful_values() {
         assert_eq!(next_scale(1.0), 0.75);
         assert_eq!(next_scale(0.75), 0.6);
@@ -804,20 +1019,6 @@ mod tests {
         let mut list: Vec<_> = (1..=9).map(|n| window(n as i64, n, false)).collect();
         list.push(window(99, 1, false));
         assert!(overflow_moves(&list).is_empty());
-    }
-
-    #[test]
-    fn finds_the_binary_behind_an_exec_line() {
-        assert_eq!(command_binary("foot").as_deref(), Some("foot"));
-        assert_eq!(
-            command_binary("chromium --ozone-platform=wayland").as_deref(),
-            Some("chromium")
-        );
-        assert_eq!(
-            command_binary("sh -c 'imv-wayland \"$HOME/Pictures\"'").as_deref(),
-            Some("imv-wayland")
-        );
-        assert_eq!(command_binary("").as_deref(), None);
     }
 
     #[test]

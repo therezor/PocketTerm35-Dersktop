@@ -162,9 +162,93 @@ impl AppTable {
     }
 }
 
+/// The binary an `exec` line runs, skipping a `sh -c` wrapper.
+pub fn command_binary(exec: &str) -> Option<String> {
+    let mut words = exec.split_whitespace();
+    let first = words.next()?;
+    if first == "sh" || first == "bash" {
+        // sh -c '<real command> ...': take the first word inside the quotes.
+        let rest = exec.split_once("-c")?.1.trim();
+        let inner = rest.trim_start_matches(['\'', '"']);
+        return inner.split_whitespace().next().map(str::to_string);
+    }
+    Some(first.to_string())
+}
+
+/// Whether a command is actually installed.
+///
+/// `sh -c` succeeds whatever you give it, so this is the only thing standing
+/// between a menu row and a launch that silently does nothing.
+pub fn on_path(binary: &str) -> bool {
+    if binary.starts_with('/') {
+        return std::path::Path::new(binary).exists();
+    }
+    let Some(path) = std::env::var_os("PATH") else {
+        return true;
+    };
+    std::env::split_paths(&path).any(|dir| dir.join(binary).exists())
+}
+
+/// A window's app id as a person would say it: `pt35-monitor` is "Monitor",
+/// `org.gnome.Nautilus` is "Nautilus".
+///
+/// Lives here so the dock and the window picker name the same window the same
+/// way. They used to disagree.
+pub fn pretty_app(app: &str) -> String {
+    let name = app
+        .rsplit('.')
+        .next()
+        .unwrap_or(app)
+        .trim_start_matches("pt35-");
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => "Window".to_string(),
+    }
+}
+
+/// Two letters for a window with neither an icon nor room for a name.
+pub fn initials(app: &str) -> String {
+    let cleaned: String = pretty_app(app)
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect();
+    let text: String = cleaned.chars().take(2).collect();
+    if text.is_empty() {
+        "??".into()
+    } else {
+        text.to_uppercase()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_the_binary_behind_an_exec_line() {
+        assert_eq!(command_binary("foot").as_deref(), Some("foot"));
+        assert_eq!(
+            command_binary("chromium --ozone-platform=wayland").as_deref(),
+            Some("chromium")
+        );
+        assert_eq!(
+            command_binary("sh -c 'imv-wayland \"$HOME/Pictures\"'").as_deref(),
+            Some("imv-wayland")
+        );
+        assert_eq!(command_binary("").as_deref(), None);
+    }
+
+    #[test]
+    fn names_a_window_the_way_a_person_would() {
+        assert_eq!(pretty_app("pt35-monitor"), "Monitor");
+        assert_eq!(pretty_app("foot"), "Foot");
+        assert_eq!(pretty_app("org.gnome.Nautilus"), "Nautilus");
+        assert_eq!(pretty_app(""), "Window");
+        assert_eq!(initials("pt35-monitor"), "MO");
+        assert_eq!(initials("org.gnome.Nautilus"), "NA");
+        assert_eq!(initials(""), "WI");
+    }
 
     #[test]
     fn parses_a_profile() {

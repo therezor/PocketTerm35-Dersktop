@@ -48,6 +48,24 @@ pub fn hooks_dir() -> PathBuf {
     config_dir().join("hooks")
 }
 
+/// Where the shell keeps what it learned rather than what it was told.
+///
+/// State, not configuration: nobody edits this and losing it costs nothing.
+pub fn state_dir() -> PathBuf {
+    if let Some(xdg) = std::env::var_os("XDG_STATE_HOME") {
+        return PathBuf::from(xdg).join("pt35");
+    }
+    match std::env::var_os("HOME") {
+        Some(home) => PathBuf::from(home).join(".local/state/pt35"),
+        None => std::env::temp_dir().join("pt35"),
+    }
+}
+
+/// The apps you have opened, most recent first.
+pub fn recents_path() -> PathBuf {
+    state_dir().join("recent")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -4,10 +4,8 @@
 //! Hand-rolled argument parsing: this binary is on the hot path of every key
 //! press, so it stays free of clap and starts in ~1 ms.
 
-use anyhow::{bail, Context, Result};
-use pt35_common::ipc::{
-    CpuProfile, Delta, ModeRequest, PowerAction, Request, Response, Status, Toggle, WindowAction,
-};
+use anyhow::{bail, Result};
+use pt35_common::ipc::{Request, Response, Status};
 
 mod client;
 
@@ -17,11 +15,13 @@ pt35ctl — control the PocketTerm35 desktop session
 usage:
   pt35ctl menu [open|close|toggle] [PAGE]
   pt35ctl launch APP
+  pt35ctl exec COMMAND...
   pt35ctl volume +5 | -5 | 50 | mute
   pt35ctl brightness +10 | -10 | 50
   pt35ctl mode [toggle|buttons|mouse]
   pt35ctl scale [1.0|0.75|cycle]
   pt35ctl window fit|close|next|prev|fullscreen
+  pt35ctl window focus|close ID
   pt35ctl screenshot
   pt35ctl cpu powersave|balanced|performance
   pt35ctl power screenoff|lock|logout|reboot|poweroff|menu
@@ -52,7 +52,7 @@ fn run() -> Result<()> {
         }
         ["status", rest @ ..] => status(rest.contains(&"--json")),
         rest => {
-            let request = parse(rest)?;
+            let request = Request::from_ctl(rest).map_err(anyhow::Error::msg)?;
             match client::send(&request)? {
                 Response::Ok => Ok(()),
                 Response::Error { message } => bail!(message),
@@ -66,117 +66,6 @@ fn run() -> Result<()> {
 }
 
 /// Turn an argv slice into a request. Kept pure so it can be unit-tested.
-fn parse(argv: &[&str]) -> Result<Request> {
-    Ok(match argv {
-        ["menu"] | ["menu", "toggle"] => Request::Menu {
-            action: Toggle::Toggle,
-            page: None,
-        },
-        ["menu", "open"] => Request::Menu {
-            action: Toggle::On,
-            page: None,
-        },
-        ["menu", "close"] => Request::Menu {
-            action: Toggle::Off,
-            page: None,
-        },
-        ["menu", "open", page] => Request::Menu {
-            action: Toggle::On,
-            page: Some((*page).to_string()),
-        },
-        ["menu", page] => Request::Menu {
-            action: Toggle::On,
-            page: Some((*page).to_string()),
-        },
-
-        ["launch", app] => Request::Launch {
-            app: (*app).to_string(),
-        },
-
-        ["volume", value] => Request::Volume {
-            change: delta(value)?,
-        },
-        ["brightness", value] => Request::Brightness {
-            change: delta(value)?,
-        },
-
-        ["mode"] | ["mode", "toggle"] => Request::Mode {
-            mode: ModeRequest::Toggle,
-        },
-        ["mode", "buttons"] => Request::Mode {
-            mode: ModeRequest::Buttons,
-        },
-        ["mode", "mouse"] => Request::Mode {
-            mode: ModeRequest::Mouse,
-        },
-
-        ["scale"] | ["scale", "cycle"] => Request::Scale { value: None },
-        ["scale", value] => Request::Scale {
-            value: Some(
-                value
-                    .parse()
-                    .with_context(|| format!("bad scale {value:?}"))?,
-            ),
-        },
-
-        ["window", "fit"] => Request::WindowFit,
-        ["window", "close"] => Request::Window {
-            action: WindowAction::Close,
-        },
-        ["window", "next"] => Request::Window {
-            action: WindowAction::Next,
-        },
-        ["window", "prev"] => Request::Window {
-            action: WindowAction::Previous,
-        },
-        ["window", "fullscreen"] => Request::Window {
-            action: WindowAction::Fullscreen,
-        },
-        ["screenshot"] => Request::Screenshot,
-
-        ["cpu", profile] => Request::Cpu {
-            profile: match *profile {
-                "powersave" => CpuProfile::Powersave,
-                "balanced" => CpuProfile::Balanced,
-                "performance" => CpuProfile::Performance,
-                other => bail!("unknown cpu profile {other:?}"),
-            },
-        },
-
-        ["power", action] => Request::Power {
-            action: match *action {
-                "screenoff" => PowerAction::ScreenOff,
-                "lock" => PowerAction::Lock,
-                "logout" => PowerAction::Logout,
-                "reboot" => PowerAction::Reboot,
-                "poweroff" => PowerAction::Poweroff,
-                "menu" => PowerAction::Menu,
-                other => bail!("unknown power action {other:?}"),
-            },
-        },
-
-        ["touch", action] => Request::Touch {
-            action: toggle(action)?,
-        },
-        ["reload"] => Request::Reload,
-
-        other => bail!("unknown command: {}\n\n{USAGE}", other.join(" ")),
-    })
-}
-
-fn delta(value: &str) -> Result<Delta> {
-    value.parse::<Delta>().map_err(|e| anyhow::anyhow!(e))
-}
-
-fn toggle(value: &str) -> Result<Toggle> {
-    Ok(match value {
-        "on" => Toggle::On,
-        "off" => Toggle::Off,
-        "toggle" => Toggle::Toggle,
-        other => bail!("expected on|off|toggle, got {other:?}"),
-    })
-}
-
 fn status(json: bool) -> Result<()> {
     match client::send(&Request::Status)? {
         Response::Status(s) if json => {
@@ -223,107 +112,4 @@ fn print_status(s: &Status) {
     );
     println!("network     {}", s.network.as_deref().unwrap_or("-"));
     println!("mode        {}", s.input_mode.label());
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_the_bindings_used_in_the_sway_config() {
-        assert_eq!(
-            parse(&["menu", "toggle"]).unwrap(),
-            Request::Menu {
-                action: Toggle::Toggle,
-                page: None
-            }
-        );
-        assert_eq!(
-            parse(&["volume", "+5"]).unwrap(),
-            Request::Volume {
-                change: Delta::Relative(5)
-            }
-        );
-        assert_eq!(
-            parse(&["brightness", "-10"]).unwrap(),
-            Request::Brightness {
-                change: Delta::Relative(-10)
-            }
-        );
-        assert_eq!(parse(&["window", "fit"]).unwrap(), Request::WindowFit);
-        assert_eq!(
-            parse(&["window", "close"]).unwrap(),
-            Request::Window {
-                action: WindowAction::Close
-            }
-        );
-        assert_eq!(
-            parse(&["window", "next"]).unwrap(),
-            Request::Window {
-                action: WindowAction::Next
-            }
-        );
-        assert_eq!(
-            parse(&["mode", "toggle"]).unwrap(),
-            Request::Mode {
-                mode: ModeRequest::Toggle
-            }
-        );
-        assert_eq!(
-            parse(&["mode", "mouse"]).unwrap(),
-            Request::Mode {
-                mode: ModeRequest::Mouse
-            }
-        );
-        assert_eq!(
-            parse(&["power", "menu"]).unwrap(),
-            Request::Power {
-                action: PowerAction::Menu
-            }
-        );
-        assert_eq!(
-            parse(&["cpu", "balanced"]).unwrap(),
-            Request::Cpu {
-                profile: CpuProfile::Balanced
-            }
-        );
-        assert_eq!(parse(&["scale"]).unwrap(), Request::Scale { value: None });
-        assert_eq!(
-            parse(&["scale", "0.75"]).unwrap(),
-            Request::Scale { value: Some(0.75) }
-        );
-    }
-
-    #[test]
-    fn rejects_nonsense() {
-        assert!(parse(&["fly", "me", "to", "the", "moon"]).is_err());
-        assert!(parse(&["volume", "loud"]).is_err());
-        assert!(parse(&["cpu", "turbo"]).is_err());
-        assert!(parse(&["touch", "maybe"]).is_err());
-    }
-
-    #[test]
-    fn every_menu_toml_action_parses() {
-        // Keep in step with config/pt35/menu.toml: every `action = "..."` there
-        // must be a command this binary understands.
-        for action in [
-            "mode toggle",
-            "mode mouse",
-            "scale cycle",
-            "cpu powersave",
-            "cpu balanced",
-            "cpu performance",
-            "touch toggle",
-            "screenshot",
-            "reload",
-            "power screenoff",
-            "power lock",
-            "power logout",
-            "power reboot",
-            "power poweroff",
-        ] {
-            let argv: Vec<&str> = action.split_whitespace().collect();
-            parse(&argv).unwrap_or_else(|e| panic!("menu action {action:?} does not parse: {e}"));
-        }
-    }
 }

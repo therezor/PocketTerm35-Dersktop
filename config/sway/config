@@ -42,11 +42,12 @@ font pango:DejaVu Sans 9
 
 ### ------------------------------------------------------------------- input
 input type:keyboard {
-    # 500ms before a held D-pad direction repeats, then 8 a second. Faster than
-    # this and one press of the D-pad skips two tiles.
+    # Startup defaults only. pt35d resets both per input mode, from the
+    # [buttons] and [pointer] tables in theme.toml.
     repeat_delay 500
     repeat_rate 8
-    xkb_options compose:menu
+    # No `xkb_options compose:menu`. That turns the Menu keysym into Compose,
+    # and the L shoulder sends Menu so apps get a context menu.
 }
 
 input type:touch {
@@ -83,22 +84,24 @@ exec --no-startup-id foot
 # send it.
 #
 # The six face buttons are bound by pt35d, not here: it drops them while the
-# menu is open. See crates/pt35d/src/buttons.rs.
+# menu is open. See crates/pt35d/src/modes.rs.
 
-# Start (KEY_PAUSE) is the launcher. Select (KEY_SYSRQ) is the window manager:
-# switch to a window or close it. Neither carries a character, so both are safe
-# to grab while typing. A sway binding beats any surface, so Start closes the
-# menu again from inside it.
+# Start (KEY_PAUSE) is the menu. Select (KEY_SYSRQ) switches input mode. Neither
+# carries a character, so both are safe to grab while typing. A sway binding
+# beats any surface, so Start closes the menu again from inside it.
 #
 # These two are bound here, not by pt35d, so that no mode can lose them.
 bindsym Pause       exec $menu
 bindsym $mod+space  exec $menu
-bindsym Menu        exec $menu
 
-bindsym Print       exec $ctl menu open windows
-bindsym Sys_Req     exec $ctl menu open windows
-bindsym $mod+w      exec $ctl menu open windows
+# NOT bound: `Menu`. The L shoulder sends that keysym so the focused app opens
+# its own context menu, which is the only right-click there is in Buttons mode.
+# A binding here would eat it first.
+
+bindsym Print       exec $ctl mode toggle
+bindsym Sys_Req     exec $ctl mode toggle
 bindsym $mod+m      exec $ctl mode toggle
+bindsym $mod+w      exec $ctl menu open windows
 
 # Fallbacks on Alt for a unit whose firmware does not send Super.
 bindsym Mod1+space  exec $menu
@@ -107,7 +110,9 @@ bindsym Mod1+Return exec $term
 bindsym Mod1+Tab    workspace next_on_output
 
 bindsym $mod+Return exec $term
-bindsym $mod+q      kill
+# Through the daemon, not a bare `kill`: it moves focus to the next window and
+# tells the bar, and a bare kill hits nothing after the menu has had focus.
+bindsym $mod+q      exec $ctl window close
 bindsym $mod+f      fullscreen toggle
 bindsym $mod+t      floating toggle
 # force an oversized window back on-screen
@@ -116,7 +121,7 @@ bindsym $mod+s      exec $ctl screenshot
 bindsym $mod+Shift+c reload
 bindsym $mod+Shift+e exec $ctl power menu
 
-# App switching: shoulder buttons (mapped to Prior/Next by keyd) and Tab.
+# App switching.
 bindsym $mod+Tab       workspace next_on_output
 bindsym $mod+Shift+Tab workspace prev_on_output
 bindsym $mod+Prior     workspace prev_on_output
@@ -136,6 +141,8 @@ bindsym $mod+9 workspace number 9
 bindsym --locked XF86AudioRaiseVolume  exec $ctl volume +5
 bindsym --locked XF86AudioLowerVolume  exec $ctl volume -5
 bindsym --locked XF86AudioMute         exec $ctl volume mute
+# Bound anyway for a unit that does expose a backlight. On the PocketTerm35 the
+# RP2040 owns the PWM pin and these report that, rather than doing nothing.
 bindsym --locked XF86MonBrightnessUp   exec $ctl brightness +10
 bindsym --locked XF86MonBrightnessDown exec $ctl brightness -10
 bindsym --locked XF86PowerOff          exec $ctl power menu
