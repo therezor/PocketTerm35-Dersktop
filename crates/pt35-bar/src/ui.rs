@@ -253,7 +253,6 @@ impl App for Bar {
         );
 
         let mut right = close_x - pad;
-        let mut first = true;
         for segment in segments::right(status.as_ref(), &self.theme, &self.clock)
             .into_iter()
             .rev()
@@ -306,17 +305,9 @@ impl App for Bar {
                 size,
                 segment.color,
             );
-            if !first {
-                canvas.rect(
-                    right + width + pad - 1,
-                    centre - 1,
-                    2,
-                    2,
-                    self.theme.color.border,
-                );
-            }
-            first = false;
-            right -= pad * 2;
+            // No separator: an icon is its own boundary, and a dot plus two
+            // pads costs more of a 640px bar than it earns.
+            right -= 8;
         }
 
         // The dock: one slot per open window, focused one filled.
