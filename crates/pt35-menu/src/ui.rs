@@ -1023,15 +1023,25 @@ impl Menu {
         let baseline = top + (height as f32 * 0.62) as i32;
         let centre = top + height as i32 / 2;
 
-        // Lay the chips out evenly across the full width: they are touch targets
-        // as much as a legend.
-        let slot = canvas.width as f32 / hints.len().max(1) as f32;
+        // Each chip takes the width it needs and the slack is shared out
+        // between them: even slots cut the last word off when the legend is
+        // long, and "Clos..." is worse than a tighter gap.
+        let widths: Vec<i32> = hints
+            .iter()
+            .map(|hint| {
+                let pill = (self.bold.measure(hint.button, size) as i32 + 14).max(24);
+                pill + 6 + self.font.measure(hint.action, size) as i32
+            })
+            .collect();
+        let total: i32 = widths.iter().sum();
+        let count = hints.len().max(1) as i32;
+        let gap = ((canvas.width as i32 - total) / (count + 1)).max(4);
+        let tight = total + gap * (count + 1) > canvas.width as i32;
+
         self.hint_hits.clear();
+        let mut x = gap;
         for (index, hint) in hints.iter().enumerate() {
-            let slot_x = (index as f32 * slot) as i32;
-            let mut x = slot_x + 7;
-            self.hint_hits
-                .push((slot_x, top, slot_x + slot as i32, hint.button));
+            let start = x;
             let (pill, ink) = self.button_colors(hint.button);
             let label_w = self.bold.measure(hint.button, size) as i32;
             let pill_w = (label_w + 14).max(24);
@@ -1046,10 +1056,18 @@ impl Menu {
             );
             x += pill_w + 6;
 
-            let room = (slot as i32 - (x - slot_x) - 4).max(0) as u32;
+            // Only when it cannot fit: elide the words, never the pill.
+            let room = if tight {
+                (canvas.width as i32 - x - 4).max(0) as u32
+            } else {
+                widths[index] as u32
+            };
             let action = self.font.elide(hint.action, size, room);
             self.font
                 .draw(canvas, &action, x, baseline, size, self.theme.color.muted);
+            x += self.font.measure(&action, size) as i32;
+            self.hint_hits.push((start, top, x + gap / 2, hint.button));
+            x += gap;
         }
     }
 }
