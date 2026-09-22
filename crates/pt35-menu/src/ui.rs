@@ -414,7 +414,12 @@ impl Menu {
         // a short grid. Never shrink below the configured height.
         let lines = ((rows.len() as i32 + columns - 1) / columns).max(1);
         let available = bottom - top;
-        let tile_h = ((available - gap * (lines - 1)) / lines).max(theme.menu.tile_height as i32);
+        // Grown to fill the body, but only so far: two windows in the picker
+        // must not become two half-screen slabs.
+        let tile_h = ((available - gap * (lines - 1)) / lines).clamp(
+            theme.menu.tile_height as i32,
+            theme.menu.tile_height as i32 * 3 / 2,
+        );
         let radius = theme.menu.radius;
 
         let cursor = self.model.screen().list.cursor_index();

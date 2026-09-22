@@ -440,15 +440,17 @@ impl Session {
 
     /// Put the device in one mode or the other.
     ///
-    /// One IPC round trip for the lot. Sending thirty commands one at a time
-    /// took long enough to see.
+    /// The unbinds and the settings go in one message each; a `bindsym ... exec`
+    /// cannot, because sway gives `exec` the rest of the line and would swallow
+    /// every command after it into the binding.
     fn set_mode(&mut self, mode: InputMode) -> Result<()> {
         let pointer = self.theme.pointer.clone();
         let wanted = crate::modes::binds(mode, &pointer);
-        let mut commands: Vec<String> = self.bound.iter().map(|b| b.unbind()).collect();
-        commands.extend(wanted.iter().map(|b| b.bind()));
-        commands.extend(crate::modes::settings(mode, &pointer));
-        self.sway_command(&commands.join(", "))?;
+        self.unbind_all()?;
+        for bind in &wanted {
+            self.sway_command(&bind.bind())?;
+        }
+        self.sway_command(&crate::modes::settings(mode, &pointer).join(", "))?;
         self.bound = wanted;
         self.status.input_mode = mode;
         Ok(())
