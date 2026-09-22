@@ -262,12 +262,20 @@ impl App for Bar {
                 .icon
                 .map(|i| i.theme_name())
                 .filter(|name| self.icons.get(name, self.theme.icons.size_bar).is_some());
-            let icon_width = match (&themed, segment.icon) {
+            let drawn = segment.icon.and_then(|icon| icon.width());
+            let icon_width = match (&themed, drawn) {
                 (Some(_), _) => self.theme.icons.size_bar as i32 + 4,
-                (None, Some(icon)) => icon.width() + 4,
+                (None, Some(w)) => w + 4,
                 (None, None) => 0,
             };
-            let width = self.mono.measure(&segment.text, size) as i32 + icon_width;
+            // An icon replaces the words; the words are what is left when
+            // neither the theme nor this crate can draw the thing.
+            let text: &str = if themed.is_some() || drawn.is_some() {
+                ""
+            } else {
+                &segment.text
+            };
+            let width = self.mono.measure(text, size) as i32 + icon_width;
             if right - width <= x {
                 break;
             }
@@ -291,7 +299,7 @@ impl App for Bar {
             }
             self.mono.draw(
                 canvas,
-                &segment.text,
+                text,
                 right + icon_width,
                 baseline,
                 size,

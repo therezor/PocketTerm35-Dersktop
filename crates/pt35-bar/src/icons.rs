@@ -17,6 +17,8 @@ pub enum Icon {
     Volume { level: u8, muted: bool },
     /// Four ascending bars. `None` is offline: every bar drawn empty.
     Wifi { signal: Option<u8> },
+    /// Which input mode the D-pad and the face buttons are in.
+    Mode { mouse: bool },
 }
 
 impl Icon {
@@ -25,14 +27,18 @@ impl Icon {
         match *self {
             Icon::Volume { level, muted } => pt35_ui::icon::volume_icon(level, muted),
             Icon::Wifi { signal } => pt35_ui::icon::wifi_icon(signal),
+            Icon::Mode { mouse: true } => "input-mouse",
+            Icon::Mode { mouse: false } => "input-keyboard",
         }
     }
 
-    /// Width of the drawn fallback.
-    pub fn width(&self) -> i32 {
+    /// Width of the drawn fallback, or `None` when there is none and the
+    /// segment's text stands in.
+    pub fn width(&self) -> Option<i32> {
         match self {
-            Icon::Volume { .. } => 7 + 2 + bars_width(4, 2, 1),
-            Icon::Wifi { .. } => bars_width(4, 3, 1),
+            Icon::Volume { .. } => Some(7 + 2 + bars_width(4, 2, 1)),
+            Icon::Wifi { .. } => Some(bars_width(4, 3, 1)),
+            Icon::Mode { .. } => None,
         }
     }
 
@@ -54,6 +60,9 @@ impl Icon {
                     .draw(canvas, x + 9, y, on, off);
                 }
             }
+            // No drawn stand-in: a keyboard is not four rectangles. The bar
+            // falls back to the words.
+            Icon::Mode { .. } => {}
             Icon::Wifi { signal } => {
                 Meter {
                     count: 4,
@@ -143,7 +152,10 @@ mod tests {
             },
             Icon::Wifi { signal: Some(80) },
         ] {
-            assert!((14..=24).contains(&icon.width()), "{icon:?}");
+            assert!(
+                (14..=24).contains(&icon.width().expect("drawn")),
+                "{icon:?}"
+            );
         }
     }
 }

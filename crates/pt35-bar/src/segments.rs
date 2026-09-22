@@ -39,13 +39,16 @@ pub fn right(status: Option<&Status>, theme: &Theme, clock: &str) -> Vec<Segment
     if let Some(status) = status {
         // The D-pad either navigates or moves a cursor, and the same buttons
         // either confirm or click. Nothing else on screen says which.
-        out.push(Segment::text(
-            status.input_mode.label(),
-            match status.input_mode {
-                pt35_common::ipc::InputMode::Mouse => theme.color.warning,
-                pt35_common::ipc::InputMode::Buttons => theme.color.accent,
+        let mouse = status.input_mode == pt35_common::ipc::InputMode::Mouse;
+        out.push(Segment {
+            text: status.input_mode.label().into(),
+            color: if mouse {
+                theme.color.warning
+            } else {
+                theme.color.accent
             },
-        ));
+            icon: Some(Icon::Mode { mouse }),
+        });
         if (status.scale - 1.0).abs() > 0.01 {
             out.push(Segment::text(
                 format!("{:.2}x", status.scale),
