@@ -408,12 +408,14 @@ impl Model {
                         Some(index) => self.activate(index),
                         None => Step::Nothing,
                     },
+                    // Left goes up a screen, and stops at the top. Leaving the
+                    // menu is B, Start or Select: a D-pad nudge must not do it.
                     None => {
                         if self.stack.len() > 1 {
                             self.stack.pop();
                             Step::Redraw
                         } else {
-                            Step::Quit
+                            Step::Nothing
                         }
                     }
                 }
@@ -639,6 +641,14 @@ entries = [
         let mut model = model();
         assert_eq!(model.activate_window(1), Step::Open(Builtin::Windows));
         assert_eq!(model.activate_window(99), Step::Nothing);
+    }
+
+    #[test]
+    fn the_d_pad_never_leaves_the_menu() {
+        // A nudge left on the top screen used to close it.
+        let mut model = model();
+        assert_eq!(press(&mut model, sym::LEFT), Step::Nothing);
+        assert_eq!(model.depth(), 1);
     }
 
     #[test]
