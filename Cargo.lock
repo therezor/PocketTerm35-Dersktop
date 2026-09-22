@@ -541,6 +541,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pt35-desktop"
+version = "0.1.0"
+
+[[package]]
 name = "pt35-menu"
 version = "0.1.0"
 dependencies = [
