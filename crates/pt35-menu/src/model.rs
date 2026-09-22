@@ -232,6 +232,17 @@ impl Model {
         });
     }
 
+    /// Activate the nth row of the drawn window. Used by a tap.
+    pub fn activate_window(&mut self, index: usize) -> Step {
+        if !self.screen_mut().list.focus_window(index) {
+            return Step::Nothing;
+        }
+        match self.screen().list.selected() {
+            Some(item) => self.activate(item),
+            None => Step::Nothing,
+        }
+    }
+
     pub fn handle(&mut self, key: &Key) -> Step {
         let rows = self.rows;
         let outcome = self.screen_mut().list.handle(key);
@@ -441,6 +452,13 @@ entries = [
             model.handle(&Key::with_text('y' as u32, 'y')),
             Step::Nothing
         );
+    }
+
+    #[test]
+    fn a_tap_activates_the_row_it_landed_on() {
+        let mut model = model();
+        assert_eq!(model.activate_window(1), Step::Open(Builtin::Windows));
+        assert_eq!(model.activate_window(99), Step::Nothing);
     }
 
     #[test]

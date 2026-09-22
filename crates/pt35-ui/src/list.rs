@@ -65,6 +65,16 @@ impl ListState {
         self.rows * self.columns
     }
 
+    /// Move the cursor to a row of the drawn window. Used by touch.
+    pub fn focus_window(&mut self, index: usize) -> bool {
+        let target = self.offset + index;
+        if target >= self.visible.len() {
+            return false;
+        }
+        self.selected = target;
+        true
+    }
+
     /// Index of the cursor inside the drawn window.
     pub fn cursor_index(&self) -> usize {
         self.selected.saturating_sub(self.offset)
@@ -429,6 +439,14 @@ mod tests {
         assert_eq!(grid.selected(), Some(9));
         let first = grid.window()[0].0;
         assert_eq!(first % 3, 0, "the window starts on a row boundary");
+    }
+
+    #[test]
+    fn focus_window_moves_the_cursor_and_rejects_empty_slots() {
+        let mut list = list();
+        assert!(list.focus_window(2));
+        assert_eq!(list.selected(), Some(2));
+        assert!(!list.focus_window(50));
     }
 
     #[test]

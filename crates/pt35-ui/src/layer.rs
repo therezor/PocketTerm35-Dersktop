@@ -13,13 +13,15 @@ use smithay_client_toolkit::reexports::calloop::{
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, Region},
-    delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_registry,
-    delegate_seat, delegate_shm,
+    delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer,
+    delegate_registry, delegate_seat, delegate_shm, delegate_touch,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::{
         keyboard::{KeyEvent, KeyboardHandler, Modifiers},
+        pointer::{PointerEvent, PointerEventKind, PointerHandler},
+        touch::TouchHandler,
         Capability, SeatHandler, SeatState,
     },
     shell::{
@@ -34,7 +36,7 @@ use smithay_client_toolkit::{
 use std::time::Duration;
 use wayland_client::{
     globals::registry_queue_init,
-    protocol::{wl_keyboard, wl_output, wl_shm, wl_surface},
+    protocol::{wl_keyboard, wl_output, wl_pointer, wl_shm, wl_surface, wl_touch},
     Connection, QueueHandle,
 };
 
@@ -103,6 +105,13 @@ pub trait App {
     /// held, such as the pointer's D-pad movement.
     fn key_release(&mut self, _key: Key) {}
 
+    /// A tap at surface coordinates. Touch is the recovery path when the RP2040
+    /// that owns the keyboard drops off the USB bus, so anything reachable by
+    /// button should answer this too.
+    fn touch(&mut self, _x: f64, _y: f64) -> bool {
+        true
+    }
+
     /// Draw onto a fully transparent surface instead of [`App::background`].
     fn transparent(&self) -> bool {
         false
@@ -134,6 +143,9 @@ struct State<A: App + 'static> {
     pool: SlotPool,
     layer: LayerSurface,
     keyboard: Option<wl_keyboard::WlKeyboard>,
+    pointer: Option<wl_pointer::WlPointer>,
+    touch: Option<wl_touch::WlTouch>,
+    cursor: (f64, f64),
     modifiers: Modifiers,
     width: u32,
     height: u32,
@@ -188,6 +200,9 @@ pub fn run<A: App + 'static>(app: A, spec: SurfaceSpec) -> Result<()> {
         pool,
         layer,
         keyboard: None,
+        pointer: None,
+        touch: None,
+        cursor: (0.0, 0.0),
         modifiers: Modifiers::default(),
         width: 640,
         height: spec.height.max(1),
@@ -368,6 +383,18 @@ impl<A: App + 'static> SeatHandler for State<A> {
                 Err(e) => log::warn!("no keyboard on this seat: {e}"),
             }
         }
+        if capability == Capability::Pointer && self.pointer.is_none() {
+            match self.seats.get_pointer(qh, &seat) {
+                Ok(pointer) => self.pointer = Some(pointer),
+                Err(e) => log::debug!("no pointer on this seat: {e}"),
+            }
+        }
+        if capability == Capability::Touch && self.touch.is_none() {
+            match self.seats.get_touch(qh, &seat) {
+                Ok(touch) => self.touch = Some(touch),
+                Err(e) => log::debug!("no touch on this seat: {e}"),
+            }
+        }
     }
 
     fn remove_capability(
@@ -377,10 +404,23 @@ impl<A: App + 'static> SeatHandler for State<A> {
         _: wayland_client::protocol::wl_seat::WlSeat,
         capability: Capability,
     ) {
-        if capability == Capability::Keyboard {
-            if let Some(keyboard) = self.keyboard.take() {
-                keyboard.release();
+        match capability {
+            Capability::Keyboard => {
+                if let Some(keyboard) = self.keyboard.take() {
+                    keyboard.release();
+                }
             }
+            Capability::Pointer => {
+                if let Some(pointer) = self.pointer.take() {
+                    pointer.release();
+                }
+            }
+            Capability::Touch => {
+                if let Some(touch) = self.touch.take() {
+                    touch.release();
+                }
+            }
+            _ => {}
         }
     }
 
@@ -465,6 +505,96 @@ impl<A: App + 'static> KeyboardHandler for State<A> {
     }
 }
 
+impl<A: App + 'static> PointerHandler for State<A> {
+    fn pointer_frame(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_pointer::WlPointer,
+        events: &[PointerEvent],
+    ) {
+        for event in events {
+            match event.kind {
+                PointerEventKind::Motion { .. } | PointerEventKind::Enter { .. } => {
+                    self.cursor = event.position;
+                }
+                PointerEventKind::Press { .. } => {
+                    let (x, y) = event.position;
+                    if !self.app.touch(x, y) {
+                        self.running = false;
+                    }
+                    self.dirty = true;
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+impl<A: App + 'static> TouchHandler for State<A> {
+    fn down(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_touch::WlTouch,
+        _: u32,
+        _: u32,
+        _: wl_surface::WlSurface,
+        _: i32,
+        position: (f64, f64),
+    ) {
+        if !self.app.touch(position.0, position.1) {
+            self.running = false;
+        }
+        self.dirty = true;
+    }
+
+    fn up(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_touch::WlTouch,
+        _: u32,
+        _: u32,
+        _: i32,
+    ) {
+    }
+
+    fn motion(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_touch::WlTouch,
+        _: u32,
+        _: i32,
+        _: (f64, f64),
+    ) {
+    }
+
+    fn shape(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_touch::WlTouch,
+        _: i32,
+        _: f64,
+        _: f64,
+    ) {
+    }
+
+    fn orientation(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_touch::WlTouch,
+        _: i32,
+        _: f64,
+    ) {
+    }
+
+    fn cancel(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch) {}
+}
+
 impl<A: App + 'static> OutputHandler for State<A> {
     fn output_state(&mut self) -> &mut OutputState {
         &mut self.outputs
@@ -494,5 +624,7 @@ delegate_output!(@<A: App + 'static> State<A>);
 delegate_shm!(@<A: App + 'static> State<A>);
 delegate_seat!(@<A: App + 'static> State<A>);
 delegate_keyboard!(@<A: App + 'static> State<A>);
+delegate_pointer!(@<A: App + 'static> State<A>);
+delegate_touch!(@<A: App + 'static> State<A>);
 delegate_layer!(@<A: App + 'static> State<A>);
 delegate_registry!(@<A: App + 'static> State<A>);

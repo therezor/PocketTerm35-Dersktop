@@ -41,8 +41,10 @@ font pango:DejaVu Sans 9
 
 ### ------------------------------------------------------------------- input
 input type:keyboard {
-    repeat_delay 300
-    repeat_rate 35
+    # 500ms before a held D-pad direction repeats, then 8 a second. Faster than
+    # this and one press of the D-pad skips two tiles.
+    repeat_delay 500
+    repeat_rate 8
     xkb_options compose:menu
 }
 

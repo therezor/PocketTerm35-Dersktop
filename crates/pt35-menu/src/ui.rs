@@ -71,6 +71,10 @@ pub struct Menu {
     model: Model,
     status: Option<pt35_common::ipc::Status>,
     windows: usize,
+    /// Hit boxes recorded by the last draw, so touch never has to re-derive
+    /// the layout and drift from it.
+    row_hits: Vec<(i32, i32, i32, i32)>,
+    hint_hits: Vec<(i32, i32, i32, &'static str)>,
 }
 
 impl Menu {
@@ -81,6 +85,40 @@ impl Menu {
             model,
             status: crate::live::status(),
             windows: providers::items(pt35_common::menu::Builtin::Windows).len(),
+            row_hits: Vec::new(),
+            hint_hits: Vec::new(),
+        }
+    }
+
+    /// Feed a tap to the model as if the matching button had been pressed.
+    fn press(&mut self, button: &str) -> bool {
+        let key = match button {
+            "A" => Key::with_text('a' as u32, 'a'),
+            "B" => Key::with_text('b' as u32, 'b'),
+            "X" => Key::with_text('x' as u32, 'x'),
+            "Y" => Key::with_text('y' as u32, 'y'),
+            "Start" => Key::new(pt35_ui::keys::sym::PAUSE),
+            "Sel" => Key::new(pt35_ui::keys::sym::PRINT),
+            _ => return true,
+        };
+        let step = self.model.handle(&key);
+        self.apply(step)
+    }
+
+    fn apply(&mut self, step: Step) -> bool {
+        match step {
+            Step::Quit => false,
+            Step::Run(command) => {
+                exec::perform(&command);
+                false
+            }
+            Step::Open(builtin) => {
+                let items = providers::items(builtin);
+                self.model
+                    .push_dynamic(builtin, providers::title(builtin), items);
+                true
+            }
+            Step::Redraw | Step::Nothing => true,
         }
     }
 
@@ -142,6 +180,7 @@ impl Menu {
         let row_h = theme.menu.row_height as i32;
         let size = theme.font.size_menu;
 
+        self.row_hits.clear();
         let rows = self.model.visible_rows();
         if rows.is_empty() {
             let hint = "no matches";
@@ -166,6 +205,7 @@ impl Menu {
             if y + row_h > bottom {
                 break;
             }
+            self.row_hits.push((0, y, canvas.width as i32, y + row_h));
             let selected = index == cursor;
             if selected {
                 canvas.rounded_rect(
@@ -258,6 +298,7 @@ impl Menu {
         let radius = theme.menu.radius;
 
         let cursor = self.model.screen().list.cursor_index();
+        self.row_hits.clear();
 
         for (index, row) in rows.iter().enumerate() {
             let column = index as i32 % columns;
@@ -267,6 +308,7 @@ impl Menu {
             if y + tile_h > bottom {
                 break;
             }
+            self.row_hits.push((x, y, x + tile_w, y + tile_h));
             let focused = index == cursor;
             let tint = row.tint.unwrap_or(theme.color.accent);
             let note = row
@@ -373,10 +415,13 @@ impl Menu {
         // Lay the chips out evenly across the full width: they are touch targets
         // as much as a legend.
         let slot = canvas.width as f32 / hints.len() as f32;
+        self.hint_hits.clear();
         for (index, hint) in hints.iter().enumerate() {
             let slot_x = (index as f32 * slot) as i32;
             let mut x = slot_x + 7;
             let label_w = self.font.measure(hint.button, size) as i32;
+            self.hint_hits
+                .push((slot_x, top, slot_x + slot as i32, hint.button));
             let (pill, ink) = self.button_colors(hint.button);
             let pill_w = (label_w + 14).max(22);
             canvas.rounded_rect(x, centre - 11, pill_w as u32, 22, 11, pill);
@@ -404,20 +449,24 @@ impl App for Menu {
     }
 
     fn key(&mut self, key: Key) -> bool {
-        match self.model.handle(&key) {
-            Step::Quit => false,
-            Step::Run(command) => {
-                exec::perform(&command);
-                false
+        let step = self.model.handle(&key);
+        self.apply(step)
+    }
+
+    fn touch(&mut self, x: f64, y: f64) -> bool {
+        let (x, y) = (x as i32, y as i32);
+        for (left, top, right, button) in self.hint_hits.clone() {
+            if y >= top && x >= left && x < right {
+                return self.press(button);
             }
-            Step::Open(builtin) => {
-                let items = providers::items(builtin);
-                self.model
-                    .push_dynamic(builtin, providers::title(builtin), items);
-                true
-            }
-            Step::Redraw | Step::Nothing => true,
         }
+        for (index, (left, top, right, bottom)) in self.row_hits.clone().into_iter().enumerate() {
+            if x >= left && x < right && y >= top && y < bottom {
+                let step = self.model.activate_window(index);
+                return self.apply(step);
+            }
+        }
+        true
     }
 
     fn draw(&mut self, canvas: &mut Canvas) {
