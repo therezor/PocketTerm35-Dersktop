@@ -44,6 +44,7 @@ assets = [
     ["../../config/pt35/apps.toml", "usr/share/pt35-desktop/pt35/", "644"],
     ["../../config/pt35/theme.toml", "usr/share/pt35-desktop/pt35/", "644"],
     ["../../config/keyd/pocketterm35.conf", "etc/keyd/", "644"],
+    ["../../config/logind/pt35.conf", "usr/share/pt35-desktop/logind/", "644"],
     ["../../config/pt35-session.desktop", "usr/share/wayland-sessions/", "644"],
     ["../../packaging/pt35-cpu-profile.sudoers", "etc/sudoers.d/pt35-cpu-profile", "440"],
     ["../../boot/waveshare-35dpi-5b.dtbo", "usr/share/pt35-desktop/boot/", "644"],
