@@ -25,18 +25,34 @@ enum Side {
     Page(&'static str),
 }
 
-const SIDE: &[(&str, Side, &str)] = &[
-    (
-        "Windows",
-        Side::Screen(pt35_common::menu::Builtin::Windows),
-        "multitasking-view",
-    ),
-    (
-        "Settings",
-        Side::Screen(pt35_common::menu::Builtin::Quick),
-        "preferences-system",
-    ),
-    ("Power", Side::Page("power"), "system-shutdown"),
+/// Label, what it opens, icon, and the colour that marks it. Three of them, so
+/// the colour is what you actually navigate by.
+struct SideButton {
+    label: &'static str,
+    target: Side,
+    icon: &'static str,
+    tint: fn(&pt35_common::theme::Colors) -> Rgb,
+}
+
+const SIDE: &[SideButton] = &[
+    SideButton {
+        label: "Windows",
+        target: Side::Screen(pt35_common::menu::Builtin::Windows),
+        icon: "multitasking-view",
+        tint: |c| c.button_x,
+    },
+    SideButton {
+        label: "Settings",
+        target: Side::Screen(pt35_common::menu::Builtin::Quick),
+        icon: "preferences-system",
+        tint: |c| c.accent,
+    },
+    SideButton {
+        label: "Power",
+        target: Side::Page("power"),
+        icon: "system-shutdown",
+        tint: |c| c.critical,
+    },
 ];
 
 #[derive(Clone, Copy)]
@@ -174,7 +190,7 @@ impl Menu {
 
     fn open_side(&mut self, index: usize) -> bool {
         self.side = None;
-        match SIDE.get(index).map(|(_, target, _)| *target) {
+        match SIDE.get(index).map(|button| button.target) {
             Some(Side::Screen(builtin)) => {
                 let items = providers::items(builtin);
                 self.model
@@ -627,8 +643,9 @@ impl Menu {
     fn draw_launcher(&mut self, canvas: &mut Canvas, top: i32, bottom: i32) {
         let theme = self.theme.clone();
         let pad = theme.menu.padding_x as i32;
-        let side_w = 150;
-        let split = canvas.width as i32 - side_w - pad;
+        // The column runs to the edge: a margin outside it would read as the
+        // list continuing, and 640px has none to spare.
+        let split = canvas.width as i32 - 148;
         let icon_size = 24;
 
         let rows = self.model.visible_rows();
@@ -688,44 +705,70 @@ impl Menu {
             );
         }
 
+        // The side column is its own surface, not three boxes floating on the
+        // list's background.
+        let strip = canvas.width as i32 - split;
+        canvas.rect(
+            split,
+            top,
+            strip as u32,
+            (bottom - top) as u32,
+            theme.color.background_alt,
+        );
         canvas.rect(split, top, 1, (bottom - top) as u32, theme.color.border);
 
-        let gap = 10;
-        let height = ((bottom - top) - gap * (SIDE.len() as i32 - 1)) / SIDE.len() as i32;
-        for (index, (label, _, icon)) in SIDE.iter().enumerate() {
-            let x = split + pad;
-            let y = top + index as i32 * (height + gap);
+        let gap = 8;
+        let inset = 8;
+        let width = strip - inset * 2;
+        let height = ((bottom - top) - gap * (SIDE.len() as i32 + 1)) / SIDE.len() as i32;
+        for (index, button) in SIDE.iter().enumerate() {
+            let x = split + inset;
+            let y = top + gap + index as i32 * (height + gap);
             let focused = self.side == Some(index);
-            let colour = if focused {
-                theme.color.accent
-            } else {
-                theme.color.border
-            };
-            canvas.rounded_rect(x, y, side_w as u32, height as u32, 2, colour);
+            let tint = (button.tint)(&theme.color);
+            let centre = y + height / 2;
+
+            canvas.rounded_rect(
+                x,
+                y,
+                width as u32,
+                height as u32,
+                2,
+                if focused { tint } else { theme.color.border },
+            );
             canvas.rounded_rect(
                 x + 1,
                 y + 1,
-                (side_w - 2) as u32,
+                (width - 2) as u32,
                 (height - 2) as u32,
                 2,
-                theme.color.background_alt,
+                theme.color.background,
             );
-            let size = 32;
-            if let Some(icon) = self.icons.get(icon, size) {
-                icon.draw(canvas, x + (side_w - size as i32) / 2, y + 12);
+            // A bar down the edge, so which one is picked reads from the corner
+            // of your eye.
+            canvas.rect(x + 1, y + 1, 3, (height - 2) as u32, tint);
+
+            let size = 28;
+            if let Some(icon) = self.icons.get(button.icon, size) {
+                icon.draw(
+                    canvas,
+                    x + (width - size as i32) / 2,
+                    centre - size as i32 / 2 - 8,
+                );
             }
-            let tw = self.font.measure(label, theme.font.size_hint) as i32;
-            self.font.draw(
+            let track = theme.font.tracking;
+            let label = button.label.to_uppercase();
+            let tw = self
+                .mono
+                .measure_tracked(&label, theme.font.size_hint, track) as i32;
+            self.mono.draw_tracked(
                 canvas,
-                label,
-                x + (side_w - tw) / 2,
-                y + height - 12,
+                &label,
+                x + (width - tw) / 2,
+                centre + 24,
                 theme.font.size_hint,
-                if focused {
-                    theme.color.accent
-                } else {
-                    theme.color.foreground
-                },
+                if focused { tint } else { theme.color.muted },
+                track,
             );
         }
     }
