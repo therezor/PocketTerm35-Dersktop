@@ -1,70 +1,77 @@
-# Key map
+# Controls
 
-Two layers of remapping, with one owner each:
+Twelve physical controls. Six of them are letters, so the shell is modal.
 
-* **keyd** (`/etc/keyd/pocketterm35.conf`) turns the PocketTerm35's physical
-  keys into *standard* keysyms — a Super key, a working Fn row, arrows.
-* **sway** (`/usr/share/pt35-desktop/sway/config`) binds those keysyms to shell
-  actions. No shell behaviour is ever bound in keyd; that way nothing is
-  remapped twice.
-
-## Shell (sway)
-
-| keys | action |
+| control | key it sends |
 |---|---|
-| `Super`+`Space`, `Menu` | open/close the menu |
-| `Super`+`Enter` | terminal |
-| `Super`+`q` | close window |
-| `Super`+`f` | fullscreen toggle (hides the bar) |
-| `Super`+`t` | floating toggle |
-| `Super`+`r` | fit an oversized window to the screen |
-| `Super`+`p` | arm/disarm the keyboard pointer |
-| `Super`+`g` | keyboard pointer, straight into grid jump |
-| `Super`+`s` | screenshot to `~` |
-| `Super`+`1`…`9` | workspace 1–9 |
-| `Super`+`Tab` / `Super`+`Shift`+`Tab` | next / previous workspace |
-| `Super`+`PgUp` / `PgDn` | previous / next workspace (shoulder buttons) |
-| `Super`+`Shift`+`c` | reload sway |
-| `Super`+`Shift`+`e` | power menu |
-| volume / brightness keys | `pt35ctl volume`/`brightness` |
+| D-pad | arrows |
+| A B X Y L R | the literal letters `a b x y l r` |
+| Start | `KEY_PAUSE` |
+| Select | `KEY_SYSRQ` |
+
+## Global
+
+| control | action |
+|---|---|
+| Select | open or close the menu, from anywhere |
+| Start | toggle button mode |
+| Super + Space, Menu key | open the menu |
+| Super + Enter | terminal |
+| Super + q | close the window |
+| Super + w | window switcher |
+| Super + 1..9 | workspace |
+| Super + Tab | next workspace |
+| Super + p | keyboard pointer, `g` for grid jump |
+| Super + f | fullscreen toggle |
+| Super + r | fit an oversized window to the screen |
+| Super + s | screenshot |
+| power button | power menu (long press still cuts power) |
+
+There is no tiling. Every window opens fullscreen and owns the screen.
+
+## Button mode
+
+A B X Y L R are the letters `a b x y l r`, so by default they type. Button mode
+makes the compositor grab them instead:
+
+| button | action |
+|---|---|
+| A | Enter |
+| B | Escape |
+| X | Tab |
+| Y | fullscreen toggle |
+| L / R | previous / next workspace |
+
+Start toggles it and the bar shows `BTN` or `TXT`. Each app profile sets its own
+default in `apps.toml` (`buttons = true`): viewers start in button mode, the
+terminal and the editor start in text mode. The menu drops the grab while it is
+open, because it reads the letters itself.
 
 ## Menu
 
-| keys | action |
+| control | action |
 |---|---|
-| D-pad, arrows, `Tab` | move |
-| `Enter`, `Right` | activate |
-| `1`–`9` | activate that visible row |
-| any letter | filter (digits become literal once a filter is active) |
-| `Backspace` | clear the filter, then go up a level |
-| `Left` | up a level |
-| `Esc` | close |
+| D-pad | move |
+| A, Start, Enter | open |
+| B, Backspace | back |
+| X | search, then letters type |
+| Y | back to the top menu |
+| L / R | page |
+| 1-9 | pick that visible row |
+| Select, Escape | close |
+| touch | tap a tile, a row or a legend pill |
 
-Destructive entries (`reboot`, `poweroff`) open a Yes/No screen whose cursor
-starts on **No**.
+On the window switcher, Y closes the highlighted window. On a quick setting, the
+D-pad left and right change the value in place.
 
-## Keyboard pointer
+## The dock
 
-| keys | action |
-|---|---|
-| D-pad / arrows | move (accelerates while held) |
-| `Enter`, `Space` | left click |
-| `r` | right click |
-| `m` | middle click |
-| `PgUp` / `PgDn` | scroll |
-| `g` | grid jump: two labelled presses land the cursor anywhere |
-| `Esc`, `q` | disarm, keyboard returns to the app |
+The top bar is a dock: one slot per open window, the focused one filled. Tap a
+slot to switch, the `=` button opens the menu, the `x` button closes the focused
+window.
 
-While the pointer is armed it holds the keyboard, so the app underneath sees no
-keys until you disarm it. The bar shows `ptr` while that is the case.
+## Keyd
 
-## Fn layer (keyd)
-
-`Fn` + number row = `F1`–`F12`. `Fn`+`hjkl` = arrows, `Fn`+`i`/`m` = page
-up/down, `Fn`+`y`/`o` = home/end, `Fn`+arrows = volume and brightness.
-
-**These are placeholders until Phase 0 runs on real hardware.** `scripts/pt35-probe.sh`
-plus `sudo evtest` record what each physical key actually emits; only then can
-this file be exact. In particular, if the D-pad and gaming buttons enumerate as
-a *gamepad* (`ABS_HAT0X`, `BTN_SOUTH`) rather than as keys, neither sway nor
-keyd can see them and a small evdev→uinput remapper is needed.
+`/etc/keyd/pocketterm35.conf` is installed and the service is left disabled. The
+firmware already emits standard keysyms, so there is nothing to remap until a
+unit needs it. Capture what a key really sends with `sudo keyd monitor`.

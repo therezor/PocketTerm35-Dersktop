@@ -31,20 +31,32 @@ Captured from the board, not guessed. See `docs/hardware-facts.md`.
 
 ## Input model
 
-Six of the twelve buttons type letters, so input is modal.
+Six of the twelve buttons type letters, so input is modal, in two places.
 
-- Nav mode: A opens, B goes back, X searches, Y is the screen's second action,
-  L/R page, D-pad moves, 1-9 pick a visible row.
-- Filter mode: letters type. Start and Select still work, because they carry no
-  character. Backspace on an empty filter returns to nav mode.
-- Every screen shows the current legend in the hint bar.
+In the menu: nav mode (A opens, B back, X search, Y home, L/R page, 1-9 pick a
+row) and filter mode (letters type). Start and Select work in both.
+
+In apps: button mode grabs a b x y l r at the compositor and turns them into
+Enter, Escape, Tab, fullscreen and workspace prev/next. Start toggles it, the
+bar shows BTN or TXT, and each app profile sets its default with
+`buttons = true`. The menu drops the grab while it is open.
+
+Select opens and closes the menu from anywhere. Start is never bound while the
+menu is up, because the menu uses it as Confirm.
 
 ## Layout
 
 640x480 leaves no room for chrome that is not earning its place.
 
-- Status bar 26px, menu header 44px, hint bar 44px, list rows 46px.
-- Geometry lives in `config/pt35/theme.toml`. Do not hardcode sizes in a widget.
+- No tiling. Every window opens fullscreen: `for_window [shell=".*"] fullscreen enable`.
+- The top bar is a dock: one slot per open window, tap to focus, menu button
+  left, close button right.
+- Bar 34px, menu header 46px, hint bar 46px, list rows 50px, tiles 86px.
+- Corners are 2px. Squared, not rounded.
+- Mint on charcoal, mono for readouts and sans for labels. Geometry and colour
+  live in `config/pt35/theme.toml`. Do not hardcode either in a widget.
+- An app profile's workspace is applied with a sway `assign` rule at startup, not
+  by switching workspace before spawning: that is a race a slow app loses.
 
 ## Build and test
 
