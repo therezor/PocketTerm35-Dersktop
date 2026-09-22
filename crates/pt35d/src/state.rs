@@ -87,6 +87,15 @@ impl Session {
             .unwrap_or(1.0)
     }
 
+    /// True once sway has gone. The daemon must not outlive it: a stale pt35d
+    /// holds the socket and the next session cannot start.
+    pub fn compositor_gone(&self) -> bool {
+        match Sway::socket_path() {
+            Ok(path) => !path.exists(),
+            Err(_) => true,
+        }
+    }
+
     /// Re-read the sampled hardware values into `status`.
     pub fn refresh(&mut self) {
         self.status.battery_percent = self.hw.battery_percent();

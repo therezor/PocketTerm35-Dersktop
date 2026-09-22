@@ -239,11 +239,16 @@ impl Menu {
         let pad = theme.menu.padding_x as i32;
         let gap = theme.menu.gap as i32;
         let columns = theme.menu.columns.max(1) as i32;
-        let tile_h = theme.menu.tile_height as i32;
         let tile_w = (canvas.width as i32 - pad * 2 - gap * (columns - 1)) / columns;
-        let radius = theme.menu.radius;
 
         let rows = self.model.visible_rows();
+        // Grow the tiles to fill the body rather than leaving a dead band under
+        // a short grid. Never shrink below the configured height.
+        let lines = ((rows.len() as i32 + columns - 1) / columns).max(1);
+        let available = bottom - top;
+        let tile_h = ((available - gap * (lines - 1)) / lines).max(theme.menu.tile_height as i32);
+        let radius = theme.menu.radius;
+
         let cursor = self.model.screen().list.cursor_index();
 
         for (index, row) in rows.iter().enumerate() {
