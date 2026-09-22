@@ -493,8 +493,8 @@ fn desktop_entries() -> Items {
             let Ok(text) = std::fs::read_to_string(&path) else {
                 continue;
             };
-            if let Some((name, exec)) = parse_desktop_entry(&text) {
-                out.push(Item::new(name, exec));
+            if let Some(item) = parse_desktop_entry(&text) {
+                out.push(item);
             }
         }
     }
@@ -505,9 +505,10 @@ fn desktop_entries() -> Items {
 
 /// Pull `Name` and `Exec` out of a .desktop file, skipping hidden ones and
 /// stripping the field codes (`%U`, `%f`, …) that would confuse `sh -c`.
-pub fn parse_desktop_entry(text: &str) -> Option<(String, String)> {
+pub fn parse_desktop_entry(text: &str) -> Option<Item> {
     let mut name = None;
     let mut exec = None;
+    let mut icon = None;
     let mut in_main_section = false;
     for line in text.lines() {
         let line = line.trim();
@@ -521,6 +522,7 @@ pub fn parse_desktop_entry(text: &str) -> Option<(String, String)> {
         match line.split_once('=') {
             Some(("Name", value)) => name = Some(value.trim().to_string()),
             Some(("Exec", value)) => exec = Some(value.trim().to_string()),
+            Some(("Icon", value)) => icon = Some(value.trim().to_string()),
             Some(("NoDisplay", value)) | Some(("Hidden", value))
                 if value.trim().eq_ignore_ascii_case("true") =>
             {
@@ -535,7 +537,21 @@ pub fn parse_desktop_entry(text: &str) -> Option<(String, String)> {
         .filter(|word| !(word.len() == 2 && word.starts_with('%')))
         .collect::<Vec<_>>()
         .join(" ");
-    Some((name?, exec))
+    let name = name?;
+    Some(Item {
+        glyph: name
+            .chars()
+            .next()
+            .unwrap_or('?')
+            .to_uppercase()
+            .to_string(),
+        // A path instead of a name is a PNG more often than not, and nothing
+        // here decodes one: the letter stands in.
+        icon: icon.filter(|i| !i.contains('/')).unwrap_or_default(),
+        label: name,
+        payload: exec,
+        note: String::new(),
+    })
 }
 
 // ------------------------------------------------------------------ about
@@ -598,11 +614,18 @@ mod tests {
 
     #[test]
     fn parses_a_desktop_entry_and_strips_field_codes() {
-        let text = "[Desktop Entry]\nType=Application\nName=Image Viewer\nExec=imv %U\n";
-        assert_eq!(
-            parse_desktop_entry(text),
-            Some(("Image Viewer".to_string(), "imv".to_string()))
-        );
+        let text = "[Desktop Entry]\nType=Application\nName=Image Viewer\nExec=imv %U\nIcon=imv\n";
+        let item = parse_desktop_entry(text).expect("an application");
+        assert_eq!(item.label, "Image Viewer");
+        assert_eq!(item.payload, "imv");
+        assert_eq!(item.icon, "imv");
+        assert_eq!(item.glyph, "I", "a letter when the theme has no such icon");
+    }
+
+    #[test]
+    fn an_icon_path_is_not_a_theme_name() {
+        let text = "[Desktop Entry]\nType=Application\nName=Thing\nExec=thing\nIcon=/usr/share/pixmaps/thing.png\n";
+        assert_eq!(parse_desktop_entry(text).expect("an application").icon, "");
     }
 
     #[test]
