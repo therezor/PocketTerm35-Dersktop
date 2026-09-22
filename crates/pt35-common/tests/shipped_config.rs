@@ -40,6 +40,22 @@ fn shipped_apps_validate() {
 }
 
 #[test]
+fn a_terminal_is_the_only_app_you_can_have_several_of() {
+    // Everything else focuses the copy that is already open. Getting this wrong
+    // costs either four image viewers holding four cores, or one terminal you
+    // cannot open twice.
+    let apps: pt35_common::apps::AppTable =
+        toml::from_str(&std::fs::read_to_string("../../config/pt35/apps.toml").unwrap()).unwrap();
+    let many: Vec<&String> = apps
+        .apps
+        .iter()
+        .filter(|(_, app)| app.multiple)
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(many, ["terminal"], "unexpected app allows several copies");
+}
+
+#[test]
 fn every_menu_app_entry_exists_in_apps_toml() {
     let tree: MenuTree = load("menu.toml");
     let apps: AppTable = load("apps.toml");

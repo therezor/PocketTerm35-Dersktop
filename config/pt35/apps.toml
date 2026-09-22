@@ -17,6 +17,8 @@
 #
 # User override: ~/.config/pt35/apps.toml, merged per app id.
 
+# The one app you want several of. Everything else focuses the copy that is
+# already open rather than starting another.
 [app.terminal]
 label     = "Terminal"
 glyph     = ">_"
@@ -24,6 +26,7 @@ icon      = "foot"
 exec      = "foot"
 match     = { app_id = "foot" }
 workspace = 1
+multiple  = true
 
 [app.files]
 label     = "Files"

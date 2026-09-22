@@ -37,6 +37,12 @@ pub struct AppProfile {
     pub scale: f32,
     /// Open true-fullscreen (hides our bar) — for video and games.
     pub fullscreen: bool,
+    /// Whether a second copy is worth having.
+    ///
+    /// Off by default: four image viewers each holding a core is what picking
+    /// the same row twice used to cost. A terminal is the exception, and the
+    /// only one so far.
+    pub multiple: bool,
     /// Extra environment for the child process.
     pub env: BTreeMap<String, String>,
 }
@@ -60,6 +66,7 @@ impl Default for AppProfile {
             icon: String::new(),
             scale: 1.0,
             fullscreen: false,
+            multiple: false,
             env: BTreeMap::new(),
         }
     }

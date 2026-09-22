@@ -709,13 +709,16 @@ impl Session {
             .ok_or_else(|| anyhow::anyhow!("no app profile {id:?} in apps.toml"))?
             .clone();
 
-        // Focus rather than start a second copy. Four imv processes, each
-        // holding a core, is what the alternative costs.
+        // Focus rather than start a second copy, unless the profile says a
+        // second copy is the point. Four image viewers each holding a core is
+        // what picking the same row twice costs otherwise.
         self.sync_windows();
-        if let Some(open) = self.status.windows.iter().find(|w| app.matches_app(&w.app)) {
-            let id = open.id;
-            self.focus_window(id)?;
-            return Ok(());
+        if !app.multiple {
+            if let Some(open) = self.status.windows.iter().find(|w| app.matches_app(&w.app)) {
+                let id = open.id;
+                self.focus_window(id)?;
+                return Ok(());
+            }
         }
 
         // Say what is wrong rather than switching to an empty workspace and
@@ -764,18 +767,26 @@ impl Session {
             bail!("{binary} is not installed");
         }
 
-        // The same no-second-copy rule an `apps.toml` entry gets.
+        // The same no-second-copy rule an `apps.toml` entry gets, and the same
+        // exception: a profile matching this binary decides.
         self.sync_windows();
         let leaf = binary.rsplit('/').next().unwrap_or(&binary).to_lowercase();
-        if let Some(open) = self
-            .status
-            .windows
-            .iter()
-            .find(|w| w.app.to_lowercase() == leaf)
-        {
-            let id = open.id;
-            self.focus_window(id)?;
-            return Ok(());
+        let many = self
+            .apps
+            .apps
+            .values()
+            .any(|app| app.multiple && app.matches_app(&leaf));
+        if !many {
+            if let Some(open) = self
+                .status
+                .windows
+                .iter()
+                .find(|w| w.app.to_lowercase() == leaf)
+            {
+                let id = open.id;
+                self.focus_window(id)?;
+                return Ok(());
+            }
         }
 
         Command::new("sh")
