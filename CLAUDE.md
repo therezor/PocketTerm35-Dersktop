@@ -24,8 +24,10 @@ Captured from the board, not guessed. See `docs/hardware-facts.md`.
 - Touch: GT911 on i2c-1 at 0x5d. Use `waveshare-35dpi-5b.dtbo` on both Pi 4B and Pi 5.
 - Input: RP2040 at USB `1209:0001`. Plain HID keyboard plus a 5-button HID mouse.
   No gamepad device.
-- Buttons: D-pad is arrows. A B X Y L R are the literal letters. Start is `KEY_PAUSE`,
-  Select is `KEY_SYSRQ`.
+- Buttons: D-pad is arrows. Start is `KEY_PAUSE`, Select is `KEY_SYSRQ`. A B X Y
+  L R send F13-F18 with the patched firmware in `firmware/`, the letters
+  `a b x y l r` on stock. The QWERTY and the buttons are one HID device, so the
+  letters cannot be told apart from the keys: that is why the firmware changed.
 - No `/sys/class/backlight` and no `/sys/class/power_supply`. Brightness and battery
   belong to the RP2040. Never show a battery gauge that reads `--`.
 
@@ -33,22 +35,18 @@ Captured from the board, not guessed. See `docs/hardware-facts.md`.
 
 Six of the twelve buttons type letters, so input is modal, in two places.
 
-In the menu: nav mode (A opens, B back, X search, Y home, L/R page, 1-9 pick a
-row) and filter mode (letters type). Start and Select work in both.
+With the patched firmware no control is a character, so the modes only matter
+on a stock unit. The menu keeps them: nav mode (A opens, B back, X search, Y
+home, L/R page, 1-9 pick a row) and filter mode (letters type).
 
-In apps: button mode grabs a b x y l r at the compositor and turns them into
-Enter, Escape, Tab, fullscreen and workspace prev/next. It is on everywhere
-except the terminal and the editor (`buttons = false`), the bar shows BTN or
-TXT, and Super+b or the Quick menu flips it. The menu drops the grab while it
-is open.
+In apps the compositor holds the six face buttons all the time (`pt35d`'s
+`buttons.rs`) and turns them into Enter, Escape, Tab, fullscreen and app
+prev/next. It drops them while the menu is open, because a sway binding beats
+any surface and the menu reads the same keys. Super+b or Quick > Buttons turns
+the grab off.
 
 Start opens and closes the menu from anywhere. Select switches to the next open
-app, and closes the menu on the way. Both are sway bindings, so they beat any
-surface, and the menu never sees them: Confirm in the menu is A or Enter.
-
-The A button and the `a` key are one keycode on one HID device (`event1`).
-Nothing above the firmware can tell them apart, so button mode is per app, not
-per key.
+app, and closes the menu on the way.
 
 ## Layout
 

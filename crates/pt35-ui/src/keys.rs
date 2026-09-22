@@ -11,11 +11,15 @@
 //! | Start | `KEY_PAUSE` |
 //! | Select | `KEY_SYSRQ` (the `Print`/`Sys_Req` keysym) |
 //!
-//! Six of the twelve are therefore typeable, which forces a modal design: in
-//! [`Mode::Nav`] letters act as buttons, in [`Mode::Filter`] they type. Start
-//! and Select carry no character, so they are the only two controls that mean
-//! the same thing in both modes. Both leave the menu: Start opened it and
-//! closes it again, Select switches app. Confirm is A or Enter.
+//! The patched keyboard firmware in `firmware/` sends F13-F18 for the six face
+//! buttons instead, so on a flashed unit none of the twelve is a character and
+//! the letters below are only a fallback for stock firmware.
+//!
+//! On stock firmware six of the twelve are typeable, which forces a modal
+//! design: in [`Mode::Nav`] letters act as buttons, in [`Mode::Filter`] they
+//! type. Start and Select carry no character, so they mean the same thing in
+//! both modes. Both leave the menu: Start opened it and closes it again,
+//! Select switches app. Confirm is A or Enter.
 
 /// A key press, as the Wayland keyboard reports it (xkb keysym + printable text).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +72,24 @@ pub mod sym {
     /// Select, via `KEY_SYSRQ` — xkb reports it as `Print` or `Sys_Req`.
     pub const PRINT: u32 = 0xff61;
     pub const SYS_REQ: u32 = 0xff15;
+
+    /// The six face buttons on the patched keyboard firmware (`firmware/`),
+    /// which sends F13-F18 for them. The default `us` layout does not turn
+    /// those into the `F13`..`F18` keysyms: `inet(evdev)` claims them first.
+    pub const BUTTON_L: u32 = 0x1008ff81; // KEY_F13, XF86Tools
+    pub const BUTTON_R: u32 = 0x1008ff45; // KEY_F14, XF86Launch5
+    pub const BUTTON_X: u32 = 0x1008ff46; // KEY_F15, XF86Launch6
+    pub const BUTTON_Y: u32 = 0x1008ff47; // KEY_F16, XF86Launch7
+    pub const BUTTON_B: u32 = 0x1008ff48; // KEY_F17, XF86Launch8
+    pub const BUTTON_A: u32 = 0x1008ff49; // KEY_F18, XF86Launch9
+
+    /// The same keys under a layout that does map them to F13-F18.
+    pub const F13: u32 = 0xffca;
+    pub const F14: u32 = 0xffcb;
+    pub const F15: u32 = 0xffcc;
+    pub const F16: u32 = 0xffcd;
+    pub const F17: u32 = 0xffce;
+    pub const F18: u32 = 0xffcf;
 }
 
 /// The twelve physical controls, once translated out of keysyms.
@@ -117,6 +139,12 @@ pub fn button(key: &Key, mode: Mode) -> Option<Button> {
         sym::RIGHT => Some(Button::Right),
         sym::PAUSE => Some(Button::Start),
         sym::PRINT | sym::SYS_REQ => Some(Button::Select),
+        sym::BUTTON_A | sym::F18 => Some(Button::A),
+        sym::BUTTON_B | sym::F17 => Some(Button::B),
+        sym::BUTTON_X | sym::F15 => Some(Button::X),
+        sym::BUTTON_Y | sym::F16 => Some(Button::Y),
+        sym::BUTTON_L | sym::F13 => Some(Button::L),
+        sym::BUTTON_R | sym::F14 => Some(Button::R),
         _ => None,
     };
     if by_sym.is_some() || mode == Mode::Filter {
@@ -244,6 +272,30 @@ mod tests {
         assert_eq!(navigate(&letter('y'), Mode::Nav), Navigation::Secondary);
         assert_eq!(navigate(&letter('l'), Mode::Nav), Navigation::PageUp);
         assert_eq!(navigate(&letter('r'), Mode::Nav), Navigation::PageDown);
+    }
+
+    #[test]
+    fn the_patched_firmware_sends_buttons_that_are_not_letters() {
+        for mode in [Mode::Nav, Mode::Filter] {
+            assert_eq!(
+                navigate(&Key::new(sym::BUTTON_A), mode),
+                Navigation::Activate
+            );
+            assert_eq!(navigate(&Key::new(sym::BUTTON_B), mode), Navigation::Back);
+            assert_eq!(
+                navigate(&Key::new(sym::BUTTON_X), mode),
+                Navigation::StartFilter
+            );
+            assert_eq!(
+                navigate(&Key::new(sym::BUTTON_Y), mode),
+                Navigation::Secondary
+            );
+            assert_eq!(navigate(&Key::new(sym::BUTTON_L), mode), Navigation::PageUp);
+            assert_eq!(
+                navigate(&Key::new(sym::BUTTON_R), mode),
+                Navigation::PageDown
+            );
+        }
     }
 
     #[test]

@@ -76,13 +76,11 @@ fn gui_apps_that_need_room_shrink_themselves() {
 }
 
 #[test]
-fn only_the_apps_you_type_into_give_up_the_buttons() {
+fn every_app_keeps_the_face_buttons() {
+    // The patched firmware sends F13-F18 for them, so holding the buttons costs
+    // no letter and there is no reason for an app to give them up.
     let apps: AppTable = load("apps.toml");
     for (id, app) in &apps.apps {
-        assert_eq!(
-            app.buttons,
-            !matches!(id.as_str(), "terminal" | "editor"),
-            "app {id:?} has the wrong button default"
-        );
+        assert!(app.buttons, "app {id:?} gives up the face buttons");
     }
 }

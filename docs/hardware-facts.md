@@ -47,10 +47,19 @@ event3  My Company My Custom Pico Mouse      5 buttons
 ```
 
 **There is no gamepad.** Everything with a key on it arrives on `event1`: the
-67-key QWERTY, the D-pad and the face buttons, one device, one keymap. The A
-button and the `a` key send the same `KEY_A`, so no remapper (keyd included) can
-separate them: keyd binds per device, and this is one device. Making A mean
-Enter while `a` still types needs different keycodes out of the RP2040 firmware.
+67-key QWERTY, the D-pad and the face buttons, one device, one keymap. Stock,
+the A button and the `a` key send the same `KEY_A`, so no remapper (keyd
+included) can separate them: keyd binds per device, and this is one device.
+
+The firmware is **CircuitPython 10.0.0-beta.0** with `boot.py` calling
+`storage.disable_usb_drive()`, which is why no CIRCUITPY drive appears. `code.py`
+holds the matrix as a plain table, and `firmware/` changes the face-button row to
+F13-F18. See `firmware/README.md`.
+
+Matrix: rows `GP16 GP10 GP11 GP12 GP13 GP14 GP15`, columns `GP0`-`GP9`. Row 0 is
+the D-pad and the face buttons. Row 6 carries Fn, Ctrl, Alt, Select
+(`PRINT_SCREEN`), Space, Start (`PAUSE`), right Alt and **Super** (`WINDOWS`),
+so the unit does have a Super key.
 
 ### Boot configuration
 ```

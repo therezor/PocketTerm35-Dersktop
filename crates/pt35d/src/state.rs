@@ -472,6 +472,15 @@ impl Session {
             .ok_or_else(|| anyhow::anyhow!("no app profile {id:?} in apps.toml"))?
             .clone();
 
+        // Launching an app that is already open used to start a second copy.
+        // Four imv processes, each holding a core, came from exactly that.
+        self.status.windows = self.window_list();
+        if let Some(open) = self.status.windows.iter().find(|w| app.matches_app(&w.app)) {
+            let id = open.id;
+            self.sway_command(&format!("[con_id={id}] focus"))?;
+            return Ok(());
+        }
+
         // A missing binary used to switch to an empty workspace and leave a
         // blank screen. Say what is wrong instead.
         if let Some(binary) = command_binary(&app.exec) {

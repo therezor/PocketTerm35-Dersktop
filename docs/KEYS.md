@@ -5,9 +5,13 @@ Twelve physical controls. Six of them are letters, so the shell is modal.
 | control | key it sends |
 |---|---|
 | D-pad | arrows |
-| A B X Y L R | the literal letters `a b x y l r` |
+| A B X Y L R | `F18 F17 F15 F16 F13 F14` (`XF86Launch9`, `XF86Launch8`, `XF86Launch6`, `XF86Launch7`, `XF86Tools`, `XF86Launch5`) |
 | Start | `KEY_PAUSE` |
 | Select | `KEY_SYSRQ` |
+
+That is with the patched keyboard firmware in [`firmware/`](../firmware/).
+Stock, the six face buttons send the letters `l r x y b a` and the shell has to
+grab them, which is what "button mode" below is for.
 
 ## Global
 
@@ -31,10 +35,7 @@ Twelve physical controls. Six of them are letters, so the shell is modal.
 There is no tiling. One window owns the screen and the rest wait on their own
 workspace: pt35d moves a second window off a workspace that already has one.
 
-## Button mode
-
-A B X Y L R are the letters `a b x y l r`, so by default they type. Button mode
-makes the compositor grab them instead:
+## The face buttons inside an app
 
 | button | action |
 |---|---|
@@ -42,17 +43,15 @@ makes the compositor grab them instead:
 | B | Escape |
 | X | Tab |
 | Y | fullscreen toggle |
-| L / R | previous / next workspace |
+| L / R | previous / next app |
 
-It is on everywhere except the terminal and the editor, which need the letters.
-An app profile sets its own default with `buttons = false`, the bar shows `BTN`
-or `TXT`, and Super+b or the Quick menu flips it. The menu drops the grab while
-it is open, because it reads the letters itself.
+The compositor holds these all the time, including in the terminal: with the
+patched firmware they are not letters, so nothing is lost. The menu drops them
+while it is open, because it reads the same keys itself.
 
-The RP2040 sends the same keycode for the A button and for the `a` key on the
-keyboard, from the same USB HID device, so nothing below the compositor can tell
-them apart. Button mode is therefore all-or-nothing per app. Separating them for
-good needs different keycodes from the keyboard firmware.
+`Super`+`b` or Quick > Buttons turns the grab off, and the bar shows `BTN` or
+`TXT`. On stock firmware that toggle is the only way to use the buttons as
+buttons, and it costs you the letters `a b x y l r` while it is on.
 
 ## Menu
 

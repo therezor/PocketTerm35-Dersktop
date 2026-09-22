@@ -97,6 +97,18 @@ impl AppProfile {
         out
     }
 
+    /// True when an open window belongs to this profile. `app` is what sway
+    /// reports: `app_id` on Wayland, `class` on XWayland.
+    pub fn matches_app(&self, app: &str) -> bool {
+        if app.is_empty() {
+            return false;
+        }
+        [&self.match_.app_id, &self.match_.class]
+            .into_iter()
+            .flatten()
+            .any(|want| want.eq_ignore_ascii_case(app))
+    }
+
     pub fn sway_criteria(&self) -> String {
         let mut parts = Vec::new();
         if let Some(v) = &self.match_.app_id {
@@ -238,6 +250,19 @@ env = { FOO = "bar" }
     fn an_unscaled_profile_sets_nothing() {
         let table: AppTable = toml::from_str("[app.x]\nexec = \"true\"\n").unwrap();
         assert!(table.get("x").unwrap().toolkit_env().is_empty());
+    }
+
+    #[test]
+    fn a_profile_recognises_its_own_window() {
+        let table: AppTable = toml::from_str(
+            "[app.files]\nexec = \"pcmanfm\"\nmatch = { app_id = \"pcmanfm\", class = \"Pcmanfm\" }\n",
+        )
+        .unwrap();
+        let app = table.get("files").unwrap();
+        assert!(app.matches_app("pcmanfm"));
+        assert!(app.matches_app("Pcmanfm"));
+        assert!(!app.matches_app("foot"));
+        assert!(!app.matches_app(""));
     }
 
     #[test]

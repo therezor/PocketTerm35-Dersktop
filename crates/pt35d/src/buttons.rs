@@ -1,20 +1,23 @@
-//! Button mode.
+//! What the six face buttons do inside an app.
 //!
-//! Six of the twelve controls are the literal letters a b x y l r. Inside an
-//! app they type, which is right in a terminal and wrong everywhere else. In
-//! button mode the compositor grabs them and they act as buttons instead, by
-//! synthesising the key the app expects.
+//! The patched keyboard firmware sends F13-F18 for them, which the default
+//! layout reports as XF86Tools and XF86Launch5-9. Nothing else on the device
+//! sends those, so the compositor can hold them all the time and the letters
+//! keep typing.
 //!
-//! The synthesis goes through `wtype`, because sway has no "send key" command.
+//! The binds are dropped while the menu is open, because the menu reads the
+//! same keys itself and a compositor binding beats any surface.
+//!
+//! Enter, Escape and Tab go through `wtype`: sway has no "send key" command.
 
-/// What each face button does while button mode is on.
+/// Face button, the keysym the firmware produces, and what sway does with it.
 pub const BINDINGS: &[(&str, &str)] = &[
-    ("a", "exec wtype -k Return"),
-    ("b", "exec wtype -k Escape"),
-    ("x", "exec wtype -k Tab"),
-    ("y", "exec pt35ctl window fullscreen"),
-    ("l", "workspace prev_on_output"),
-    ("r", "workspace next_on_output"),
+    ("XF86Launch9", "exec wtype -k Return"),           // A
+    ("XF86Launch8", "exec wtype -k Escape"),           // B
+    ("XF86Launch6", "exec wtype -k Tab"),              // X
+    ("XF86Launch7", "exec pt35ctl window fullscreen"), // Y
+    ("XF86Tools", "exec pt35ctl window prev"),         // L
+    ("XF86Launch5", "exec pt35ctl window next"),       // R
 ];
 
 /// sway commands that turn the grab on.
@@ -41,13 +44,17 @@ mod tests {
     fn every_face_button_is_bound_and_unbound() {
         assert_eq!(enable().len(), 6);
         assert_eq!(disable().len(), 6);
-        assert!(enable()[0].starts_with("bindsym --no-repeat a "));
-        assert_eq!(disable()[0], "unbindsym a");
+        assert!(enable()[0].starts_with("bindsym --no-repeat XF86Launch9 "));
+        assert_eq!(disable()[0], "unbindsym XF86Launch9");
     }
 
     #[test]
-    fn the_letters_are_the_six_face_buttons() {
-        let keys: Vec<&str> = BINDINGS.iter().map(|(k, _)| *k).collect();
-        assert_eq!(keys, ["a", "b", "x", "y", "l", "r"]);
+    fn no_binding_is_a_character_key() {
+        for (key, _) in BINDINGS {
+            assert!(
+                key.starts_with("XF86"),
+                "{key} would stop the keyboard typing it"
+            );
+        }
     }
 }

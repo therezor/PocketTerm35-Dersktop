@@ -77,9 +77,12 @@ exec --no-startup-id pt35-bar
 exec --no-startup-id foot
 
 ### -------------------------------------------------------------- keybindings
-# NOTE: the PocketTerm35 has no Super key of its own; keyd maps a physical key
-# (see /etc/keyd/pocketterm35.conf) to Mod4. keyd only ever emits standard
-# keysyms — all shell behaviour is bound here, never in keyd.
+# NOTE: the keyboard has a Super key of its own (row 6 of the matrix, next to
+# the right Alt). The Alt fallbacks below are for a unit whose firmware does not
+# send it.
+#
+# The six face buttons are bound by pt35d, not here: it drops them while the
+# menu is open. See crates/pt35d/src/buttons.rs.
 
 # Start (KEY_PAUSE) is the menu: launcher, windows, quick settings, power.
 # Select (KEY_SYSRQ) switches to the next open app. Neither carries a character,
@@ -93,8 +96,7 @@ bindsym Print       exec $ctl window next
 bindsym Sys_Req     exec $ctl window next
 bindsym $mod+b      exec $ctl buttons toggle
 
-# Fallbacks on Alt, in case this unit has no physical Super key: without them a
-# missing Mod4 would leave the session with no way to open anything.
+# Fallbacks on Alt for a unit whose firmware does not send Super.
 bindsym Mod1+space  exec $menu
 bindsym Mod1+grave  exec $ctl window next
 bindsym Mod1+Return exec $term

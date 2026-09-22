@@ -6,7 +6,9 @@
 # whole UI, GTK3 shrinks only its text.
 #
 # `buttons` is true unless stated: A B X Y L R act as Enter, Escape, Tab,
-# fullscreen and app switching. Only an app you type into turns it off.
+# fullscreen and app switching. With the patched keyboard firmware those buttons
+# are not letters, so this is safe even in a terminal. On stock firmware, set
+# `buttons = false` for anything you type into.
 #
 # `pointer = "on_demand"` means the app is easier with a cursor, not that it
 # gets one: an armed pointer holds the keyboard, so nothing else can be typed.
@@ -22,7 +24,6 @@ label     = "Terminal"
 exec      = "foot"
 match     = { app_id = "foot" }
 workspace = 1
-buttons   = false
 
 [app.files]
 label     = "Files"
@@ -38,7 +39,6 @@ exec      = "mousepad"
 match     = { app_id = "mousepad", class = "Mousepad" }
 workspace = 3
 scale     = 0.75
-buttons   = false
 
 [app.monitor]
 label     = "Monitor"
