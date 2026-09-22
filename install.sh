@@ -9,6 +9,7 @@
 #   --dry-run          print what would happen, change nothing
 #   --uninstall        remove pt35-desktop and restore the previous session
 #   --from-source      build the binaries here instead of downloading a release
+#   --flash-keyboard   also put the face buttons on F13-F18 (see firmware/)
 #   --user NAME        set up the session for this user (default: $SUDO_USER)
 #   --version          print the installer version
 set -euo pipefail
@@ -16,20 +17,21 @@ set -euo pipefail
 VERSION="0.1.0"
 REPO="${PT35_REPO:-therezor/PocketTerm35-Dersktop}"
 SHARE=/usr/share/pt35-desktop
-DRY=0; UNINSTALL=0; FROM_SOURCE=0; TARGET_USER=""
+DRY=0; UNINSTALL=0; FROM_SOURCE=0; FLASH_KEYBOARD=0; TARGET_USER=""
 
 msg()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 run()  { if [ "$DRY" = 1 ]; then printf '    would run: %s\n' "$*"; else eval "$*"; fi; }
 
-usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1 ;;
     --uninstall) UNINSTALL=1 ;;
     --from-source) FROM_SOURCE=1 ;;
+    --flash-keyboard) FLASH_KEYBOARD=1 ;;
     --user) TARGET_USER="${2:?--user needs a name}"; shift ;;
     --version) echo "pt35-desktop installer $VERSION"; exit 0 ;;
     -h|--help) usage ;;
@@ -133,8 +135,8 @@ install_from_source() {
   run "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         sway xwayland foot seatd greetd keyd \
         pipewire pipewire-alsa pipewire-pulse wireplumber \
-        xdg-desktop-portal-wlr wl-clipboard grim \
-        fonts-dejavu-core i2c-tools evtest \
+        xdg-desktop-portal-wlr wl-clipboard grim wtype \
+        fonts-dejavu-core i2c-tools evtest python3-serial \
         build-essential pkg-config libxkbcommon-dev"
 
   # A login shell, so a rustup toolchain in ~/.cargo/bin wins over the older
@@ -150,12 +152,17 @@ install_from_source() {
     run "install -m755 '$src/target/release/$binary' /usr/bin/$binary"
   done
   run "install -m755 '$src/scripts/pt35-session' /usr/bin/pt35-session"
+  run "install -m755 '$src/scripts/pt35-kbd' /usr/bin/pt35-kbd"
   run "install -d /usr/lib/pt35 && install -m755 '$src/scripts/pt35-cpu-profile' /usr/lib/pt35/pt35-cpu-profile"
   run "install -d '$SHARE/sway' '$SHARE/pt35' '$SHARE/foot' '$SHARE/boot'"
   run "install -m644 '$src/config/sway/config' '$SHARE/sway/config'"
   run "install -m644 '$src/config/foot/foot.ini' '$SHARE/foot/foot.ini'"
   run "install -m644 '$src/config/pt35/'*.toml '$SHARE/pt35/'"
   run "install -m755 '$src/scripts/pt35-probe.sh' '$SHARE/pt35-probe.sh'"
+  run "install -d '$SHARE/firmware/stock'"
+  run "install -m644 '$src/firmware/code.py' '$SHARE/firmware/'"
+  run "install -m644 '$src/firmware/README.md' '$SHARE/firmware/'"
+  run "install -m644 '$src/firmware/stock/code.py' '$SHARE/firmware/stock/'"
   run "install -d '$SHARE/logind' && install -m644 '$src/config/logind/pt35.conf' '$SHARE/logind/'"
   run "install -d '$SHARE/systemd' && install -m644 '$src/config/systemd/greetd-vt1.conf' '$SHARE/systemd/'"
   run "install -d /etc/keyd && install -m644 '$src/config/keyd/pocketterm35.conf' /etc/keyd/"
@@ -187,14 +194,28 @@ do_install() {
     install_from_release
   fi
 
+  if [ "$FLASH_KEYBOARD" = 1 ]; then
+    msg "putting the face buttons on F13-F18"
+    run "pt35-kbd flash"
+  fi
+
   cat <<EOF
 
   pt35-desktop $VERSION is installed for '$TARGET_USER'.
 
   Reboot to start it:   sudo reboot
   Uninstall:            sudo $0 --uninstall
-
 EOF
+  [ "$FLASH_KEYBOARD" = 1 ] || cat <<EOF
+
+  A B X Y L R still send the letters a b x y l r, the same keycodes the keyboard
+  sends, so the shell cannot use them as buttons. To change that:
+
+      sudo pt35-kbd flash     (undo with: sudo pt35-kbd restore)
+
+  See $SHARE/firmware/README.md.
+EOF
+  echo
 }
 
 do_uninstall() {
@@ -211,7 +232,8 @@ do_uninstall() {
     fi
   fi
   run "rm -f /usr/bin/pt35d /usr/bin/pt35ctl /usr/bin/pt35-bar /usr/bin/pt35-menu \
-        /usr/bin/pt35-pointer /usr/bin/pt35-session /etc/keyd/pocketterm35.conf \
+        /usr/bin/pt35-pointer /usr/bin/pt35-session /usr/bin/pt35-kbd \
+        /etc/keyd/pocketterm35.conf \
         /etc/sudoers.d/pt35-cpu-profile /usr/share/wayland-sessions/pt35-session.desktop"
   run "rm -rf '$SHARE' /usr/lib/pt35"
   msg "done — your ~/.config/{sway,pt35,foot} were left untouched. Reboot."

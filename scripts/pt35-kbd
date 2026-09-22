@@ -6,9 +6,11 @@ calls `storage.disable_usb_drive()`, so there is no CIRCUITPY drive to copy
 files to: the only way in is the REPL on /dev/ttyACM0. CircuitPython may write
 its own filesystem while the host cannot see it, which is what makes this work.
 
-  pt35-kbd dump code.py > /tmp/code.py   read a file off the keyboard
-  pt35-kbd write code.py firmware/code.py
-  pt35-kbd files                         list what is on it
+  pt35-kbd flash     put the face buttons on F13-F18 (what the shell expects)
+  pt35-kbd restore   put the stock keymap back
+  pt35-kbd files     list what is on the board
+  pt35-kbd dump code.py > /tmp/code.py
+  pt35-kbd write code.py some/code.py
 
 Interrupting `write` leaves the old file in place: the new one is written beside
 it and renamed at the end. If the keyboard ever stops responding as a keyboard,
@@ -18,12 +20,14 @@ this port still answers, so a bad file can always be replaced.
 import argparse
 import binascii
 import hashlib
+import os
 import sys
 import time
 
 import serial
 
 PORT = "/dev/ttyACM0"
+FIRMWARE = os.environ.get("PT35_FIRMWARE", "/usr/share/pt35-desktop/firmware")
 CHUNK = 512
 # code.py logs to this port while it runs, so frame the payload and read only
 # what is inside the markers.
@@ -123,12 +127,23 @@ def write(kbd, name, data):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["dump", "write", "files"])
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("action", choices=["flash", "restore", "dump", "write", "files"])
     parser.add_argument("name", nargs="?", help="file on the keyboard, e.g. code.py")
     parser.add_argument("source", nargs="?", help="local file to write")
     parser.add_argument("--port", default=PORT)
     args = parser.parse_args()
+
+    if args.action in ("flash", "restore"):
+        args.name = "code.py"
+        args.source = os.path.join(
+            FIRMWARE, "code.py" if args.action == "flash" else "stock/code.py"
+        )
+        if not os.path.exists(args.source):
+            raise SystemExit(f"{args.source} is missing; set PT35_FIRMWARE")
+        args.action = "write"
 
     with Keyboard(args.port) as kbd:
         if args.action == "files":

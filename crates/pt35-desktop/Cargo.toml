@@ -24,7 +24,7 @@ A desktop environment for the Waveshare PocketTerm35 handheld: one fullscreen \
 app per workspace on a 640x480 panel, driven entirely from the built-in \
 keyboard and D-pad. sway does the compositing; pt35-desktop adds the status \
 bar, the menu/launcher, the session daemon and a keyboard-driven mouse."""
-depends = "sway, foot, seatd, greetd, keyd, libc6, fonts-dejavu-core"
+depends = "sway, foot, seatd, greetd, keyd, libc6, fonts-dejavu-core, wtype, python3-serial"
 recommends = "pipewire, wireplumber, pipewire-pulse, xdg-desktop-portal-wlr, wl-clipboard, grim, xwayland, i2c-tools"
 suggests = "helix, imv, zathura, mpv, network-manager, bluez"
 # cargo-deb rewrites a leading "target/release/" to the real (workspace) target
@@ -36,6 +36,7 @@ assets = [
     ["target/release/pt35-menu", "usr/bin/", "755"],
     ["target/release/pt35-pointer", "usr/bin/", "755"],
     ["../../scripts/pt35-session", "usr/bin/", "755"],
+    ["../../scripts/pt35-kbd", "usr/bin/", "755"],
     ["../../scripts/pt35-cpu-profile", "usr/lib/pt35/", "755"],
     ["../../scripts/pt35-probe.sh", "usr/share/pt35-desktop/", "755"],
     ["../../config/sway/config", "usr/share/pt35-desktop/sway/", "644"],
@@ -51,5 +52,8 @@ assets = [
     ["../../boot/waveshare-35dpi-5b.dtbo", "usr/share/pt35-desktop/boot/", "644"],
     ["../../README.md", "usr/share/doc/pt35-desktop/", "644"],
     ["../../docs/KEYS.md", "usr/share/doc/pt35-desktop/", "644"],
+    ["../../firmware/code.py", "usr/share/pt35-desktop/firmware/", "644"],
+    ["../../firmware/stock/code.py", "usr/share/pt35-desktop/firmware/stock/", "644"],
+    ["../../firmware/README.md", "usr/share/pt35-desktop/firmware/", "644"],
 ]
 maintainer-scripts = "../../packaging/debian"
