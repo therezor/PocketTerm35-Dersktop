@@ -18,12 +18,15 @@ use crate::state::Session;
 /// `window` covers everything else.
 const EVENTS: &[&str] = &["window", "workspace"];
 
-/// `window::title` fires on every prompt redraw. A build scrolling past would
-/// otherwise cost one `get_tree` per line.
+/// Events arriving inside this window are served by one tree read. An app that
+/// owns a dialog produces several at once when it goes.
 const COALESCE: Duration = Duration::from_millis(50);
 
-/// Changes worth a redraw. Anything else (`urgent`, `mark`, `rename`) leaves
-/// the dock looking the same.
+/// Changes worth a redraw.
+///
+/// Not `title`: the dock draws the app id, so a build scrolling past in a
+/// terminal would cost three sway round trips a frame and change nothing. The
+/// window picker does show titles and reads them on its own timer.
 const INTERESTING: &[&str] = &[
     "new",
     "close",
@@ -31,7 +34,6 @@ const INTERESTING: &[&str] = &[
     "move",
     "floating",
     "fullscreen_mode",
-    "title",
     "init",
     "empty",
 ];
@@ -61,8 +63,12 @@ fn stream(
         if !worth_refreshing(&body) {
             continue;
         }
-        if last.elapsed() < COALESCE {
-            continue;
+        // Wait out the rest of the window rather than dropping the event. Two
+        // windows closing 10ms apart must both leave the dock, and the second
+        // event is the only notice of it. The sleep is outside the lock.
+        let since = last.elapsed();
+        if since < COALESCE {
+            std::thread::sleep(COALESCE - since);
         }
         *last = Instant::now();
         let (status, notes) = {
@@ -97,12 +103,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_close_is_worth_a_redraw_and_a_mark_is_not() {
+    fn a_close_is_worth_a_redraw_and_a_title_is_not() {
         assert!(worth_refreshing(
             r#"{"change":"close","container":{"id":4}}"#
         ));
         assert!(worth_refreshing(r#"{"change":"new"}"#));
-        assert!(worth_refreshing(r#"{"change":"title"}"#));
+        assert!(worth_refreshing(r#"{"change":"focus"}"#));
+        // The dock draws the app id. A prompt redraw is not news.
+        assert!(!worth_refreshing(r#"{"change":"title"}"#));
         assert!(!worth_refreshing(r#"{"change":"mark"}"#));
         assert!(!worth_refreshing(r#"{"change":"urgent"}"#));
     }

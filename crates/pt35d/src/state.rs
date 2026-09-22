@@ -424,6 +424,7 @@ impl Session {
                         // nothing is focused, and a bare kill hits nothing.
                         self.sync_windows();
                         let Some(target) = self.current_window().map(|w| w.id) else {
+                            self.notify("Nothing to close", 0);
                             return Ok(Response::Ok);
                         };
                         self.close_window(target)?;

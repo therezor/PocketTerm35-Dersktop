@@ -100,8 +100,8 @@ System defaults live in `/usr/share/pt35-desktop/pt35/`; anything you drop in
 The one knob that matters most is `scale` in `apps.toml`. At `1.0` the panel is
 640×480; at `0.75` clients see an ~853×640 logical surface, which is what makes
 GTK4 and Qt dialogs fit. It is handed to the app as `GDK_DPI_SCALE` and
-`QT_SCALE_FACTOR`, so the shell does not shrink with it. The output scale itself
-is a separate knob, on the Settings panel and on `pt35ctl scale`.
+`QT_SCALE_FACTOR`, so the shell does not shrink with it. The output itself stays
+at scale 1; `pt35ctl scale` changes that, and the shell shrinks with it.
 
 ## Status
 

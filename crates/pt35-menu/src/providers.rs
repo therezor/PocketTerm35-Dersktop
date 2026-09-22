@@ -369,15 +369,6 @@ pub fn quick() -> Items {
             icon: "display-brightness".into(),
         },
         Item {
-            // The one knob that decides whether a GTK dialog fits on a 3.5"
-            // panel. It was reachable only from a terminal.
-            label: "Scale".into(),
-            payload: "adjust:scale".into(),
-            note: format!("{:.2}x", status.as_ref().map(|s| s.scale).unwrap_or(1.0)),
-            glyph: "read".into(),
-            icon: "preferences-desktop-display".into(),
-        },
-        Item {
             // For a window that came up bigger than the panel and put its own
             // buttons off the bottom edge.
             label: "Fit window".into(),
