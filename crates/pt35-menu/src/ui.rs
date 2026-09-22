@@ -172,8 +172,7 @@ pub struct Menu {
     /// Hit boxes recorded by the last draw, so touch never has to re-derive
     /// the layout and drift from it.
     /// `(left, top, right, bottom, row index)`. The index is carried rather
-    /// than inferred from position: the quick panel draws some of its rows as
-    /// chips along the bottom and skips them here.
+    /// than inferred from the hit box's position in this list.
     row_hits: Vec<(i32, i32, i32, i32, usize)>,
     /// The launcher's side column, same idea. Touch is the way back in when the
     /// RP2040 that owns the keyboard drops off the USB bus, and Windows,
@@ -957,7 +956,7 @@ impl Menu {
     }
 
     /// The quick panel: a switch, a slider or a readout per row, and the ways
-    /// out drawn as chips along the bottom.
+    /// out as ordinary rows: one column, one thing per line.
     fn draw_quick(&mut self, canvas: &mut Canvas, top: i32, bottom: i32) {
         let theme = self.theme.clone();
         let pad = theme.menu.padding_x as i32;
@@ -969,28 +968,11 @@ impl Menu {
             return;
         }
 
-        let chips: Vec<usize> = rows
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| r.glyph == "button")
-            .map(|(i, _)| i)
-            .collect();
-        let chip_h = 44;
-        let chip_top = bottom - chip_h;
-        let lines = rows.len() - chips.len();
-        let row_h = ((chip_top - top - 8) / lines.max(1) as i32).min(56);
+        let row_h = ((bottom - top - 8) / rows.len().max(1) as i32).min(56);
         let icon_size = 24;
 
-        // Counted separately from `index`: a chip is drawn along the bottom and
-        // takes no line here, so using the model index for `y` would leave a
-        // gap wherever one falls.
-        let mut line = 0;
         for (index, row) in rows.iter().enumerate() {
-            if chips.contains(&index) {
-                continue;
-            }
-            let y = top + line * row_h;
-            line += 1;
+            let y = top + index as i32 * row_h;
             let focused = index == cursor;
             self.row_hits
                 .push((0, y, canvas.width as i32, y + row_h, index));
@@ -1107,49 +1089,26 @@ impl Menu {
                         theme.color.foreground,
                     );
                 }
-                _ => self.note(canvas, &row.note, right, centre),
-            }
-        }
-
-        // The ways out, side by side.
-        if !chips.is_empty() {
-            let gap = 10;
-            let width = (canvas.width as i32 - pad * 2 - gap * (chips.len() as i32 - 1))
-                / chips.len() as i32;
-            for (slot, index) in chips.iter().enumerate() {
-                let row = &rows[*index];
-                let x = pad + slot as i32 * (width + gap);
-                let focused = *index == cursor;
-                self.row_hits
-                    .push((x, chip_top, x + width, chip_top + chip_h, *index));
-                let colour = if focused {
-                    theme.color.accent
-                } else {
-                    theme.color.border
-                };
-                canvas.rounded_rect(x, chip_top, width as u32, chip_h as u32, 2, colour);
-                canvas.rounded_rect(
-                    x + 1,
-                    chip_top + 1,
-                    (width - 2) as u32,
-                    (chip_h - 2) as u32,
-                    2,
-                    theme.color.background,
-                );
-                let size = theme.font.size_hint + 2.0;
-                let tw = self.bold.measure(&row.label, size) as i32;
-                self.bold.draw(
-                    canvas,
-                    &row.label,
-                    x + (width - tw) / 2,
-                    chip_top + chip_h / 2 + 6,
-                    size,
-                    if focused {
+                // A row that leads somewhere says so, the same way a submenu
+                // row in a plain list does.
+                "nav" => {
+                    let size = theme.font.size_menu;
+                    let colour = if focused {
                         theme.color.accent
                     } else {
-                        theme.color.foreground
-                    },
-                );
+                        theme.color.muted
+                    };
+                    let w = self.font.measure(">", size) as i32;
+                    self.font.draw(
+                        canvas,
+                        ">",
+                        right - w,
+                        centre + (size / 3.0) as i32,
+                        size,
+                        colour,
+                    );
+                }
+                _ => self.note(canvas, &row.note, right, centre),
             }
         }
     }

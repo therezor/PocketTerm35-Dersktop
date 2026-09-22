@@ -89,7 +89,25 @@ impl Session {
             session.audio
         );
         session.apply_assignments();
+        session.kill_stray_menu();
         session
+    }
+
+    /// Take down a menu left behind by a previous daemon.
+    ///
+    /// The menu is a full screen overlay holding the keyboard. A daemon that
+    /// restarts under it has no child to wait on and no way to close it, so the
+    /// screen stays covered and nothing is focused.
+    fn kill_stray_menu(&mut self) {
+        let killed = Command::new("pkill")
+            .args(["-x", "pt35-menu"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if killed {
+            log::info!("closed a menu left behind by a previous pt35d");
+            self.ensure_focus();
+        }
     }
 
     /// Tell sway where each app's window belongs, once, at startup.

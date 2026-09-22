@@ -295,7 +295,7 @@ fn uptime() -> Option<String> {
 /// three ways out to the screens behind them.
 ///
 /// `note` is the right-hand readout and `glyph` says how to draw the row:
-/// `switch`, `slide`, `read` or `button`.
+/// `switch`, `slide`, `bar`, `nav` or `read`.
 pub fn quick() -> Items {
     let status = crate::live::status();
     let signal = status.as_ref().and_then(|s| s.network_signal);
@@ -374,28 +374,28 @@ pub fn quick() -> Items {
             label: "Fit window".into(),
             payload: "ctl:window fit".into(),
             note: String::new(),
-            glyph: "button".into(),
+            glyph: "read".into(),
             icon: "view-fullscreen".into(),
         },
         Item {
             label: "Networks".into(),
             payload: "screen:wifi".into(),
             note: String::new(),
-            glyph: "button".into(),
+            glyph: "nav".into(),
             icon: "network-wireless".into(),
         },
         Item {
             label: "Audio".into(),
             payload: "screen:audio".into(),
             note: String::new(),
-            glyph: "button".into(),
+            glyph: "nav".into(),
             icon: "audio-volume-high".into(),
         },
         Item {
             label: "Settings".into(),
             payload: "page:settings".into(),
             note: String::new(),
-            glyph: "button".into(),
+            glyph: "nav".into(),
             icon: "preferences-system".into(),
         },
     ]
