@@ -35,6 +35,10 @@ fn main() -> Result<()> {
             .spawn(move || loop {
                 {
                     let mut session = session.lock().expect("session");
+                    if session.compositor_gone() {
+                        log::info!("sway is gone, exiting");
+                        std::process::exit(0);
+                    }
                     session.refresh();
                     if !subscribers.is_empty() {
                         subscribers.broadcast(&Event::Status(session.status.clone()));

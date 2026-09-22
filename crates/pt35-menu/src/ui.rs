@@ -183,7 +183,12 @@ impl Menu {
         self.row_hits.clear();
         let rows = self.model.visible_rows();
         if rows.is_empty() {
-            let hint = "no matches";
+            // An empty screen and an empty search are different problems.
+            let hint = if self.model.screen().list.mode() == Mode::Filter {
+                "no matches"
+            } else {
+                "nothing here"
+            };
             let width = self.font.measure(hint, size) as i32;
             self.font.draw(
                 canvas,
