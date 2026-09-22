@@ -81,9 +81,7 @@ workspace: pt35d moves a second window off a workspace that already has one.
 | Start, Escape | close |
 | touch | tap a tile, a row, a side button or a legend pill |
 
-Left and Right do **not** go back or open. Back is B. A thumb resting on the
-D-pad used to pop a screen or launch the row under the cursor, and nothing on
-screen said it would.
+Left and Right never navigate. Back is B.
 
 On the window switcher, Y closes the highlighted window. Search is left with
 Backspace, or with Start, which clears the filter before it closes anything.
@@ -103,10 +101,10 @@ the `=` button opens the menu, the `x` button closes the focused window.
 The right-hand side is the input mode, the volume and the signal, as icons. A
 wired connection draws a full meter rather than an empty Wi-Fi one.
 
-The taskbar is also where a confirmation lands. `pt35ctl` run from a key binding
-writes to a stderr nobody reads, so anything worth knowing ("Saved shot.png",
-"no audio backend on this system") takes the slot area for a couple of seconds
-and then gives it back.
+The taskbar is also where a confirmation lands. A key binding has no other way
+to answer you, so anything worth knowing ("Saved shot.png", "no audio backend on
+this system") takes the slot area for a couple of seconds and then gives it
+back.
 
 ## Icons
 

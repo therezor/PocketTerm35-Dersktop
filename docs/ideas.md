@@ -30,7 +30,6 @@ docs and code were read for this project. What was taken, and what is still open
 - **Per-screen hint legends.** Four of them, picked by what is on screen, with
   `L/R Page` dropped when the list already fits.
 - **Recents.** The five things you launched last go to the top of the launcher.
-  Without it the order came from a `BTreeMap` of app ids.
 
 ## Open
 

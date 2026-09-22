@@ -23,7 +23,7 @@ pub fn plan(command: &Command) -> Plan {
         Command::App(id) => Plan::Ctl(vec!["launch".into(), id.clone()]),
         // Through the daemon: it checks the binary exists, focuses a copy that
         // is already open, and holds the desktop's menu off until the window
-        // appears. A bare `sh -c` did none of that and could not fail.
+        // appears.
         Command::Exec(cmd) => Plan::Ctl(vec!["exec".into(), cmd.clone()]),
         Command::Action(args) => Plan::Ctl(args.split_whitespace().map(str::to_string).collect()),
         Command::Dynamic { builtin, payload } => dynamic(*builtin, payload),
@@ -72,9 +72,7 @@ pub fn perform(command: &Command) -> Result<(), String> {
     match plan(command) {
         Plan::Nothing => Ok(()),
         // Over the socket rather than by forking `pt35ctl`, so the reply is
-        // waited for and a failure has somewhere to go. Forking gave a launch
-        // with a missing binary, or a volume key with no audio backend, exactly
-        // the same silence as a success.
+        // waited for and a failure has somewhere to go.
         Plan::Ctl(args) => {
             let argv: Vec<&str> = args.iter().map(String::as_str).collect();
             let request = pt35_common::ipc::Request::from_ctl(&argv)?;

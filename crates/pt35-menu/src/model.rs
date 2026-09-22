@@ -31,19 +31,6 @@ pub struct Row {
     pub payload: String,
 }
 
-/// The window picker is a grid: you recognise an app by its shape faster than
-/// you read its name. Everything else dynamic is a list of similar things.
-fn layout_for(builtin: Builtin) -> Layout {
-    match builtin {
-        Builtin::Windows => Layout::Grid,
-        // A list you can scan and type into, with the side column beside it.
-        Builtin::Launcher => Layout::List,
-        // Both are drawn by hand; the list underneath is only the cursor.
-        Builtin::Quick | Builtin::System => Layout::List,
-        _ => Layout::List,
-    }
-}
-
 /// One screen on the stack.
 #[derive(Debug, Clone)]
 pub struct Screen {
@@ -199,8 +186,14 @@ impl Model {
 
     /// The quick setting under the cursor, if this row is one.
     pub fn focused_adjust(&self) -> Option<Adjust> {
+        self.adjust_at(self.screen().list.selected()?)
+    }
+
+    /// The quick setting on one row, whether or not the cursor is on it.
+    ///
+    /// A tap needs this: the slider under your finger is not the selected one.
+    pub fn adjust_at(&self, index: usize) -> Option<Adjust> {
         let screen = self.screen();
-        let index = screen.list.selected()?;
         if let Source::Dynamic { items, .. } = &screen.source {
             let payload = items.get(index).map(|i| i.payload.as_str())?;
             return match payload.strip_prefix("adjust:")? {
@@ -294,7 +287,7 @@ impl Model {
         title: &str,
         items: Vec<crate::providers::Item>,
     ) {
-        let layout = layout_for(builtin);
+        let layout = crate::providers::screen(builtin).layout;
         self.stack.push(Screen {
             title: title.to_string(),
             list: self.list_for(builtin, layout, &items),
@@ -323,9 +316,9 @@ impl Model {
 
     fn push_confirm(&mut self, command: Command, label: &str) {
         let rows = self.rows;
-        // Spelled out, not "No" and "Yes". Half a second of reading is the
-        // whole point of a confirmation, and the row you land on says what it
-        // will do rather than making you look back at the title.
+        // Spelled out, not "No" and "Yes": half a second of reading is the
+        // point of a confirmation, and the row says what it does without a
+        // glance back at the title.
         let no = "No, go back".to_string();
         let yes = format!("Yes, {}", label.to_lowercase());
         self.stack.push(Screen {
@@ -363,7 +356,7 @@ impl Model {
         }) else {
             return;
         };
-        let list = self.list_for(builtin, layout_for(builtin), &items);
+        let list = self.list_for(builtin, crate::providers::screen(builtin).layout, &items);
         let screen = self.screen_mut();
         screen.list = list;
         screen.source = Source::Dynamic { builtin, items };
@@ -443,10 +436,9 @@ impl Model {
                 let _ = rows;
                 self.activate(index)
             }
-            // Left and Right change a quick setting in place, and do nothing
-            // anywhere else. They used to be a second Back and a second Open,
-            // which the hint bar never said and a thumb on the D-pad triggered
-            // by accident. Back is B.
+            // Left and Right change a quick setting in place and do nothing
+            // anywhere else. Back is B, and a thumb resting on the D-pad must
+            // not navigate.
             Outcome::Left | Outcome::Right => match self.focused_adjust() {
                 Some(adjust) => Step::Adjust(adjust, matches!(outcome, Outcome::Right)),
                 None => Step::Nothing,
@@ -578,9 +570,8 @@ entries = [
 
     #[test]
     fn the_d_pad_sideways_does_not_navigate() {
-        // It used to: Left popped a screen and Right opened the row under the
-        // cursor. Nothing on screen said so, and a thumb resting on the D-pad
-        // hit both. Back is B.
+        // Back is B. A thumb resting on the D-pad must not pop a screen or
+        // open the row under the cursor.
         let mut model = model();
         assert_eq!(press(&mut model, sym::RETURN), Step::Redraw);
         assert_eq!(model.depth(), 2, "now one level down");
@@ -693,7 +684,7 @@ entries = [
 
     #[test]
     fn the_d_pad_never_leaves_the_menu() {
-        // A nudge left on the top screen used to close it.
+        // A nudge on the D-pad must never close the menu.
         let mut model = model();
         assert_eq!(press(&mut model, sym::LEFT), Step::Nothing);
         assert_eq!(model.depth(), 1);

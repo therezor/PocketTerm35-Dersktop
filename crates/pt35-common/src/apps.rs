@@ -177,8 +177,8 @@ pub fn command_binary(exec: &str) -> Option<String> {
 
 /// Whether a command is actually installed.
 ///
-/// `sh -c` succeeds whatever you give it, so this is the only thing standing
-/// between a menu row and a launch that silently does nothing.
+/// `sh -c` succeeds whatever you give it, so this is the only check standing
+/// between a menu row and a launch that does nothing.
 pub fn on_path(binary: &str) -> bool {
     if binary.starts_with('/') {
         return std::path::Path::new(binary).exists();
@@ -192,8 +192,7 @@ pub fn on_path(binary: &str) -> bool {
 /// A window's app id as a person would say it: `pt35-monitor` is "Monitor",
 /// `org.gnome.Nautilus` is "Nautilus".
 ///
-/// Lives here so the dock and the window picker name the same window the same
-/// way. They used to disagree.
+/// Lives here so the dock and the window picker name a window the same way.
 pub fn pretty_app(app: &str) -> String {
     let name = app
         .rsplit('.')

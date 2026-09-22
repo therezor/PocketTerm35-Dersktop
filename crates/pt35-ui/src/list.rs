@@ -135,9 +135,8 @@ impl ListState {
     /// Where the drawn window sits, 0.0 at the top and 1.0 at the bottom.
     /// `None` when everything fits and there is nothing to scroll.
     ///
-    /// Measured from `offset`, not from `selected`: `selected` is an index into
-    /// the unfiltered item list, and a scrollbar driven by it ran off the end of
-    /// its own track as soon as a search narrowed the list.
+    /// Measured from `offset`, not from `selected`: `selected` indexes the
+    /// unfiltered item list and means nothing once a search narrows it.
     pub fn scroll_progress(&self) -> Option<f32> {
         let total = self.len();
         let rows = self.page();
@@ -416,8 +415,8 @@ mod tests {
 
     #[test]
     fn the_scrollbar_measures_the_filtered_list() {
-        // The thumb used to be computed from `selected`, an index into the
-        // unfiltered items. With a filter on it ran past the end of the track.
+        // The thumb must stay on its track with a filter on, which it cannot
+        // if it is measured from `selected`.
         let items: Vec<String> = (0..20).map(|n| format!("item {n}")).collect();
         let mut list = ListState::new(items, 5);
         assert_eq!(list.scroll_progress(), Some(0.0));

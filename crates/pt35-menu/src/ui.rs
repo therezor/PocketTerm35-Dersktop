@@ -135,8 +135,7 @@ const QUICK_HINTS: &[Hint] = &[
 ];
 
 // Start here clears the search rather than closing the menu: the list decides
-// that before the model ever sees the key. Saying "Close" was a lie you found
-// out about by pressing it.
+// that before the model ever sees the key.
 const FILTER_HINTS: &[Hint] = &[
     Hint {
         button: "Enter",
@@ -172,7 +171,10 @@ pub struct Menu {
     windows: usize,
     /// Hit boxes recorded by the last draw, so touch never has to re-derive
     /// the layout and drift from it.
-    row_hits: Vec<(i32, i32, i32, i32)>,
+    /// `(left, top, right, bottom, row index)`. The index is carried rather
+    /// than inferred from position: the quick panel draws some of its rows as
+    /// chips along the bottom and skips them here.
+    row_hits: Vec<(i32, i32, i32, i32, usize)>,
     /// The launcher's side column, same idea. Touch is the way back in when the
     /// RP2040 that owns the keyboard drops off the USB bus, and Windows,
     /// Settings and Power were unreachable that way.
@@ -223,7 +225,7 @@ impl Menu {
     /// Whether a launcher row already has a window open.
     ///
     /// The daemon focuses rather than duplicating when you pick one of these,
-    /// and used to give you no way of knowing that before you pressed it.
+    /// so the row says so before you press it.
     fn is_running(&self, payload: &str) -> bool {
         let Some(status) = self.status.as_ref() else {
             return false;
@@ -266,22 +268,17 @@ impl Menu {
     /// Push a builtin screen, reading its rows off the Wayland thread when they
     /// are slow to come by.
     fn open(&mut self, builtin: pt35_common::menu::Builtin) {
-        if !providers::is_slow(builtin) {
-            self.model.push_dynamic(
-                builtin,
-                providers::title(builtin),
-                providers::items(builtin),
-            );
+        let screen = providers::screen(builtin);
+        let Some(scanning) = screen.scanning else {
+            self.model
+                .push_dynamic(builtin, screen.title, (screen.rows)());
             return;
-        }
-        self.model.push_dynamic(
-            builtin,
-            providers::title(builtin),
-            providers::placeholder(builtin),
-        );
+        };
+        self.model
+            .push_dynamic(builtin, screen.title, providers::placeholder(scanning));
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(providers::items(builtin));
+            let _ = tx.send((screen.rows)());
         });
         self.loading = Some((builtin, rx));
     }
@@ -303,8 +300,8 @@ impl Menu {
 
     /// Feed a tap to the model as if the matching button had been pressed.
     ///
-    /// A pill that is drawn and hit-tested but does nothing is worse than no
-    /// pill: `L/R` and `<>` used to be exactly that.
+    /// Every pill that is drawn is hit-tested and every one that is
+    /// hit-tested does something.
     fn press(&mut self, button: &str) -> bool {
         let key = match button {
             "L/R" => Key::new(pt35_ui::keys::sym::PAGE_DOWN),
@@ -370,7 +367,7 @@ impl Menu {
                 }
                 // Take the row out now. sway answers `kill` before the client
                 // has actually gone, so re-reading would show it still open. The
-                // tick puts it back if the app refused to close.
+                // The tick puts it back if the app refuses to close.
                 self.model.drop_dynamic(&payload);
                 true
             }
@@ -498,7 +495,8 @@ impl Menu {
             if y + row_h > bottom {
                 break;
             }
-            self.row_hits.push((0, y, canvas.width as i32, y + row_h));
+            self.row_hits
+                .push((0, y, canvas.width as i32, y + row_h, index));
             let selected = index == cursor;
             if selected {
                 canvas.rounded_rect(
@@ -579,8 +577,8 @@ impl Menu {
         self.draw_scrollbar(canvas, canvas.width as i32, top, bottom);
     }
 
-    /// What an empty screen says. Three screens out of four used to say nothing
-    /// at all, which reads as broken rather than empty.
+    /// What an empty screen says. Drawing nothing at all reads as broken
+    /// rather than empty.
     fn draw_nothing_here(&mut self, canvas: &mut Canvas, top: i32, right: i32) {
         let filtering = self.model.screen().list.mode() == Mode::Filter;
         let text = if filtering {
@@ -672,7 +670,7 @@ impl Menu {
             if y + tile_h > bottom {
                 break;
             }
-            self.row_hits.push((x, y, x + tile_w, y + tile_h));
+            self.row_hits.push((x, y, x + tile_w, y + tile_h, index));
             let focused = index == cursor;
             let tint = row.tint.unwrap_or(theme.color.accent);
             let note = row
@@ -821,7 +819,7 @@ impl Menu {
             if y + row_h > bottom {
                 break;
             }
-            self.row_hits.push((0, y, split, y + row_h));
+            self.row_hits.push((0, y, split, y + row_h, index));
             let focused = index == cursor && self.side.is_none();
             if focused {
                 canvas.rect(0, y, split as u32, row_h as u32, theme.color.background_alt);
@@ -983,13 +981,19 @@ impl Menu {
         let row_h = ((chip_top - top - 8) / lines.max(1) as i32).min(56);
         let icon_size = 24;
 
+        // Counted separately from `index`: a chip is drawn along the bottom and
+        // takes no line here, so using the model index for `y` would leave a
+        // gap wherever one falls.
+        let mut line = 0;
         for (index, row) in rows.iter().enumerate() {
             if chips.contains(&index) {
                 continue;
             }
-            let y = top + index as i32 * row_h;
+            let y = top + line * row_h;
+            line += 1;
             let focused = index == cursor;
-            self.row_hits.push((0, y, canvas.width as i32, y + row_h));
+            self.row_hits
+                .push((0, y, canvas.width as i32, y + row_h, index));
             if focused {
                 canvas.rect(0, y, canvas.width, row_h as u32, theme.color.background_alt);
                 canvas.rect(0, y, 3, row_h as u32, theme.color.accent);
@@ -1117,7 +1121,7 @@ impl Menu {
                 let x = pad + slot as i32 * (width + gap);
                 let focused = *index == cursor;
                 self.row_hits
-                    .push((x, chip_top, x + width, chip_top + chip_h));
+                    .push((x, chip_top, x + width, chip_top + chip_h, *index));
                 let colour = if focused {
                     theme.color.accent
                 } else {
@@ -1198,7 +1202,10 @@ impl Menu {
             .iter()
             .filter(|hint| paged || hint.button != "L/R")
             .filter(|hint| !(pinned && hint.button == "Start"))
-            .filter(|hint| !(rooted && hint.button == "B"))
+            // At the root there is nowhere to go back to and nowhere to go
+            // home to. A legend that names a key which does nothing is worse
+            // than a shorter legend.
+            .filter(|hint| !(rooted && matches!(hint.button, "B" | "Y")))
             .cloned()
             .collect();
         let size = theme.font.size_hint;
@@ -1286,9 +1293,8 @@ impl App for Menu {
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
         }
-        // The menu used to read the daemon once, at startup, and believe it for
-        // as long as it was open. A window closing behind it, or a toggle
-        // flipping, never showed.
+        // Re-read the daemon, so a window closing behind the menu or a toggle
+        // flipping shows without reopening it.
         self.since_poll += 1;
         if self.since_poll < POLL_TICKS {
             return drawn;
@@ -1353,11 +1359,18 @@ impl App for Menu {
                 return self.open_side(index);
             }
         }
-        for (index, (left, top, right, bottom)) in self.row_hits.clone().into_iter().enumerate() {
-            if x >= left && x < right && y >= top && y < bottom {
-                let step = self.model.activate_window(index);
-                return self.apply(step);
+        for (left, top, right, bottom, index) in self.row_hits.clone() {
+            if x < left || x >= right || y < top || y >= bottom {
+                continue;
             }
+            // A slider is dragged with the D-pad, so a tap on one has to mean
+            // something too: the left half turns it down and the right half up.
+            if let Some(adjust) = self.model.adjust_at(index) {
+                let up = x > (left + right) / 2;
+                return self.apply(Step::Adjust(adjust, up));
+            }
+            let step = self.model.activate_window(index);
+            return self.apply(step);
         }
         true
     }

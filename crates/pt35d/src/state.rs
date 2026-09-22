@@ -33,8 +33,11 @@ pub struct Session {
     /// Exactly what is bound right now, so it can be taken back exactly.
     bound: Vec<crate::modes::Bind>,
     /// swaylock, while it is up. It is a layer surface and not in the tree, so
-    /// without this the desktop reads as empty and the menu opens under it.
+    /// the desktop reads as empty under it.
     lock_proc: Option<Child>,
+    /// True while the menu on screen is standing in for a desktop. It gets out
+    /// of the way as soon as there is a window to get out of the way of.
+    menu_is_desktop: bool,
     /// Notifications waiting to go out to the bar. Filled while a request is
     /// being handled, drained by whoever is holding the lock afterwards.
     pending: Vec<pt35_common::ipc::Event>,
@@ -69,6 +72,7 @@ impl Session {
             mode_before_menu: InputMode::Buttons,
             bound: Vec::new(),
             lock_proc: None,
+            menu_is_desktop: false,
             pending: Vec::new(),
             launch_pending: Some(std::time::Instant::now()),
         };
@@ -219,8 +223,8 @@ impl Session {
 
     /// Open windows, for the dock in the bar.
     ///
-    /// `None` means sway did not answer. The caller keeps whatever it had: one
-    /// dropped reply used to blank the whole dock until the next poll.
+    /// `None` means sway did not answer. The caller keeps whatever it had,
+    /// rather than blanking the dock over one dropped reply.
     fn window_list(&mut self) -> Option<Vec<pt35_common::ipc::WindowInfo>> {
         let json = match self.sway_query(pt35_common::sway::MessageType::GetTree) {
             Ok(json) => json,
@@ -257,8 +261,8 @@ impl Session {
         Some(list)
     }
 
-    /// Give every tiled window its own workspace. Without this, a second
-    /// window on one workspace splits the screen down the middle.
+    /// Give every tiled window its own workspace. A second window on one
+    /// workspace would split the screen down the middle.
     fn spread_windows(&mut self) {
         for (id, workspace) in overflow_moves(&self.status.windows) {
             let cmd = format!("[con_id={id}] move container to workspace number {workspace}");
@@ -309,9 +313,8 @@ impl Session {
 
     fn dispatch(&mut self, request: Request) -> Result<Response> {
         match request {
-            // Read the tree rather than answering from the cache. The menu
-            // builds its window picker from this and used to get a list up to
-            // one poll old, which is how a closed window kept a row.
+            // Read the tree rather than answering from the cache: the menu
+            // builds its window picker from this and needs it current.
             Request::Status => {
                 self.sync_windows();
                 Ok(Response::Status(self.status.clone()))
@@ -521,6 +524,9 @@ impl Session {
             // The menu reads the same keys itself, and a sway binding beats
             // any surface, so the compositor must let go while it is up.
             self.mode_before_menu = self.status.input_mode;
+            if !self.status.windows.is_empty() {
+                self.menu_is_desktop = false;
+            }
             let _ = self.unbind_all();
             let mut cmd = Command::new("pt35-menu");
             if let Some(page) = page {
@@ -541,9 +547,9 @@ impl Session {
         let buttons = self.theme.buttons.clone();
         let wanted = crate::modes::binds(mode, &pointer);
         self.unbind_all()?;
-        // Record each bind as it lands, not all of them at the end. A failure
-        // halfway used to leave live bindings that `unbind_all` would never take
-        // back, because `bound` was still empty and it returns early on that.
+        // Record each bind as it lands, not all of them at the end: a failure
+        // halfway must still leave `bound` describing what sway actually holds,
+        // or `unbind_all` returns early and the bindings are stuck.
         for bind in wanted {
             self.sway_command(&bind.bind())?;
             self.bound.push(bind);
@@ -596,6 +602,14 @@ impl Session {
         // A window appearing is what ends the wait for one.
         if !self.status.windows.is_empty() {
             self.launch_pending = None;
+            // The menu was only there because nothing else was. Something else
+            // is there now, and it is behind a full screen overlay.
+            if self.menu_is_desktop {
+                self.menu_is_desktop = false;
+                if let Err(e) = self.toggle_menu(Toggle::Off, None) {
+                    log::warn!("closing the desktop menu: {e}");
+                }
+            }
             return;
         }
         let pending = self
@@ -610,16 +624,17 @@ impl Session {
             return;
         }
         self.launch_pending = None;
-        if let Err(e) = self.toggle_menu(Toggle::On, None) {
-            log::warn!("opening the menu on an empty desktop: {e}");
+        match self.toggle_menu(Toggle::On, None) {
+            Ok(()) => self.menu_is_desktop = true,
+            Err(e) => log::warn!("opening the menu on an empty desktop: {e}"),
         }
     }
 
     /// The window a keypress means: the focused one, or the one on this
     /// workspace when the menu has just taken focus away from everything.
     ///
-    /// No fall back to the first window in the list. Pressing close on an empty
-    /// workspace used to kill something on another one.
+    /// No fall back to the first window in the list: close on an empty
+    /// workspace must do nothing, not kill something on another one.
     fn current_window(&self) -> Option<&pt35_common::ipc::WindowInfo> {
         self.status.windows.iter().find(|w| w.focused).or_else(|| {
             self.status
@@ -675,8 +690,8 @@ impl Session {
             .ok_or_else(|| anyhow::anyhow!("no app profile {id:?} in apps.toml"))?
             .clone();
 
-        // Launching an app that is already open used to start a second copy.
-        // Four imv processes, each holding a core, came from exactly that.
+        // Focus rather than start a second copy. Four imv processes, each
+        // holding a core, is what the alternative costs.
         self.sync_windows();
         if let Some(open) = self.status.windows.iter().find(|w| app.matches_app(&w.app)) {
             let id = open.id;
@@ -684,8 +699,8 @@ impl Session {
             return Ok(());
         }
 
-        // A missing binary used to switch to an empty workspace and leave a
-        // blank screen. Say what is wrong instead.
+        // Say what is wrong rather than switching to an empty workspace and
+        // leaving a blank screen.
         if let Some(binary) = command_binary(&app.exec) {
             if !on_path(&binary) {
                 bail!("{binary} is not installed");
@@ -724,14 +739,13 @@ impl Session {
         let binary = command_binary(command)
             .ok_or_else(|| anyhow::anyhow!("{command:?} is not a command"))?;
 
-        // `sh -c` always succeeds, so a menu row for a program that is not
-        // installed used to close the menu and show nothing at all.
+        // `sh -c` always succeeds, so this is the only thing that can tell a
+        // missing program from a working one.
         if !on_path(&binary) {
             bail!("{binary} is not installed");
         }
 
-        // The same no-second-copy rule an `apps.toml` entry gets. A .desktop
-        // row had none, so it started another one every time.
+        // The same no-second-copy rule an `apps.toml` entry gets.
         self.sync_windows();
         let leaf = binary.rsplit('/').next().unwrap_or(&binary).to_lowercase();
         if let Some(open) = self
@@ -810,11 +824,9 @@ impl Session {
 
 /// Whether an empty desktop should bring the menu up.
 ///
-/// Four ways it should not. The menu is already there. swaylock is up, and it
-/// is a layer surface so the tree looks empty under it. Something was just
-/// asked to start and its window has not mapped yet, which is the race that
-/// used to drop the menu on top of every app you launched. Or something is
-/// actually open.
+/// Four ways it should not: something is open, the menu is already there,
+/// swaylock is up (a layer surface, so the tree looks empty under it), or
+/// something was asked to start and its window has not mapped yet.
 pub fn should_open_menu(empty: bool, menu_up: bool, locked: bool, launch_pending: bool) -> bool {
     empty && !menu_up && !locked && !launch_pending
 }

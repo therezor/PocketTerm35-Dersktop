@@ -21,8 +21,8 @@ struct Bar {
     drawn: Option<pt35_common::ipc::Status>,
     clock: String,
     hits: Vec<(i32, i32, Action)>,
-    /// Helpers a tap started. std does not reap on drop, so without this every
-    /// tap leaves a zombie behind for as long as the bar lives.
+    /// Helpers a tap started. std does not reap on drop, so they are waited
+    /// for here or every tap leaves a zombie for the life of the bar.
     children: Vec<std::process::Child>,
     /// What the last frame drew over the dock, if anything.
     toast: Option<crate::status::Toast>,

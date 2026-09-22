@@ -4,7 +4,7 @@
 //! wrapper that actually runs the command or walks the filesystem.
 
 use pt35_common::apps::{initials, pretty_app};
-use pt35_common::menu::Builtin;
+use pt35_common::menu::{Builtin, Layout};
 use std::process::Command;
 
 /// One row of a dynamic screen. `payload` is opaque to the model: only the
@@ -33,39 +33,59 @@ impl Item {
 
 pub type Items = Vec<Item>;
 
-pub fn title(builtin: Builtin) -> &'static str {
-    match builtin {
-        Builtin::Launcher => "Launcher",
-        Builtin::Quick => "Quick settings",
-        Builtin::System => "System",
-        Builtin::Windows => "Windows",
-        Builtin::Wifi => "Wi-Fi",
-        Builtin::Bluetooth => "Bluetooth",
-        Builtin::Audio => "Volume",
-        Builtin::Display => "Brightness",
-        Builtin::DesktopEntries => "All apps",
-        Builtin::About => "About",
+/// Everything the shell needs to know about one builtin screen.
+///
+/// One table rather than a `match Builtin` per question. Adding a screen is a
+/// row here plus a function to fill it, and nothing can be half-added.
+pub struct Screen {
+    pub title: &'static str,
+    /// A grid when you recognise a row by its shape faster than you read it.
+    pub layout: Layout,
+    /// What to say while the rows are still being fetched, when fetching them
+    /// is slow enough to need saying. A Wi-Fi scan is seconds of `nmcli`.
+    pub scanning: Option<&'static str>,
+    /// Where the rows come from.
+    pub rows: fn() -> Items,
+}
+
+pub fn screen(builtin: Builtin) -> Screen {
+    let (title, layout, scanning, rows): (_, _, _, fn() -> Items) = match builtin {
+        Builtin::Launcher => ("Launcher", Layout::List, None, launcher as fn() -> Items),
+        Builtin::Quick => ("Quick settings", Layout::List, Some("Reading..."), quick),
+        Builtin::System => ("System", Layout::List, None, system),
+        Builtin::Windows => ("Windows", Layout::Grid, None, windows),
+        Builtin::Wifi => ("Wi-Fi", Layout::List, Some("Scanning..."), wifi),
+        Builtin::Bluetooth => (
+            "Bluetooth",
+            Layout::List,
+            Some("Looking for devices..."),
+            bluetooth,
+        ),
+        Builtin::Audio => ("Volume", Layout::List, None, volume_levels),
+        Builtin::Display => ("Brightness", Layout::List, None, brightness_levels),
+        Builtin::DesktopEntries => ("All apps", Layout::List, None, desktop_entries),
+        Builtin::About => ("About", Layout::List, None, about),
+    };
+    Screen {
+        title,
+        layout,
+        scanning,
+        rows,
     }
 }
 
-/// Whether this screen's rows come from something that can take a while.
-///
-/// A Wi-Fi scan is seconds of `nmcli`, and the quick panel shells out to
-/// `bluetoothctl` twice. Doing that before the first frame meant the menu
-/// looked frozen, or worse, empty and broken.
-pub fn is_slow(builtin: Builtin) -> bool {
-    matches!(builtin, Builtin::Wifi | Builtin::Bluetooth | Builtin::Quick)
+pub fn title(builtin: Builtin) -> &'static str {
+    screen(builtin).title
 }
 
-/// What to show while [`is_slow`] work is still running.
-pub fn placeholder(builtin: Builtin) -> Items {
-    let label = match builtin {
-        Builtin::Wifi => "Scanning...",
-        Builtin::Bluetooth => "Looking for devices...",
-        _ => "Reading...",
-    };
+pub fn items(builtin: Builtin) -> Items {
+    (screen(builtin).rows)()
+}
+
+/// The single row shown while a slow screen is still being read.
+pub fn placeholder(text: &str) -> Items {
     vec![Item {
-        label: label.into(),
+        label: text.to_string(),
         payload: String::new(),
         note: String::new(),
         glyph: "read".into(),
@@ -73,19 +93,12 @@ pub fn placeholder(builtin: Builtin) -> Items {
     }]
 }
 
-pub fn items(builtin: Builtin) -> Items {
-    match builtin {
-        Builtin::Launcher => launcher(),
-        Builtin::Quick => quick(),
-        Builtin::System => system(),
-        Builtin::Windows => windows(),
-        Builtin::Wifi => wifi(),
-        Builtin::Bluetooth => bluetooth(),
-        Builtin::Audio => levels("volume"),
-        Builtin::Display => levels("brightness"),
-        Builtin::DesktopEntries => desktop_entries(),
-        Builtin::About => about(),
-    }
+fn volume_levels() -> Items {
+    levels("volume")
+}
+
+fn brightness_levels() -> Items {
+    levels("brightness")
 }
 
 // --------------------------------------------------------------- launcher
@@ -128,8 +141,8 @@ fn launcher() -> Items {
 
 /// Move the things you opened last to the top, in that order.
 ///
-/// `AppTable` is a `BTreeMap`, so without this the launcher is sorted by app
-/// id: an order nobody chose and nobody remembers.
+/// `AppTable` is a `BTreeMap`, so the launcher's own order is by app id: one
+/// nobody chose and nobody remembers.
 pub fn promote_recent(items: &mut Items, recent: &[String]) {
     // Walk the recents backwards so the newest ends up at index 0.
     for payload in recent.iter().rev() {

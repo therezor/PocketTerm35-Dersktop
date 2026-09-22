@@ -78,11 +78,11 @@ Nothing closes a window from a shoulder button: that is `Super`+`q`, the `x` at
 the right of the bar, or `Y` on the window picker.
 
 Close the last window and the menu takes the screen. It is the desktop, so it
-will not close until something is open behind it.
+stays until something is open behind it.
 
 In the menu: D-pad or arrows move, `A` or `Enter` activates, `1`–`9` jump
 straight to a row, `X` or typing filters, `B`/`Backspace` goes up a level, `Esc`
-closes. Left and Right change a quick setting in place and do nothing else. See
+closes. Left and Right change a quick setting in place and never navigate. See
 [docs/KEYS.md](docs/KEYS.md) for the full map.
 
 ## Configuring it
