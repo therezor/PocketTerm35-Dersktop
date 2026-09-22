@@ -12,6 +12,7 @@ pt35-common = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
 fontdue = "0.9"
+resvg = { version = "0.45", default-features = false }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 smithay-client-toolkit = { version = "0.19", features = ["calloop"] }

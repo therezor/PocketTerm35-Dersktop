@@ -22,6 +22,8 @@ pub struct Row {
     /// with live state.
     pub builtin: Option<Builtin>,
     pub glyph: String,
+    /// freedesktop icon name, preferred over the glyph when the theme has it.
+    pub icon: String,
     pub tint: Option<Rgb>,
     pub submenu: bool,
 }
@@ -174,6 +176,10 @@ impl Model {
                                 .to_uppercase()
                                 .to_string()
                         }),
+                    icon: entry
+                        .map(|e| e.icon.clone())
+                        .or_else(|| item.map(|i| i.icon.clone()))
+                        .unwrap_or_default(),
                     tint: entry.and_then(|e| e.tint),
                     submenu: self.leads_deeper(&screen.source, index),
                 }

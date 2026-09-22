@@ -53,6 +53,13 @@ columns       = 3
 tile_height   = 86
 gap           = 10
 
+# Papirus is packaged and readable at this size. Anything the theme does not
+# have falls back to a letter in a coloured badge.
+[icons]
+theme         = "Papirus-Dark"
+size_bar      = 18
+size_tile     = 32
+
 # Mouse mode. 16px at 40 repeats a second crosses the 640px panel in a second,
 # and still lands on a 24px close button.
 [pointer]

@@ -1,8 +1,8 @@
-//! Two drawn icons for the bar.
+//! The bar's two status icons.
 //!
 //! "98%" and "wlan0" say nothing you can read at a glance on a 3.5" panel. A
-//! meter does. There is no icon theme on this device and no room to load one,
-//! so these are a handful of rectangles.
+//! speaker and a signal meter do. Papirus draws both, and when it is not
+//! installed these rectangles stand in.
 
 use pt35_common::theme::Rgb;
 use pt35_ui::canvas::Canvas;
@@ -20,6 +20,15 @@ pub enum Icon {
 }
 
 impl Icon {
+    /// The freedesktop name, when the theme has one to draw instead.
+    pub fn theme_name(&self) -> &'static str {
+        match *self {
+            Icon::Volume { level, muted } => pt35_ui::icon::volume_icon(level, muted),
+            Icon::Wifi { signal } => pt35_ui::icon::wifi_icon(signal),
+        }
+    }
+
+    /// Width of the drawn fallback.
     pub fn width(&self) -> i32 {
         match self {
             Icon::Volume { .. } => 7 + 2 + bars_width(4, 2, 1),

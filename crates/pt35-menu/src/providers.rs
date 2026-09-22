@@ -16,6 +16,8 @@ pub struct Item {
     pub note: String,
     /// One or two characters standing in for an icon.
     pub glyph: String,
+    /// freedesktop icon name, preferred over the glyph.
+    pub icon: String,
 }
 
 impl Item {
@@ -74,6 +76,7 @@ fn windows() -> Items {
             } else {
                 w.glyph.clone()
             },
+            icon: w.icon.clone(),
         })
         .collect()
 }
@@ -132,6 +135,7 @@ pub fn parse_nmcli(out: &str) -> Items {
             payload: ssid,
             note: format!("{signal}%"),
             glyph: if active { "*".into() } else { String::new() },
+            icon: String::new(),
         })
         .collect()
 }

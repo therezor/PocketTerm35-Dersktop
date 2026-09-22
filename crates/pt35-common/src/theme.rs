@@ -10,6 +10,7 @@ pub struct Theme {
     pub bar: Bar,
     pub menu: Menu,
     pub pointer: Pointer,
+    pub icons: IconTheme,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -89,6 +90,29 @@ pub struct Pointer {
     /// list, or the cursor crawls.
     pub repeat_delay: u32,
     pub repeat_rate: u32,
+}
+
+/// Icons come from an installed freedesktop theme; the shell ships none. Every
+/// place that draws one falls back to a letter or a drawn meter, so a machine
+/// without the theme still works.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct IconTheme {
+    pub theme: String,
+    /// Status icons in the bar.
+    pub size_bar: u32,
+    /// The badge on a menu tile and a dock slot.
+    pub size_tile: u32,
+}
+
+impl Default for IconTheme {
+    fn default() -> Self {
+        Self {
+            theme: "Papirus-Dark".into(),
+            size_bar: 18,
+            size_tile: 32,
+        }
+    }
 }
 
 /// `auto` hides a widget when the hardware it reports on is absent — which is

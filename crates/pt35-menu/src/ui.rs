@@ -109,6 +109,7 @@ pub struct Menu {
     mono: Font,
     model: Model,
     status: Option<pt35_common::ipc::Status>,
+    icons: pt35_ui::icon::Icons,
     windows: usize,
     /// Hit boxes recorded by the last draw, so touch never has to re-derive
     /// the layout and drift from it.
@@ -120,7 +121,9 @@ pub struct Menu {
 impl Menu {
     pub fn new(theme: Theme, font: Font, mono: Font, model: Model) -> Self {
         let status = crate::live::status();
+        let icons = pt35_ui::icon::Icons::new(&theme.icons.theme);
         Self {
+            icons,
             theme,
             font,
             mono,
@@ -474,17 +477,37 @@ impl Menu {
             let badge = 40;
             let bx = x + 12;
             let by = y + (tile_h - badge) / 2;
-            canvas.rounded_rect(bx, by, badge as u32, badge as u32, theme.menu.radius, tint);
-            let glyph_size = theme.font.size_title;
-            let glyph_w = self.font.measure(&row.glyph, glyph_size) as i32;
-            self.font.draw(
-                canvas,
-                &row.glyph,
-                bx + (badge - glyph_w) / 2,
-                by + badge / 2 + (glyph_size / 3.0) as i32,
-                glyph_size,
-                theme.color.background,
-            );
+            let icon_size = theme.icons.size_tile;
+            let has_icon = !row.icon.is_empty() && self.icons.get(&row.icon, icon_size).is_some();
+            if has_icon {
+                // The icon carries the colour, so the badge steps back to a
+                // tinted outline.
+                canvas.rounded_rect(bx, by, badge as u32, badge as u32, theme.menu.radius, tint);
+                canvas.rounded_rect(
+                    bx + 1,
+                    by + 1,
+                    (badge - 2) as u32,
+                    (badge - 2) as u32,
+                    theme.menu.radius,
+                    theme.color.background,
+                );
+                let inset = (badge - icon_size as i32) / 2;
+                if let Some(icon) = self.icons.get(&row.icon, icon_size) {
+                    icon.draw(canvas, bx + inset, by + inset);
+                }
+            } else {
+                canvas.rounded_rect(bx, by, badge as u32, badge as u32, theme.menu.radius, tint);
+                let glyph_size = theme.font.size_title;
+                let glyph_w = self.font.measure(&row.glyph, glyph_size) as i32;
+                self.font.draw(
+                    canvas,
+                    &row.glyph,
+                    bx + (badge - glyph_w) / 2,
+                    by + badge / 2 + (glyph_size / 3.0) as i32,
+                    glyph_size,
+                    theme.color.background,
+                );
+            }
 
             if focused {
                 // Corner ticks: instrument framing, and they survive on a busy

@@ -199,6 +199,9 @@ pub struct WindowInfo {
     /// One or two characters standing in for an icon, from the app's profile.
     #[serde(default)]
     pub glyph: String,
+    /// freedesktop icon name from the app's profile.
+    #[serde(default)]
+    pub icon: String,
     pub focused: bool,
     #[serde(default)]
     pub floating: bool,

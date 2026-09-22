@@ -25,7 +25,7 @@ app per workspace on a 640x480 panel, driven entirely from the built-in \
 keyboard and D-pad. sway does the compositing; pt35-desktop adds the status \
 bar, the menu/launcher, the session daemon and a keyboard-driven mouse."""
 depends = "sway, foot, seatd, greetd, keyd, libc6, fonts-dejavu-core, wtype, python3-serial"
-recommends = "pipewire, wireplumber, pipewire-pulse, xdg-desktop-portal-wlr, wl-clipboard, grim, xwayland, i2c-tools"
+recommends = "papirus-icon-theme, pipewire, wireplumber, pipewire-pulse, xdg-desktop-portal-wlr, wl-clipboard, grim, xwayland, i2c-tools"
 suggests = "helix, imv, zathura, mpv, network-manager, bluez"
 # cargo-deb rewrites a leading "target/release/" to the real (workspace) target
 # directory; everything else is relative to this package.

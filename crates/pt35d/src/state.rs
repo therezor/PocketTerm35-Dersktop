@@ -190,6 +190,12 @@ impl Session {
                     .find(|app| app.matches_app(&w.app))
                     .map(|app| app.glyph.clone())
                     .unwrap_or_default(),
+                icon: apps
+                    .apps
+                    .values()
+                    .find(|app| app.matches_app(&w.app))
+                    .map(|app| app.icon.clone())
+                    .unwrap_or_default(),
                 app: w.app,
                 title: w.title,
                 focused: w.focused,
@@ -713,6 +719,7 @@ mod tests {
             id,
             workspace,
             glyph: String::new(),
+            icon: String::new(),
             app: "app".into(),
             title: "title".into(),
             focused,

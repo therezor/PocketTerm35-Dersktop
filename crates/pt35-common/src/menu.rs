@@ -48,8 +48,11 @@ pub struct Entry {
     pub label: String,
     /// Second line on a grid tile: what this is, or its current state.
     pub note: String,
-    /// One or two characters drawn in the tile's coloured badge.
+    /// One or two characters drawn in the tile's coloured badge, when the icon
+    /// theme has nothing for `icon`.
     pub glyph: String,
+    /// freedesktop icon name, drawn in the badge when the theme has it.
+    pub icon: String,
     /// Badge colour, `#rrggbb`. Defaults to the theme accent.
     pub tint: Option<crate::theme::Rgb>,
     /// Makes this row a quick setting: the D-pad changes the value in place

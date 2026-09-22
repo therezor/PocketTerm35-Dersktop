@@ -5,8 +5,9 @@
 # the value as GDK_DPI_SCALE and QT_SCALE_FACTOR: Qt and Chromium shrink their
 # whole UI, GTK3 shrinks only its text.
 #
-# `glyph` is the app's icon in the dock and the window picker: one or two
-# characters, because 640x480 has no room for an icon theme and we ship none.
+# `icon` is a freedesktop icon name, drawn from the installed theme (Papirus by
+# default) in the launcher, the dock and the window picker. `glyph` is what is
+# drawn instead when the theme has no such icon: one or two characters.
 #
 # The face buttons behave the same in every app (see docs/KEYS.md), so there is
 # nothing per-app to say about them.
@@ -19,6 +20,7 @@
 [app.terminal]
 label     = "Terminal"
 glyph     = ">_"
+icon      = "foot"
 exec      = "foot"
 match     = { app_id = "foot" }
 workspace = 1
@@ -26,6 +28,7 @@ workspace = 1
 [app.files]
 label     = "Files"
 glyph     = "F"
+icon      = "system-file-manager"
 exec      = "pcmanfm"
 match     = { app_id = "pcmanfm", class = "Pcmanfm" }
 workspace = 2
@@ -34,6 +37,7 @@ scale     = 0.75
 [app.editor]
 label     = "Editor"
 glyph     = "E"
+icon      = "mousepad"
 exec      = "mousepad"
 match     = { app_id = "mousepad", class = "Mousepad" }
 workspace = 3
@@ -42,6 +46,7 @@ scale     = 0.75
 [app.monitor]
 label     = "Monitor"
 glyph     = "M"
+icon      = "utilities-system-monitor"
 exec      = "foot -a pt35-monitor top"
 match     = { app_id = "pt35-monitor" }
 workspace = 4
@@ -49,6 +54,7 @@ workspace = 4
 [app.music]
 label     = "Music"
 glyph     = "♪"
+icon      = "vlc"
 exec      = "vlc --intf qt"
 match     = { app_id = "vlc", class = "vlc" }
 workspace = 5
@@ -57,6 +63,7 @@ scale     = 0.75
 [app.images]
 label     = "Images"
 glyph     = "I"
+icon      = "multimedia-photo-viewer"
 exec      = "sh -c 'imv-wayland \"${HOME}/Pictures\"'"
 match     = { app_id = "imv" }
 workspace = 6
@@ -64,6 +71,7 @@ workspace = 6
 [app.video]
 label      = "Video"
 glyph     = "▶"
+icon      = "mpv"
 exec       = "mpv --player-operation-mode=pseudo-gui --idle=yes"
 match      = { app_id = "mpv" }
 workspace  = 7
@@ -72,6 +80,7 @@ fullscreen = true
 [app.browser]
 label     = "Browser"
 glyph     = "@"
+icon      = "chromium"
 exec      = "chromium --ozone-platform=wayland --force-device-scale-factor=0.75"
 match     = { app_id = "chromium" }
 workspace = 8
@@ -79,6 +88,7 @@ workspace = 8
 [app.calculator]
 label     = "Calculator"
 glyph     = "="
+icon      = "galculator"
 exec      = "galculator"
 match     = { app_id = "galculator", class = "Galculator" }
 workspace = 9

@@ -16,6 +16,7 @@ struct Bar {
     font: Font,
     mono: Font,
     feed: StatusFeed,
+    icons: pt35_ui::icon::Icons,
     /// What the last frame was drawn from. Ticking is cheap, drawing is not.
     drawn: Option<pt35_common::ipc::Status>,
     clock: String,
@@ -33,7 +34,9 @@ enum Action {
 impl Bar {
     fn new(theme: Theme, font: Font, mono: Font, feed: StatusFeed) -> Self {
         let clock = now(&theme);
+        let icons = pt35_ui::icon::Icons::new(&theme.icons.theme);
         Self {
+            icons,
             theme,
             font,
             mono,
@@ -46,12 +49,26 @@ impl Bar {
 
     /// One dock slot: the app's initial in a rounded square, filled when it has
     /// focus and outlined when it does not.
-    fn slot(&mut self, canvas: &mut Canvas, x: i32, app: &str, focused: bool, id: i64) -> i32 {
+    fn slot(
+        &mut self,
+        canvas: &mut Canvas,
+        x: i32,
+        app: &str,
+        icon: &str,
+        focused: bool,
+        id: i64,
+    ) -> i32 {
         let size = self.theme.font.size_bar;
         let centre = canvas.height as i32 / 2;
         let box_h = (canvas.height as i32 - 8).max(18);
+        let icon_size = (box_h - 6).max(12) as u32;
+        let has_icon = !icon.is_empty() && self.icons.get(icon, icon_size).is_some();
         let label = initials(app);
-        let width = (self.mono.measure(&label, size) as i32 + 14).max(box_h);
+        let width = if has_icon {
+            (icon_size as i32 + 10).max(box_h)
+        } else {
+            (self.mono.measure(&label, size) as i32 + 14).max(box_h)
+        };
         let y = centre - box_h / 2;
 
         if focused {
@@ -86,6 +103,14 @@ impl Bar {
         } else {
             self.theme.color.muted
         };
+        if has_icon {
+            let inset = (width - icon_size as i32) / 2;
+            if let Some(icon) = self.icons.get(icon, icon_size) {
+                icon.draw(canvas, x + inset, centre - icon_size as i32 / 2);
+            }
+            self.hits.push((x, x + width, Action::Focus(id)));
+            return x + width + 6;
+        }
         let text_x = x + (width - self.mono.measure(&label, size) as i32) / 2;
         self.mono.draw(
             canvas,
@@ -233,20 +258,36 @@ impl App for Bar {
             .into_iter()
             .rev()
         {
-            let icon_width = segment.icon.map(|i| i.width() + 4).unwrap_or(0);
+            let themed = segment
+                .icon
+                .map(|i| i.theme_name())
+                .filter(|name| self.icons.get(name, self.theme.icons.size_bar).is_some());
+            let icon_width = match (&themed, segment.icon) {
+                (Some(_), _) => self.theme.icons.size_bar as i32 + 4,
+                (None, Some(icon)) => icon.width() + 4,
+                (None, None) => 0,
+            };
             let width = self.mono.measure(&segment.text, size) as i32 + icon_width;
             if right - width <= x {
                 break;
             }
             right -= width;
-            if let Some(icon) = segment.icon {
-                icon.draw(
+            match (themed, segment.icon) {
+                (Some(name), _) => {
+                    let size_icon = self.theme.icons.size_bar;
+                    let top = centre - size_icon as i32 / 2;
+                    if let Some(icon) = self.icons.get(name, size_icon) {
+                        icon.draw_tinted(canvas, right, top, segment.color);
+                    }
+                }
+                (None, Some(icon)) => icon.draw(
                     canvas,
                     right,
                     centre,
                     segment.color,
                     self.theme.color.border,
-                );
+                ),
+                (None, None) => {}
             }
             self.mono.draw(
                 canvas,
@@ -281,7 +322,7 @@ impl App for Bar {
                     if x + 40 > right {
                         break;
                     }
-                    x = self.slot(canvas, x, &app, window.focused, window.id);
+                    x = self.slot(canvas, x, &app, &window.icon, window.focused, window.id);
                 }
             }
             Some(_) => {

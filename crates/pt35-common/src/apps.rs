@@ -24,9 +24,11 @@ pub struct AppProfile {
     pub match_: Match,
     /// Workspace the app owns. 0 = next free.
     pub workspace: u8,
-    /// One or two characters for the dock and the window picker. There is no
-    /// icon theme on this device and no room to draw one at 640x480.
+    /// One or two characters for the dock and the window picker, used when the
+    /// icon theme has nothing for `icon`.
     pub glyph: String,
+    /// freedesktop icon name for the dock, the picker and the launcher.
+    pub icon: String,
     /// How much the app should shrink its own UI. 1.0 leaves it alone.
     ///
     /// This is a toolkit scale, not the sway output scale: the panel stays at
@@ -55,6 +57,7 @@ impl Default for AppProfile {
             match_: Match::default(),
             workspace: 0,
             glyph: String::new(),
+            icon: String::new(),
             scale: 1.0,
             fullscreen: false,
             env: BTreeMap::new(),

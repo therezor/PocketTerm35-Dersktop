@@ -13,6 +13,7 @@
 
 pub mod canvas;
 pub mod font;
+pub mod icon;
 pub mod keys;
 pub mod list;
 

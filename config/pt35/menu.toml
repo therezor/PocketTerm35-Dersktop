@@ -12,7 +12,9 @@
 #                              (windows | wifi | bluetooth | audio | display |
 #                               desktop_entries | about)
 #
-# Tiles also take `glyph` (1-2 characters), `tint` (#rrggbb) and `note`.
+# Tiles also take `icon` (a freedesktop name from the installed theme),
+# `glyph` (1-2 characters, drawn when the theme has no such icon), `tint`
+# (#rrggbb) and `note`.
 # `layout = "grid"` draws tiles, the default draws rows.
 #
 # `state = "mode" | "volume" | "brightness" | "network" | "scale"`
@@ -24,31 +26,31 @@ root = "main"
 title = "Main"
 layout = "grid"
 entries = [
-  { label = "Apps",     goto = "apps",       glyph = "A",  tint = "#3ddc97", note = "launcher" },
-  { label = "Windows",  builtin = "windows", glyph = "W",  tint = "#5fd0e8", note = "running" },
-  { label = "Quick",    goto = "quick",      glyph = "Q",  tint = "#e8c468", note = "toggles" },
-  { label = "Terminal", app = "terminal",    glyph = ">_", tint = "#3ddc97", note = "shell" },
-  { label = "Files",    app = "files",       glyph = "F",  tint = "#9ad9c0", note = "browse" },
-  { label = "Wi-Fi",    builtin = "wifi",    glyph = "≈",  tint = "#5fd0e8", note = "networks" },
-  { label = "Volume",   builtin = "audio",   glyph = "V",  tint = "#e8c468", note = "level" },
-  { label = "Settings", goto = "settings",   glyph = "S",  tint = "#7aa48e", note = "system" },
-  { label = "Power",    goto = "power",      glyph = "P",  tint = "#ef6b73", note = "off" },
+  { label = "Apps",     goto = "apps",       icon = "applications-other",      glyph = "A",  tint = "#3ddc97", note = "launcher" },
+  { label = "Windows",  builtin = "windows", icon = "multitasking-view",       glyph = "W",  tint = "#5fd0e8", note = "running" },
+  { label = "Quick",    goto = "quick",      icon = "preferences-desktop",     glyph = "Q",  tint = "#e8c468", note = "toggles" },
+  { label = "Terminal", app = "terminal",    icon = "foot",                    glyph = ">_", tint = "#3ddc97", note = "shell" },
+  { label = "Files",    app = "files",       icon = "system-file-manager",     glyph = "F",  tint = "#9ad9c0", note = "browse" },
+  { label = "Wi-Fi",    builtin = "wifi",    icon = "network-wireless",        glyph = "≈",  tint = "#5fd0e8", note = "networks" },
+  { label = "Volume",   builtin = "audio",   icon = "audio-volume-high",       glyph = "V",  tint = "#e8c468", note = "level" },
+  { label = "Settings", goto = "settings",   icon = "preferences-system",      glyph = "S",  tint = "#7aa48e", note = "system" },
+  { label = "Power",    goto = "power",      icon = "system-shutdown",         glyph = "P",  tint = "#ef6b73", note = "off" },
 ]
 
 [menu.apps]
 title = "Apps"
 layout = "grid"
 entries = [
-  { label = "Terminal", app = "terminal", glyph = ">_", tint = "#3ddc97" },
-  { label = "Files",    app = "files",    glyph = "F",  tint = "#9ad9c0" },
-  { label = "Editor",   app = "editor",   glyph = "E",  tint = "#3ddc97" },
-  { label = "Monitor",  app = "monitor",  glyph = "M",  tint = "#e8c468" },
-  { label = "Music",    app = "music",    glyph = "♪", tint = "#9ad9c0" },
-  { label = "Images",   app = "images",   glyph = "I", tint = "#5fd0e8" },
-  { label = "Video",    app = "video",    glyph = "▶",  tint = "#3ddc97" },
-  { label = "Calc",     app = "calculator", glyph = "=", tint = "#e8c468" },
-  { label = "Browser",  app = "browser",  glyph = "@",  tint = "#5fd0e8" },
-  { label = "All apps", builtin = "desktop_entries", glyph = "…", tint = "#7aa48e" },
+  { label = "Terminal", app = "terminal",   icon = "foot",                     glyph = ">_", tint = "#3ddc97" },
+  { label = "Files",    app = "files",      icon = "system-file-manager",      glyph = "F",  tint = "#9ad9c0" },
+  { label = "Editor",   app = "editor",     icon = "mousepad",                 glyph = "E",  tint = "#3ddc97" },
+  { label = "Monitor",  app = "monitor",    icon = "utilities-system-monitor", glyph = "M",  tint = "#e8c468" },
+  { label = "Music",    app = "music",      icon = "vlc",                      glyph = "♪", tint = "#9ad9c0" },
+  { label = "Images",   app = "images",     icon = "multimedia-photo-viewer",  glyph = "I",  tint = "#5fd0e8" },
+  { label = "Video",    app = "video",      icon = "mpv",                      glyph = "▶",  tint = "#3ddc97" },
+  { label = "Calc",     app = "calculator", icon = "galculator",               glyph = "=",  tint = "#e8c468" },
+  { label = "Browser",  app = "browser",    icon = "chromium",                 glyph = "@",  tint = "#5fd0e8" },
+  { label = "All apps", builtin = "desktop_entries", icon = "applications-other", glyph = "…", tint = "#7aa48e" },
 ]
 
 # Quick settings: one press, no submenu. The D-pad changes a value in place and
