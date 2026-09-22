@@ -92,6 +92,7 @@ impl Adjust {
 #[serde(rename_all = "snake_case")]
 pub enum StateField {
     Mode,
+    Touch,
     Volume,
     Brightness,
     Network,
@@ -108,6 +109,23 @@ pub enum Builtin {
     Display,
     DesktopEntries,
     About,
+}
+
+impl Builtin {
+    /// `pt35ctl menu open windows` names a screen, and a builtin is a screen
+    /// even though it is not a page in this file.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "windows" => Builtin::Windows,
+            "wifi" => Builtin::Wifi,
+            "bluetooth" => Builtin::Bluetooth,
+            "audio" => Builtin::Audio,
+            "display" => Builtin::Display,
+            "desktop_entries" => Builtin::DesktopEntries,
+            "about" => Builtin::About,
+            _ => return None,
+        })
+    }
 }
 
 /// What an entry does, resolved once at load time so the UI never has to guess.

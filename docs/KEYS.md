@@ -25,14 +25,10 @@ answer a cursor. Select switches between them and the bar says which you are in.
 | B | Escape | right click |
 | X | Tab | scroll up |
 | Y | fullscreen toggle | scroll down |
-| L / R | previous / next app | previous / next app |
-| L + R | close the window | close the window |
+| L | close the window | close the window |
+| R | window picker | window picker |
 | Start | menu | menu |
 | Select | switch mode | switch mode |
-
-L and R fire when you let go, not when you press: sway matches a binding as
-soon as its keys are down, so a press binding on L would run before R could
-join it and L+R would never be reached.
 
 Holding A in Mouse mode drags: the press and the release are sent separately.
 The D-pad repeats faster there (40/s against 8/s) so the cursor crosses the
@@ -83,6 +79,15 @@ D-pad left and right change the value in place.
 The top bar is a dock: one slot per open window, the focused one filled. Tap a
 slot to switch, the `=` button opens the menu, the `x` button closes the focused
 window.
+
+## What this hardware cannot do
+
+The backlight is a PWM pin on the RP2040 (GP20), not a Linux device: there is no
+`/sys/class/backlight` and `pt35ctl brightness` says so. Change it with **Fn and
+`-` / `=`** on the keyboard. **Fn**+**C** blanks the screen.
+
+The speaker gain is the same story, on GP18, with Fn and the volume keys. The
+volume in the bar and the menu is PipeWire's, which is a different knob.
 
 ## Keyd
 

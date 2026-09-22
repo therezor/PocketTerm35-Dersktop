@@ -651,13 +651,24 @@ pub fn run(page: Option<String>) -> Result<()> {
     let rows = theme.menu.rows_visible as usize;
     let body = 480 - theme.bar.height - theme.menu.header_height - theme.menu.hint_height;
     let grid_rows = (body / (theme.menu.tile_height + theme.menu.gap)).max(1) as usize;
-    let model = Model::sized(
+    // A page name may be a builtin screen rather than a page in menu.toml.
+    let builtin = page
+        .as_deref()
+        .and_then(pt35_common::menu::Builtin::from_name);
+    let mut model = Model::sized(
         tree,
-        page.as_deref(),
+        page.as_deref().filter(|_| builtin.is_none()),
         rows,
         grid_rows,
         theme.menu.columns as usize,
     );
+    if let Some(builtin) = builtin {
+        model.push_dynamic(
+            builtin,
+            providers::title(builtin),
+            providers::items(builtin),
+        );
+    }
     layer::run(
         Menu::new(theme, font, mono, model),
         SurfaceSpec::overlay("pt35-menu"),

@@ -47,6 +47,7 @@ impl Session {
             status: Status {
                 workspace: 1,
                 scale: 1.0,
+                touch_enabled: true,
                 ..Status::default()
             },
             sway: None,
@@ -369,12 +370,16 @@ impl Session {
             }
 
             Request::Touch { action } => {
-                let arg = match action {
-                    Toggle::On => "enabled",
-                    Toggle::Off => "disabled",
-                    Toggle::Toggle => "toggle",
+                // Resolved here rather than with sway's own `toggle`, so the
+                // menu can say which way it is set.
+                let on = match action {
+                    Toggle::On => true,
+                    Toggle::Off => false,
+                    Toggle::Toggle => !self.status.touch_enabled,
                 };
+                let arg = if on { "enabled" } else { "disabled" };
                 self.sway_command(&format!("input type:touch events {arg}"))?;
+                self.status.touch_enabled = on;
                 Ok(Response::Ok)
             }
 

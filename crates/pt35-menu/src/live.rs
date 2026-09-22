@@ -92,6 +92,7 @@ pub fn state_value(field: StateField, status: Option<&Status>) -> String {
     };
     match field {
         StateField::Mode => status.input_mode.label().into(),
+        StateField::Touch => if status.touch_enabled { "ON" } else { "OFF" }.into(),
         StateField::Volume => value(Adjust::Volume, Some(status)),
         StateField::Brightness => value(Adjust::Brightness, Some(status)),
         StateField::Scale => value(Adjust::Scale, Some(status)),

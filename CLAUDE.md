@@ -28,8 +28,9 @@ Captured from the board, not guessed. See `docs/hardware-facts.md`.
   L R send F13-F18 with the patched firmware in `firmware/`, the letters
   `a b x y l r` on stock. The QWERTY and the buttons are one HID device, so the
   letters cannot be told apart from the keys: that is why the firmware changed.
-- No `/sys/class/backlight` and no `/sys/class/power_supply`. Brightness and battery
-  belong to the RP2040. Never show a battery gauge that reads `--`.
+- No `/sys/class/backlight` and no `/sys/class/power_supply`. Brightness is a PWM
+  pin on the RP2040 (GP20), reachable only with Fn and `-` / `=` on the keyboard.
+  Battery is the same story. Never show a gauge or a row that can only read `--`.
 
 ## Input model
 

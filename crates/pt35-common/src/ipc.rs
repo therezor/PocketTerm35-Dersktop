@@ -172,6 +172,10 @@ pub struct Status {
     /// Wi-Fi link quality, 0-100. `None` on a wired or offline machine.
     #[serde(default)]
     pub network_signal: Option<u8>,
+    /// Whether the touchscreen is accepted. Off is for when a palm on the panel
+    /// keeps tapping things.
+    #[serde(default = "yes")]
+    pub touch_enabled: bool,
     #[serde(default)]
     pub input_mode: InputMode,
     pub scale: f32,
@@ -179,6 +183,10 @@ pub struct Status {
     /// Open windows, for the dock in the bar.
     #[serde(default)]
     pub windows: Vec<WindowInfo>,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// One entry in the dock.

@@ -58,8 +58,7 @@ title = "Quick"
 entries = [
   { label = "Input mode",  action = "mode toggle", state = "mode" },
   { label = "Volume",      adjust = "volume" },
-  { label = "Brightness",  adjust = "brightness" },
-  { label = "Touchscreen", action = "touch toggle" },
+  { label = "Touchscreen", action = "touch toggle", state = "touch" },
   { label = "Screenshot",  action = "screenshot" },
 ]
 
@@ -68,7 +67,6 @@ title = "Settings"
 entries = [
   { label = "Wi-Fi",       builtin = "wifi",      state = "network" },
   { label = "Bluetooth",   builtin = "bluetooth" },
-  { label = "Display",     builtin = "display" },
   { label = "CPU profile", goto = "cpu" },
   { label = "Reload shell", action = "reload" },
   { label = "About",       builtin = "about" },
