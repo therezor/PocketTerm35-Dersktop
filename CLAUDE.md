@@ -60,6 +60,9 @@ buttons: nav mode (A opens, B back, X search, Y home) and filter mode.
 - Corners are 2px. Squared, not rounded.
 - Mint on charcoal, mono for readouts and sans for labels. Geometry and colour
   live in `config/pt35/theme.toml`. Do not hardcode either in a widget.
+- Icons come from the installed Papirus theme (`pt35-ui`'s `icon.rs`), tinted
+  from the symbolic set for status and full colour for apps. Nothing depends on
+  it: every icon falls back to the `glyph` letter or a drawn meter.
 - An app profile's workspace is applied with a sway `assign` rule at startup, not
   by switching workspace before spawning: that is a race a slow app loses.
 - The output stays at scale 1. A profile's `scale` goes to the app as

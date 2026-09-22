@@ -78,7 +78,16 @@ D-pad left and right change the value in place.
 
 The top bar is a dock: one slot per open window, the focused one filled. Tap a
 slot to switch, the `=` button opens the menu, the `x` button closes the focused
-window.
+window. The right-hand side is the input mode, the volume and the signal, as
+icons.
+
+## Icons
+
+Icons come from the installed theme, Papirus by default (`[icons]` in
+`theme.toml`). An app names one with `icon` in `apps.toml`, a menu tile with
+`icon` in `menu.toml`. Status icons use the theme's symbolic set and are drawn
+in the theme colour; app icons are drawn as they were designed. Anything the
+theme does not have falls back to the letter in `glyph`.
 
 ## What this hardware cannot do
 

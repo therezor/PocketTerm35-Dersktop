@@ -85,7 +85,7 @@ System defaults live in `/usr/share/pt35-desktop/pt35/`; anything you drop in
 |---|---|
 | `menu.toml` | the whole menu tree: submenus, apps, commands, `pt35ctl` actions |
 | `apps.toml` | per-app profile: command, workspace, toolkit scale, env |
-| `theme.toml` | colours, font sizes, bar height, menu row height |
+| `theme.toml` | colours, font sizes, bar height, menu row height, icon theme |
 | `~/.config/pt35/hooks/hook_*` | run on startup, low battery, app launch, shutdown |
 
 The one knob that matters most is `scale` in `apps.toml`. At `1.0` the panel is
