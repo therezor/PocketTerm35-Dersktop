@@ -697,10 +697,11 @@ pub fn run(page: Option<String>) -> Result<()> {
     let rows = theme.menu.rows_visible as usize;
     let body = 480 - theme.bar.height - theme.menu.header_height - theme.menu.hint_height;
     let grid_rows = (body / (theme.menu.tile_height + theme.menu.gap)).max(1) as usize;
-    // A page name may be a builtin screen rather than a page in menu.toml.
-    let builtin = page
-        .as_deref()
-        .and_then(pt35_common::menu::Builtin::from_name);
+    // A screen name may be a builtin rather than a page in menu.toml, and that
+    // includes the root: the launcher is assembled, not written down.
+    let tree: pt35_common::menu::MenuTree = tree;
+    let wanted = page.clone().unwrap_or_else(|| tree.root.clone());
+    let builtin = pt35_common::menu::Builtin::from_name(&wanted);
     let mut model = Model::sized(
         tree,
         page.as_deref().filter(|_| builtin.is_none()),
