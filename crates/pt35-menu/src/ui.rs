@@ -145,6 +145,9 @@ pub struct Menu {
     theme: Theme,
     font: Font,
     mono: Font,
+    /// For the things you press. Regular text at 16px on this panel is thin.
+    bold: Font,
+    mono_bold: Font,
     model: Model,
     status: Option<pt35_common::ipc::Status>,
     icons: pt35_ui::icon::Icons,
@@ -160,7 +163,14 @@ pub struct Menu {
 }
 
 impl Menu {
-    pub fn new(theme: Theme, font: Font, mono: Font, model: Model) -> Self {
+    pub fn new(
+        theme: Theme,
+        font: Font,
+        mono: Font,
+        bold: Font,
+        mono_bold: Font,
+        model: Model,
+    ) -> Self {
         let status = crate::live::status();
         let icons = pt35_ui::icon::Icons::new(&theme.icons.theme);
         Self {
@@ -169,6 +179,8 @@ impl Menu {
             theme,
             font,
             mono,
+            bold,
+            mono_bold,
             model,
             windows: status.as_ref().map(|s| s.windows.len()).unwrap_or(0),
             status,
@@ -759,9 +771,9 @@ impl Menu {
             let track = theme.font.tracking;
             let label = button.label.to_uppercase();
             let tw = self
-                .mono
+                .mono_bold
                 .measure_tracked(&label, theme.font.size_hint, track) as i32;
-            self.mono.draw_tracked(
+            self.mono_bold.draw_tracked(
                 canvas,
                 &label,
                 x + (width - tw) / 2,
@@ -842,8 +854,8 @@ impl Menu {
                     };
                     canvas.rounded_rect(x, centre - h / 2, w as u32, h as u32, 2, colour);
                     let text = if on { "ON" } else { "OFF" };
-                    let tw = self.mono.measure(text, theme.font.size_hint) as i32;
-                    self.mono.draw(
+                    let tw = self.mono_bold.measure(text, theme.font.size_hint) as i32;
+                    self.mono_bold.draw(
                         canvas,
                         text,
                         x + (w - tw) / 2,
@@ -943,13 +955,14 @@ impl Menu {
                     2,
                     theme.color.background,
                 );
-                let tw = self.font.measure(&row.label, theme.font.size_hint) as i32;
-                self.font.draw(
+                let size = theme.font.size_hint + 2.0;
+                let tw = self.bold.measure(&row.label, size) as i32;
+                self.bold.draw(
                     canvas,
                     &row.label,
                     x + (width - tw) / 2,
-                    chip_top + chip_h / 2 + 5,
-                    theme.font.size_hint,
+                    chip_top + chip_h / 2 + 6,
+                    size,
                     if focused {
                         theme.color.accent
                     } else {
@@ -1017,13 +1030,13 @@ impl Menu {
         for (index, hint) in hints.iter().enumerate() {
             let slot_x = (index as f32 * slot) as i32;
             let mut x = slot_x + 7;
-            let label_w = self.font.measure(hint.button, size) as i32;
             self.hint_hits
                 .push((slot_x, top, slot_x + slot as i32, hint.button));
             let (pill, ink) = self.button_colors(hint.button);
-            let pill_w = (label_w + 14).max(22);
-            canvas.rounded_rect(x, centre - 11, pill_w as u32, 22, 11, pill);
-            self.font.draw(
+            let label_w = self.bold.measure(hint.button, size) as i32;
+            let pill_w = (label_w + 14).max(24);
+            canvas.rounded_rect(x, centre - 12, pill_w as u32, 24, 12, pill);
+            self.bold.draw(
                 canvas,
                 hint.button,
                 x + (pill_w - label_w) / 2,
@@ -1140,6 +1153,11 @@ pub fn run(page: Option<String>) -> Result<()> {
     let tree = pt35_common::load_config("pt35/menu.toml").unwrap_or_default();
     let font = Font::load(&theme.font.family)?;
     let mono = Font::load(&theme.font.family_mono).or_else(|_| Font::load(&theme.font.family))?;
+    // A missing bold face is not worth failing over: the regular one reads.
+    let bold = Font::load(&theme.font.family_bold).or_else(|_| Font::load(&theme.font.family))?;
+    let mono_bold = Font::load(&theme.font.family_mono_bold)
+        .or_else(|_| Font::load(&theme.font.family_mono))
+        .or_else(|_| Font::load(&theme.font.family))?;
     let rows = theme.menu.rows_visible as usize;
     let body = 480 - theme.bar.height - theme.menu.header_height - theme.menu.hint_height;
     let grid_rows = (body / (theme.menu.tile_height + theme.menu.gap)).max(1) as usize;
@@ -1170,7 +1188,7 @@ pub fn run(page: Option<String>) -> Result<()> {
         },
     }
     layer::run(
-        Menu::new(theme, font, mono, model),
+        Menu::new(theme, font, mono, bold, mono_bold, model),
         SurfaceSpec::overlay("pt35-menu"),
     )
 }

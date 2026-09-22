@@ -26,11 +26,16 @@ button_y        = "#e8c468"
 button_neutral  = "#254236"
 
 [font]
-family     = "DejaVu Sans"
-size_bar   = 15.0
-size_menu  = 23.0
-size_title = 24.0
-size_hint  = 14.0
+family          = "DejaVu Sans"
+# Anything you press is bold: a chip or a legend has to read at a glance, and
+# 640x480 gives it fewer pixels than the text it sits next to.
+family_bold     = "DejaVu Sans Bold"
+family_mono      = "DejaVu Sans Mono"
+family_mono_bold = "DejaVu Sans Mono Bold"
+size_bar        = 15.0
+size_menu       = 23.0
+size_title      = 24.0
+size_hint       = 16.0
 
 [bar]
 height        = 34

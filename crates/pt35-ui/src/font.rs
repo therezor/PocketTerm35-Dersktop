@@ -22,6 +22,12 @@ pub struct Font {
 /// Where a family name might live on Raspberry Pi OS / Debian.
 pub fn candidates(family: &str) -> Vec<PathBuf> {
     let slug: String = family.chars().filter(|c| !c.is_whitespace()).collect();
+    // "DejaVu Sans Bold" is the file DejaVuSans-Bold.ttf: the style is a suffix,
+    // not part of the family name.
+    let styled = family.rsplit_once(' ').map(|(head, style)| {
+        let head: String = head.chars().filter(|c| !c.is_whitespace()).collect();
+        format!("{head}-{style}")
+    });
     let mut paths = Vec::new();
     if let Some(explicit) = std::env::var_os("PT35_FONT") {
         paths.push(PathBuf::from(explicit));
@@ -34,6 +40,9 @@ pub fn candidates(family: &str) -> Vec<PathBuf> {
         "/System/Library/Fonts/Supplemental",
     ] {
         paths.push(PathBuf::from(dir).join(format!("{slug}.ttf")));
+        if let Some(styled) = &styled {
+            paths.push(PathBuf::from(dir).join(format!("{styled}.ttf")));
+        }
         paths.push(PathBuf::from(dir).join(format!("{slug}-Regular.ttf")));
     }
     paths

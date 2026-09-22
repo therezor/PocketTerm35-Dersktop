@@ -39,6 +39,9 @@ pub struct Colors {
 #[serde(default, deny_unknown_fields)]
 pub struct Fonts {
     pub family: String,
+    /// Used for the things you press: buttons, chips, legends.
+    pub family_bold: String,
+    pub family_mono_bold: String,
     /// Used for readouts: the bar, headers, notes and the button legend. A
     /// fixed pitch is what makes a panel read as instrumentation.
     pub family_mono: String,
@@ -182,12 +185,14 @@ impl Default for Fonts {
     fn default() -> Self {
         Self {
             family: "DejaVu Sans".into(),
+            family_bold: "DejaVu Sans Bold".into(),
             family_mono: "DejaVu Sans Mono".into(),
+            family_mono_bold: "DejaVu Sans Mono Bold".into(),
             tracking: 1.0,
             size_bar: 15.0,
             size_menu: 23.0,
             size_title: 24.0,
-            size_hint: 14.0,
+            size_hint: 16.0,
         }
     }
 }
