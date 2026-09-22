@@ -69,6 +69,25 @@ const WINDOW_HINTS: &[Hint] = &[
     },
 ];
 
+const QUICK_HINTS: &[Hint] = &[
+    Hint {
+        button: "<>",
+        action: "Adjust",
+    },
+    Hint {
+        button: "B",
+        action: "Back",
+    },
+    Hint {
+        button: "Y",
+        action: "Home",
+    },
+    Hint {
+        button: "Sel",
+        action: "Close",
+    },
+];
+
 const FILTER_HINTS: &[Hint] = &[
     Hint {
         button: "Start",
@@ -525,10 +544,12 @@ impl Menu {
                 ..
             }
         );
-        let hints: &[Hint] = match (filtering, on_switcher) {
-            (true, _) => FILTER_HINTS,
-            (false, true) => WINDOW_HINTS,
-            (false, false) => NAV_HINTS,
+        let on_quick_setting = self.model.focused_adjust().is_some();
+        let hints: &[Hint] = match (filtering, on_switcher, on_quick_setting) {
+            (true, _, _) => FILTER_HINTS,
+            (false, true, _) => WINDOW_HINTS,
+            (false, false, true) => QUICK_HINTS,
+            (false, false, false) => NAV_HINTS,
         };
         let size = theme.font.size_hint;
         let baseline = top + (height as f32 * 0.62) as i32;
