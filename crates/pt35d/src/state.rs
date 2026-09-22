@@ -27,7 +27,7 @@ pub struct Session {
 
 impl Session {
     pub fn new() -> Self {
-        let session = Self {
+        let mut session = Self {
             theme: load_or_default("pt35/theme.toml"),
             menu: load_or_default("pt35/menu.toml"),
             apps: load_or_default("pt35/apps.toml"),
@@ -54,7 +54,34 @@ impl Session {
             session.hw.backlight.is_some(),
             session.audio
         );
+        session.apply_assignments();
         session
+    }
+
+    /// Tell sway where each app's window belongs, once, at startup.
+    ///
+    /// Switching workspace and then spawning is a race: a slow app maps after
+    /// focus has moved on and lands on the wrong workspace. An assign rule is
+    /// evaluated when the window appears, so timing stops mattering.
+    fn apply_assignments(&mut self) {
+        let rules: Vec<String> = self
+            .apps
+            .apps
+            .values()
+            .filter(|app| app.workspace > 0)
+            .map(|app| {
+                format!(
+                    "assign {} workspace number {}",
+                    app.sway_criteria(),
+                    app.workspace
+                )
+            })
+            .collect();
+        for rule in rules {
+            if let Err(e) = self.sway_command(&rule) {
+                log::warn!("{rule}: {e}");
+            }
+        }
     }
 
     /// Lazily (re)connect to sway; the socket dies when sway restarts.
@@ -281,6 +308,7 @@ impl Session {
                 self.apps = load_or_default("pt35/apps.toml");
                 self.menu.validate()?;
                 self.apps.validate()?;
+                self.apply_assignments();
                 hooks::fire("reload", &[]);
                 Ok(Response::Ok)
             }
