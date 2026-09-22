@@ -125,14 +125,17 @@ impl Session {
         } else {
             self.sway = None;
         }
-        // pt35-pointer exits on its own (Escape), so the flag has to be observed
-        // rather than remembered.
-        if self.status.pointer_armed
-            && !matches!(
-                self.pointer_proc.as_mut().map(|c| c.try_wait()),
-                Some(Ok(None))
-            )
-        {
+        // Both helpers exit on their own, so reap them here or they pile up as
+        // zombies.
+        if let Some(child) = self.menu_proc.as_mut() {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                self.menu_proc = None;
+            }
+        }
+        if !matches!(
+            self.pointer_proc.as_mut().map(|c| c.try_wait()),
+            Some(Ok(None))
+        ) {
             self.pointer_proc = None;
             self.status.pointer_armed = false;
         }
