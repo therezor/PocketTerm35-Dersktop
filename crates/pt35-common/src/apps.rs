@@ -76,6 +76,25 @@ impl Default for AppProfile {
 }
 
 impl AppProfile {
+    /// One criteria string per identifier. A Wayland build reports `app_id` and
+    /// an X11 build reports `class`, so a profile that lists both needs two
+    /// rules, not one rule that matches neither.
+    pub fn sway_criteria_list(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Some(v) = &self.match_.app_id {
+            out.push(format!("[app_id=\"{v}\"]"));
+        }
+        if let Some(v) = &self.match_.class {
+            out.push(format!("[class=\"{v}\"]"));
+        }
+        if out.is_empty() {
+            if let Some(v) = &self.match_.title {
+                out.push(format!("[title=\"{v}\"]"));
+            }
+        }
+        out
+    }
+
     pub fn sway_criteria(&self) -> String {
         let mut parts = Vec::new();
         if let Some(v) = &self.match_.app_id {
@@ -143,6 +162,18 @@ env = { FOO = "bar" }
         assert_eq!(app.pointer, PointerPolicy::Auto);
         assert_eq!(app.sway_criteria(), "[app_id=\"chromium\"]");
         assert_eq!(app.env["FOO"], "bar");
+    }
+
+    #[test]
+    fn a_profile_with_both_identifiers_makes_two_rules() {
+        let table: AppTable = toml::from_str(
+            "[app.files]\nexec = \"pcmanfm\"\nmatch = { app_id = \"pcmanfm\", class = \"Pcmanfm\" }\n",
+        )
+        .unwrap();
+        assert_eq!(
+            table.get("files").unwrap().sway_criteria_list(),
+            vec!["[app_id=\"pcmanfm\"]", "[class=\"Pcmanfm\"]"]
+        );
     }
 
     #[test]

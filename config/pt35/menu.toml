@@ -18,7 +18,7 @@
 root = "main"
 
 [menu.main]
-title = "PT35"
+title = "Main"
 layout = "grid"
 entries = [
   { label = "Apps",      goto = "apps",         glyph = "A",  tint = "#3ddc97", note = "launcher" },

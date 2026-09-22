@@ -75,12 +75,13 @@ impl Session {
             .apps
             .values()
             .filter(|app| app.workspace > 0)
-            .map(|app| {
-                format!(
-                    "assign {} workspace number {}",
-                    app.sway_criteria(),
-                    app.workspace
-                )
+            .flat_map(|app| {
+                app.sway_criteria_list()
+                    .into_iter()
+                    .map(move |criteria| {
+                        format!("assign {criteria} workspace number {}", app.workspace)
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect();
         for rule in rules {
@@ -507,8 +508,9 @@ impl Session {
             self.status.scale = app.scale;
         }
         if app.fullscreen {
-            let criteria = app.sway_criteria();
-            let _ = self.sway_command(&format!("for_window {criteria} fullscreen enable"));
+            for criteria in app.sway_criteria_list() {
+                let _ = self.sway_command(&format!("for_window {criteria} fullscreen enable"));
+            }
         }
 
         let mut cmd = Command::new("sh");

@@ -20,7 +20,7 @@ scale     = 1.0
 [app.files]
 label     = "Files"
 exec      = "pcmanfm"
-match     = { class = "Pcmanfm" }
+match     = { app_id = "pcmanfm", class = "Pcmanfm" }
 workspace = 2
 scale     = 0.75
 pointer   = "auto"
@@ -29,7 +29,7 @@ buttons   = true
 [app.editor]
 label     = "Editor"
 exec      = "mousepad"
-match     = { class = "Mousepad" }
+match     = { app_id = "mousepad", class = "Mousepad" }
 workspace = 3
 scale     = 0.75
 
@@ -43,7 +43,7 @@ scale     = 1.0
 [app.music]
 label     = "Music"
 exec      = "vlc --intf qt"
-match     = { class = "vlc" }
+match     = { app_id = "vlc", class = "vlc" }
 workspace = 5
 scale     = 0.75
 pointer   = "auto"
@@ -76,7 +76,7 @@ pointer   = "auto"
 [app.calculator]
 label     = "Calculator"
 exec      = "galculator"
-match     = { class = "Galculator" }
+match     = { app_id = "galculator", class = "Galculator" }
 workspace = 9
 scale     = 0.75
 pointer   = "auto"
