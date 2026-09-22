@@ -1,0 +1,42 @@
+# pt35-desktop theme. Sizes are in physical pixels on the 640x480 panel.
+# User override: ~/.config/pt35/theme.toml (merged over this file, key by key).
+
+[color]
+background      = "#101418"
+background_alt  = "#171c22"
+foreground      = "#d4d8dd"
+muted           = "#7d8794"
+accent          = "#61afef"
+accent_fg       = "#0b0e11"
+warning         = "#e5c07b"
+critical        = "#e06c75"
+ok              = "#98c379"
+border          = "#242b33"
+
+[font]
+# One bundled font, loaded once, rasterised by fontdue. No fontconfig.
+family     = "DejaVu Sans"
+size_bar   = 12.0
+size_menu  = 16.0
+size_title = 18.0
+size_hint  = 11.0
+
+[bar]
+height        = 18
+padding_x     = 4
+show_battery  = "auto"   # auto | always | never
+show_network  = true
+clock_format  = "%H:%M"
+
+[menu]
+rows_visible  = 9        # 480px / (16px font + padding) minus header/footer
+row_height    = 34
+padding_x     = 10
+show_numbers  = true     # 1-9 direct selection
+filter_hint   = "type to filter"
+
+[pointer]
+speed         = 380.0    # px/s at full deflection
+accel         = 2.2      # exponent applied while a direction is held
+grid_levels   = 2
+grid_labels   = "asdfghjkl"

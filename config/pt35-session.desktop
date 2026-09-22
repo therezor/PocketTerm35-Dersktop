@@ -1,0 +1,5 @@
+[Desktop Entry]
+Name=PT35 Desktop
+Comment=Keyboard-driven desktop for the PocketTerm35
+Exec=/usr/bin/pt35-session
+Type=Application

@@ -1,0 +1,121 @@
+# pt35-desktop — sway configuration for the Waveshare PocketTerm35 (640x480).
+#
+# Installed to /usr/share/pt35-desktop/sway/config and included from
+# ~/.config/sway/config, so user overrides go after the include and win.
+#
+# VERIFY ON DEVICE (Phase 1): every directive here against `man 5 sway` for the
+# installed sway version, and the output name against `swaymsg -t get_outputs`.
+
+### ------------------------------------------------------------------ basics
+set $mod Mod4
+set $term foot
+set $menu pt35ctl menu toggle
+set $ctl  pt35ctl
+
+# One panel. Name is usually HDMI-A-1 but the Pi 5 has two ports: match all.
+output * {
+    mode 640x480
+    scale 1
+    background #101418 solid_color
+}
+
+# 640x480 has no room for chrome: no borders, no gaps, no title bars.
+default_border none
+default_floating_border none
+hide_edge_borders --i3 both
+gaps inner 0
+gaps outer 0
+smart_borders on
+
+# No mouse on this device. The cursor only exists while pt35-pointer is armed.
+focus_follows_mouse no
+mouse_warping none
+seat * hide_cursor 1500
+seat * xcursor_theme default 16
+
+# X11-only apps still need to work (they follow the output scale and look soft
+# at fractional scales — prefer Wayland-native builds where they exist).
+xwayland enable
+
+font pango:DejaVu Sans 9
+
+### ------------------------------------------------------------------- input
+input type:keyboard {
+    repeat_delay 300
+    repeat_rate 35
+    xkb_options compose:menu
+}
+
+input type:touch {
+    events enabled
+}
+
+### ------------------------------------------------------- window management
+# Every app owns a workspace and is the only window on it: no tiling splits,
+# no stacking to get lost in. Workspace 1 is always a terminal.
+workspace_layout default
+for_window [shell=".*"] inhibit_idle fullscreen
+
+# Dialogs and anything that insists on floating: centre and clamp on-screen.
+for_window [floating] move position center
+for_window [window_type="dialog"] resize set 600 420, move position center
+for_window [window_type="menu"] move position center
+no_focus [window_type="notification"]
+
+### ----------------------------------------------------------------- startup
+# Hand the session environment to systemd --user and dbus so that portals,
+# notifications and user services see WAYLAND_DISPLAY.
+exec_always --no-startup-id systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP SWAYSOCK
+exec_always --no-startup-id dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP SWAYSOCK
+
+exec --no-startup-id pt35d
+exec --no-startup-id pt35-bar
+exec --no-startup-id foot
+
+### -------------------------------------------------------------- keybindings
+# NOTE: the PocketTerm35 has no Super key of its own; keyd maps a physical key
+# (see /etc/keyd/pocketterm35.conf) to Mod4. keyd only ever emits standard
+# keysyms — all shell behaviour is bound here, never in keyd.
+
+# The menu is the hub: one key opens launcher / switcher / settings / power.
+bindsym $mod+space  exec $menu
+bindsym Menu        exec $menu
+
+bindsym $mod+Return exec $term
+bindsym $mod+q      kill
+bindsym $mod+f      fullscreen toggle
+bindsym $mod+t      floating toggle
+# force an oversized window back on-screen
+bindsym $mod+r      exec $ctl window fit
+# keyboard-driven mouse (pt35-pointer)
+bindsym $mod+p      exec $ctl pointer toggle
+bindsym $mod+g      exec $ctl pointer grid
+bindsym $mod+s      exec $ctl screenshot
+bindsym $mod+Shift+c reload
+bindsym $mod+Shift+e exec $ctl power menu
+
+# App switching: shoulder buttons (mapped to Prior/Next by keyd) and Tab.
+bindsym $mod+Tab       workspace next_on_output
+bindsym $mod+Shift+Tab workspace prev_on_output
+bindsym $mod+Prior     workspace prev_on_output
+bindsym $mod+Next      workspace next_on_output
+
+bindsym $mod+1 workspace number 1
+bindsym $mod+2 workspace number 2
+bindsym $mod+3 workspace number 3
+bindsym $mod+4 workspace number 4
+bindsym $mod+5 workspace number 5
+bindsym $mod+6 workspace number 6
+bindsym $mod+7 workspace number 7
+bindsym $mod+8 workspace number 8
+bindsym $mod+9 workspace number 9
+
+# Media / brightness keys (keyd maps the Fn row to these standard keysyms).
+bindsym --locked XF86AudioRaiseVolume  exec $ctl volume +5
+bindsym --locked XF86AudioLowerVolume  exec $ctl volume -5
+bindsym --locked XF86AudioMute         exec $ctl volume mute
+bindsym --locked XF86MonBrightnessUp   exec $ctl brightness +10
+bindsym --locked XF86MonBrightnessDown exec $ctl brightness -10
+bindsym --locked XF86PowerOff          exec $ctl power menu
+
+# No swaybar: pt35-bar is our own layer-shell client.

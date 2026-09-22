@@ -1,0 +1,72 @@
+# pt35-desktop menu tree — the hub of the whole shell (sxmo's idea, done natively).
+#
+# System defaults live here; ~/.config/pt35/menu.toml is merged over the top,
+# menu by menu: a user menu with the same id replaces this one, new ids are added.
+#
+# Entry kinds (exactly one per entry):
+#   goto    = "<menu id>"      open a submenu
+#   app     = "<apps.toml id>" launch an app with its profile
+#   exec    = "<command>"      run a command (sh -c)
+#   action  = "<pt35ctl args>" ask pt35d to do something
+#   builtin = "<screen>"       a screen pt35-menu draws itself
+#                              (windows | wifi | bluetooth | audio | display | about)
+
+root = "main"
+
+[menu.main]
+title = "PT35"
+entries = [
+  { label = "Applications", goto = "apps" },
+  { label = "Windows",      builtin = "windows" },
+  { label = "Network",      builtin = "wifi" },
+  { label = "Bluetooth",    builtin = "bluetooth" },
+  { label = "Settings",     goto = "settings" },
+  { label = "Power",        goto = "power" },
+]
+
+[menu.apps]
+title = "Applications"
+entries = [
+  { label = "Terminal",       app = "terminal" },
+  { label = "Files",          app = "files" },
+  { label = "Editor",         app = "editor" },
+  { label = "System Monitor", app = "monitor" },
+  { label = "Music",          app = "music" },
+  { label = "Images",         app = "images" },
+  { label = "PDF",            app = "pdf" },
+  { label = "Video",          app = "video" },
+  { label = "Browser",        app = "browser" },
+  { label = "All apps…",      builtin = "desktop_entries" },
+]
+
+[menu.settings]
+title = "Settings"
+entries = [
+  { label = "Volume",          builtin = "audio" },
+  { label = "Brightness",      builtin = "display" },
+  { label = "Pointer mode",    action = "pointer toggle" },
+  { label = "Screen scale",    action = "scale cycle" },
+  { label = "CPU profile",     goto = "cpu" },
+  { label = "Touchscreen",     action = "touch toggle" },
+  { label = "Screenshot",      action = "screenshot" },
+  { label = "Reload shell",    action = "reload" },
+  { label = "About",           builtin = "about" },
+]
+
+[menu.cpu]
+title = "CPU profile"
+entries = [
+  { label = "Powersave  (battery)", action = "cpu powersave" },
+  { label = "Balanced   (default)", action = "cpu balanced" },
+  { label = "Performance (27W PSU)", action = "cpu performance" },
+]
+
+[menu.power]
+title = "Power"
+entries = [
+  { label = "Screen off", action = "power screenoff" },
+  { label = "Lock",       action = "power lock" },
+  { label = "Log out",    action = "power logout" },
+  { label = "Reboot",     action = "power reboot", confirm = true },
+  { label = "Shut down",  action = "power poweroff", confirm = true },
+]

@@ -1,0 +1,18 @@
+[package]
+name = "pt35-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Software-rendered Wayland layer-shell widgets for pt35-desktop"
+
+[dependencies]
+pt35-common = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+fontdue = "0.9"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+smithay-client-toolkit = { version = "0.19", features = ["calloop"] }
+wayland-client = "0.31"

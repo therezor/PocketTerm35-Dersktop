@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# pt35-session — launched by greetd; sets the environment a 640x480 keyboard-only
+# Wayland session needs, then execs sway.
+set -u
+
+export XDG_SESSION_TYPE=wayland
+export XDG_SESSION_DESKTOP=pt35
+export XDG_CURRENT_DESKTOP=sway
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+# --- toolkit scaling -------------------------------------------------------
+# The panel is 640x480. pt35d flips the sway output scale per app profile
+# (1.0 for TUIs and our own UI, 0.75 => 853x640 logical for GUI apps that will
+# not shrink). These variables make each toolkit cooperate with that.
+export QT_QPA_PLATFORM=wayland
+export QT_WAYLAND_DISABLE_WINDOWDECORATION=1
+export QT_ENABLE_HIGHDPI_SCALING=0
+export QT_FONT_DPI=96
+
+export GDK_BACKEND=wayland,x11
+export GDK_DPI_SCALE=1.0
+
+export MOZ_ENABLE_WAYLAND=1
+export MOZ_DBUS_REMOTE=1
+
+export _JAVA_AWT_WM_NONREPARENTING=1
+export SDL_VIDEODRIVER=wayland
+export CLUTTER_BACKEND=wayland
+export ELECTRON_OZONE_PLATFORM_HINT=wayland
+
+# Small screen: keep terminal and GUI font sizes sane.
+export XCURSOR_SIZE=16
+export PT35_SHARE=/usr/share/pt35-desktop
+
+# --- logs ------------------------------------------------------------------
+LOG_DIR="${XDG_RUNTIME_DIR}/pt35"
+mkdir -p "$LOG_DIR"
+
+exec sway --unsupported-gpu >"$LOG_DIR/sway.log" 2>&1

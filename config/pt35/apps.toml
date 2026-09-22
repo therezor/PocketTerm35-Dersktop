@@ -1,0 +1,77 @@
+# pt35-desktop application profiles.
+#
+# pt35d applies a profile when the app is launched and reverts it when its
+# workspace loses focus. `scale` is the sway OUTPUT scale, which is global —
+# switching it re-lays-out the whole screen, so it changes on workspace focus,
+# not per window. 0.75 gives clients an ~853x640 logical surface.
+#
+# User override: ~/.config/pt35/apps.toml (merged per app id).
+
+[app.terminal]
+label     = "Terminal"
+exec      = "foot"
+match     = { app_id = "foot" }
+workspace = 1
+scale     = 1.0
+
+[app.files]
+label     = "Files"
+# yazi is not in Debian Trixie; the pt35-apps package ships a static build.
+exec      = "foot -a pt35-files yazi"
+match     = { app_id = "pt35-files" }
+workspace = 2
+scale     = 1.0
+
+[app.editor]
+label     = "Editor"
+exec      = "foot -a pt35-editor hx"
+match     = { app_id = "pt35-editor" }
+workspace = 3
+scale     = 1.0
+
+[app.monitor]
+label     = "System Monitor"
+exec      = "foot -a pt35-monitor btm --basic"
+match     = { app_id = "pt35-monitor" }
+workspace = 4
+scale     = 1.0
+
+[app.music]
+label     = "Music"
+exec      = "foot -a pt35-music ncmpcpp"
+match     = { app_id = "pt35-music" }
+workspace = 5
+scale     = 1.0
+
+[app.images]
+label     = "Images"
+exec      = "imv"
+match     = { app_id = "imv" }
+workspace = 6
+scale     = 1.0
+pointer   = "on_demand"
+
+[app.pdf]
+label     = "PDF"
+exec      = "zathura"
+match     = { app_id = "org.pwmt.zathura" }
+workspace = 6
+scale     = 0.75
+pointer   = "on_demand"
+
+[app.video]
+label      = "Video"
+exec       = "mpv --player-operation-mode=pseudo-gui"
+match      = { app_id = "mpv" }
+workspace  = 7
+scale      = 1.0
+fullscreen = true
+
+[app.browser]
+label   = "Browser"
+exec    = "chromium --ozone-platform=wayland --force-device-scale-factor=0.75 --window-size=853,640"
+match   = { app_id = "chromium" }
+workspace = 8
+scale   = 0.75
+pointer = "auto"
+env     = { CHROME_EXTRA_FLAGS = "--enable-features=UseOzonePlatform" }

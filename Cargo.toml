@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/pt35-common",
+    "crates/pt35ctl",
+    "crates/pt35d",
+    "crates/pt35-ui",
+    "crates/pt35-bar",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+repository = "https://github.com/therezor/PocketTerm35-Dersktop"
+description = "Keyboard-driven desktop environment for the Waveshare PocketTerm35"
+
+[workspace.dependencies]
+pt35-common = { path = "crates/pt35-common" }
+pt35-ui = { path = "crates/pt35-ui" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+anyhow = "1"
+log = "0.4"
+env_logger = { version = "0.11", default-features = false, features = ["humantime"] }
+
+# Every binary is aimed at a 2-4 GB Pi: small, no unwinding tables, stripped.
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+incremental = false
