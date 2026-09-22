@@ -32,7 +32,7 @@ pub struct Row {
 /// you read its name. Everything else dynamic is a list of similar things.
 fn layout_for(builtin: Builtin) -> Layout {
     match builtin {
-        Builtin::Windows => Layout::Grid,
+        Builtin::Launcher | Builtin::Windows => Layout::Grid,
         _ => Layout::List,
     }
 }
@@ -89,6 +89,8 @@ pub enum Step {
     Open(Builtin),
     /// Run this, then close the menu.
     Run(Command),
+    /// Run this and stay: a toggle you want to watch change.
+    RunStay(Command),
     /// Close the menu.
     Quit,
 }
@@ -391,6 +393,29 @@ impl Model {
                     Step::Run(command)
                 }
             }
+            Source::Dynamic {
+                builtin: Builtin::Launcher,
+                items,
+            } => {
+                let Some(payload) = items.get(index).map(|i| i.payload.clone()) else {
+                    return Step::Nothing;
+                };
+                let (kind, rest) = payload.split_once(':').unwrap_or(("", payload.as_str()));
+                match kind {
+                    "page" => {
+                        let page = rest.to_string();
+                        self.push_page(&page);
+                        Step::Redraw
+                    }
+                    "screen" => match Builtin::from_name(rest) {
+                        Some(builtin) => Step::Open(builtin),
+                        None => Step::Nothing,
+                    },
+                    "app" => Step::Run(Command::App(rest.to_string())),
+                    "exec" => Step::Run(Command::Exec(rest.to_string())),
+                    _ => Step::Nothing,
+                }
+            }
             Source::Dynamic { builtin, items } => match items.get(index).map(|i| &i.payload) {
                 Some(payload) => Step::Run(Command::Dynamic {
                     builtin,
@@ -407,6 +432,9 @@ impl Model {
                 };
                 let label = entry.label.clone();
                 let confirm = entry.confirm;
+                // A row that reads out its own state is a switch, and a switch
+                // you cannot see flip is a guess.
+                let stay = entry.state.is_some();
                 let kind = match entry.kind() {
                     Ok(kind) => kind,
                     Err(e) => {
@@ -429,6 +457,8 @@ impl Model {
                 if confirm {
                     self.push_confirm(command, &label);
                     Step::Redraw
+                } else if stay {
+                    Step::RunStay(command)
                 } else {
                     Step::Run(command)
                 }

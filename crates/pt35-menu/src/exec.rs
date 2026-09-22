@@ -48,7 +48,8 @@ fn dynamic(builtin: Builtin, payload: &str) -> Plan {
             Plan::Ctl(payload.split_whitespace().map(str::to_string).collect())
         }
         Builtin::DesktopEntries => Plan::Shell(payload.to_string()),
-        Builtin::About => Plan::Nothing,
+        // The model reads a launcher payload itself: half of them navigate.
+        Builtin::Launcher | Builtin::About => Plan::Nothing,
     }
 }
 

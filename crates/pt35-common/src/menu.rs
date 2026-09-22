@@ -105,6 +105,8 @@ pub enum StateField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Builtin {
+    /// Everything you can start, plus the screens that are not apps.
+    Launcher,
     Windows,
     Wifi,
     Bluetooth,
@@ -119,6 +121,7 @@ impl Builtin {
     /// even though it is not a page in this file.
     pub fn from_name(name: &str) -> Option<Self> {
         Some(match name {
+            "launcher" => Builtin::Launcher,
             "windows" => Builtin::Windows,
             "wifi" => Builtin::Wifi,
             "bluetooth" => Builtin::Bluetooth,
@@ -202,7 +205,10 @@ impl MenuTree {
     /// Reject a tree the shell could get stuck in: missing root, dangling
     /// submenu, or an entry with no (or more than one) action.
     pub fn validate(&self) -> Result<(), TreeError> {
-        if !self.menus.contains_key(&self.root) {
+        // The root may name a builtin screen instead of a page here: the
+        // launcher is assembled from apps.toml and the installed .desktop
+        // files, so there is nothing to write down.
+        if !self.menus.contains_key(&self.root) && Builtin::from_name(&self.root).is_none() {
             return Err(TreeError::MissingRoot(self.root.clone()));
         }
         for (id, page) in &self.menus {

@@ -48,9 +48,6 @@ for sock in "$XDG_RUNTIME_DIR"/wayland-[0-9]*; do
   fuser "$sock" >/dev/null 2>&1 || rm -f "$sock" "$sock.lock"
 done
 
-sway --unsupported-gpu >"$LOG_DIR/sway.log" 2>&1
-status=$?
-
 # sway's children are reparented to init when it exits, and logind keeps the old
 # session scope alive while any of them run. A surviving pt35d holds the socket
 # and the VT so the next session cannot start, and a client whose compositor
@@ -60,20 +57,27 @@ status=$?
 # The sweep goes through the cgroup, not the session id: sway calls setsid() for
 # everything it launches, so those get session ids of their own, but nothing can
 # leave the cgroup logind put them in.
-cgroup=$(cut -d: -f3 /proc/self/cgroup | head -1)
-procs="/sys/fs/cgroup${cgroup}/cgroup.procs"
-
-leftovers() {
+#
+# On a trap, not just after sway returns: `systemctl restart greetd` kills this
+# script, and then nothing would clear up after it.
+cleanup() {
+  [ -z "${swept:-}" ] || return 0
+  swept=1
+  cgroup=$(cut -d: -f3 /proc/self/cgroup | head -1)
+  procs="/sys/fs/cgroup${cgroup}/cgroup.procs"
   [ -r "$procs" ] || return 0
-  grep -vE "^($$|$PPID)\$" "$procs" || true
+  for signal in TERM KILL; do
+    pids=$(grep -vE "^($$|$PPID)\$" "$procs" || true)
+    [ -n "$pids" ] || break
+    # shellcheck disable=SC2086
+    kill -"$signal" $pids 2>/dev/null || true
+    sleep 1
+  done
 }
+trap cleanup TERM INT EXIT
 
-for signal in TERM KILL; do
-  pids=$(leftovers)
-  [ -n "$pids" ] || break
-  # shellcheck disable=SC2086
-  kill -"$signal" $pids 2>/dev/null || true
-  sleep 1
-done
+sway --unsupported-gpu >"$LOG_DIR/sway.log" 2>&1
+status=$?
+cleanup
 
 exit "$status"

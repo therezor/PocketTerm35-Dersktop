@@ -85,18 +85,19 @@ exec --no-startup-id foot
 # The six face buttons are bound by pt35d, not here: it drops them while the
 # menu is open. See crates/pt35d/src/buttons.rs.
 
-# Start (KEY_PAUSE) is the menu: launcher, windows, quick settings, power.
-# Select (KEY_SYSRQ) switches between the two input modes. Neither carries a
-# character, so both are safe to grab while typing. A sway binding beats any
-# surface, so Start closes the menu again from inside it.
+# Start (KEY_PAUSE) is the launcher. Select (KEY_SYSRQ) is the window manager:
+# switch to a window or close it. Neither carries a character, so both are safe
+# to grab while typing. A sway binding beats any surface, so Start closes the
+# menu again from inside it.
 #
 # These two are bound here, not by pt35d, so that no mode can lose them.
 bindsym Pause       exec $menu
 bindsym $mod+space  exec $menu
 bindsym Menu        exec $menu
 
-bindsym Print       exec $ctl mode toggle
-bindsym Sys_Req     exec $ctl mode toggle
+bindsym Print       exec $ctl menu open windows
+bindsym Sys_Req     exec $ctl menu open windows
+bindsym $mod+w      exec $ctl menu open windows
 bindsym $mod+m      exec $ctl mode toggle
 
 # Fallbacks on Alt for a unit whose firmware does not send Super.
@@ -107,7 +108,6 @@ bindsym Mod1+Tab    workspace next_on_output
 
 bindsym $mod+Return exec $term
 bindsym $mod+q      kill
-bindsym $mod+w      exec $ctl menu open windows
 bindsym $mod+f      fullscreen toggle
 bindsym $mod+t      floating toggle
 # force an oversized window back on-screen

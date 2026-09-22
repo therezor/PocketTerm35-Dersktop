@@ -18,6 +18,7 @@ use crate::{exec, providers};
 
 /// One entry in the bottom legend. The pill is coloured like the physical
 /// button so the legend can be read at a glance instead of word by word.
+#[derive(Clone, Copy)]
 struct Hint {
     button: &'static str,
     action: &'static str,
@@ -171,6 +172,15 @@ impl Menu {
                     self.error = Some(format!("pt35ctl: {e}"));
                 }
                 // The value on screen comes from the daemon, so re-read it.
+                std::thread::sleep(std::time::Duration::from_millis(120));
+                self.status = crate::live::status();
+                true
+            }
+            Step::RunStay(command) => {
+                if let Err(message) = exec::perform(&command) {
+                    self.error = Some(message);
+                }
+                // The value on the row comes from the daemon, so re-read it.
                 std::thread::sleep(std::time::Duration::from_millis(120));
                 self.status = crate::live::status();
                 true
@@ -581,13 +591,21 @@ impl Menu {
             (false, false, true) => QUICK_HINTS,
             (false, false, false) => NAV_HINTS,
         };
+        // L/R page through a list. Saying so when everything already fits is a
+        // promise the screen does not keep.
+        let paged = self.model.screen().list.len() > self.model.screen().list.rows();
+        let hints: Vec<Hint> = hints
+            .iter()
+            .filter(|hint| paged || hint.button != "L/R")
+            .cloned()
+            .collect();
         let size = theme.font.size_hint;
         let baseline = top + (height as f32 * 0.62) as i32;
         let centre = top + height as i32 / 2;
 
         // Lay the chips out evenly across the full width: they are touch targets
         // as much as a legend.
-        let slot = canvas.width as f32 / hints.len() as f32;
+        let slot = canvas.width as f32 / hints.len().max(1) as f32;
         self.hint_hits.clear();
         for (index, hint) in hints.iter().enumerate() {
             let slot_x = (index as f32 * slot) as i32;

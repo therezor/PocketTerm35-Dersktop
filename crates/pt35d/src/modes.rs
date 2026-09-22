@@ -2,9 +2,9 @@
 //!
 //! Twelve controls, two things to do with them. In Buttons mode the D-pad is
 //! the arrow keys and A is Enter; in Mouse mode the D-pad moves the cursor and
-//! A is a left click. Select switches, and is bound in the sway config so
-//! neither mode can lose it. L closes the window and R opens the picker, in
-//! both.
+//! A is a left click. L switches mode and R closes the window, in both. Start
+//! (the menu) and Select (the window manager) are bound in the sway config, so
+//! neither mode can lose them.
 //!
 //! Both modes are plain sway bindings on the keysyms the patched firmware
 //! sends, so nothing runs in the background and the letters keep typing. Enter,
@@ -53,20 +53,12 @@ const Y: &str = "XF86Launch7";
 const L: &str = "XF86Tools";
 const R: &str = "XF86Launch5";
 
-/// Held together. Written in press order, which is the order sway matches.
-fn chord() -> String {
-    format!("{L}+{R}")
-}
-
-/// What both modes share: the shoulders switch app, and together they close.
+/// What both modes share: L switches mode, R closes the window. Neither
+/// repeats: holding R must not close every window you own.
 fn common() -> Vec<Bind> {
     vec![
-        Bind::new("--release", L, "exec pt35ctl window prev"),
-        Bind::new("--release", R, "exec pt35ctl window next"),
-        Bind::new("--no-repeat", &chord(), "exec pt35ctl window close"),
-        // Without this, letting go of the chord runs one of the two release
-        // bindings above and the focus jumps after the window closes.
-        Bind::new("--release", &chord(), "nop"),
+        Bind::new("--no-repeat", L, "exec pt35ctl mode toggle"),
+        Bind::new("--no-repeat", R, "exec pt35ctl window close"),
     ]
 }
 
@@ -153,26 +145,19 @@ mod tests {
     }
 
     #[test]
-    fn the_shoulders_switch_app_and_close_together_in_both_modes() {
+    fn the_shoulders_switch_mode_and_close_in_both_modes() {
         for mode in [InputMode::Buttons, InputMode::Mouse] {
             let binds = binds(mode, &Pointer::default());
-            assert!(binds
-                .iter()
-                .any(|b| b.key == "XF86Tools+XF86Launch5" && b.action.ends_with("window close")));
-            assert!(binds
-                .iter()
-                .any(|b| b.key == "XF86Tools" && b.flags == "--release"));
-        }
-    }
-
-    #[test]
-    fn the_shoulders_fire_on_release_so_the_chord_can_win() {
-        // sway matches a binding as soon as its keys are down: a press binding
-        // on L would run before R could join it.
-        for bind in binds(InputMode::Buttons, &Pointer::default()) {
-            if bind.key == "XF86Tools" || bind.key == "XF86Launch5" {
-                assert_eq!(bind.flags, "--release", "{} fires too early", bind.key);
-            }
+            let find = |key: &str| {
+                binds
+                    .iter()
+                    .find(|b| b.key == key)
+                    .unwrap_or_else(|| panic!("{key} is not bound in {mode:?}"))
+            };
+            assert!(find(L).action.ends_with("mode toggle"));
+            assert!(find(R).action.ends_with("window close"));
+            // Holding R must not close every window you own.
+            assert_eq!(find(R).flags, "--no-repeat");
         }
     }
 

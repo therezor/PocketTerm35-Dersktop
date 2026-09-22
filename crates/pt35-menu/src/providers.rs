@@ -34,6 +34,7 @@ pub type Items = Vec<Item>;
 
 pub fn title(builtin: Builtin) -> &'static str {
     match builtin {
+        Builtin::Launcher => "Launcher",
         Builtin::Windows => "Windows",
         Builtin::Wifi => "Wi-Fi",
         Builtin::Bluetooth => "Bluetooth",
@@ -46,6 +47,7 @@ pub fn title(builtin: Builtin) -> &'static str {
 
 pub fn items(builtin: Builtin) -> Items {
     match builtin {
+        Builtin::Launcher => launcher(),
         Builtin::Windows => windows(),
         Builtin::Wifi => wifi(),
         Builtin::Bluetooth => bluetooth(),
@@ -54,6 +56,73 @@ pub fn items(builtin: Builtin) -> Items {
         Builtin::DesktopEntries => desktop_entries(),
         Builtin::About => about(),
     }
+}
+
+// --------------------------------------------------------------- launcher
+
+/// The root screen: the four screens that are not apps, then the apps with a
+/// profile, then everything else that is installed. One list, so typing finds
+/// any of it.
+///
+/// The payload says what activating a row means, because these rows are not all
+/// the same kind of thing: `screen:`, `app:` or `exec:`.
+fn launcher() -> Items {
+    let mut out = vec![
+        Item {
+            label: "Windows".into(),
+            payload: "screen:windows".into(),
+            note: "running".into(),
+            glyph: "W".into(),
+            icon: "multitasking-view".into(),
+        },
+        Item {
+            label: "Quick".into(),
+            payload: "page:quick".into(),
+            note: "toggles".into(),
+            glyph: "Q".into(),
+            icon: "preferences-desktop".into(),
+        },
+        Item {
+            label: "Settings".into(),
+            payload: "page:settings".into(),
+            note: "system".into(),
+            glyph: "S".into(),
+            icon: "preferences-system".into(),
+        },
+        Item {
+            label: "Power".into(),
+            payload: "page:power".into(),
+            note: "off".into(),
+            glyph: "P".into(),
+            icon: "system-shutdown".into(),
+        },
+    ];
+
+    let apps: pt35_common::apps::AppTable =
+        pt35_common::load_config("pt35/apps.toml").unwrap_or_default();
+    for (id, app) in &apps.apps {
+        out.push(Item {
+            label: if app.label.is_empty() {
+                pretty_app(id)
+            } else {
+                app.label.clone()
+            },
+            payload: format!("app:{id}"),
+            note: String::new(),
+            glyph: app.glyph.clone(),
+            icon: app.icon.clone(),
+        });
+    }
+
+    // Anything else with a .desktop file, so search covers the whole machine.
+    let known: Vec<String> = out.iter().map(|i| i.label.to_lowercase()).collect();
+    for mut entry in desktop_entries() {
+        if !known.contains(&entry.label.to_lowercase()) {
+            entry.payload = format!("exec:{}", entry.payload);
+            out.push(entry);
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------- windows
