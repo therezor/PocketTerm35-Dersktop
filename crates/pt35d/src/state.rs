@@ -22,6 +22,10 @@ pub struct Session {
     pub status: Status,
     sway: Option<Sway>,
     menu_proc: Option<Child>,
+    /// False until the face-button binds have been sent once. Nothing changes
+    /// workspace at startup, so waiting for a workspace change leaves the
+    /// buttons typing.
+    buttons_applied: bool,
     pointer_proc: Option<Child>,
     /// Whether button mode was on before the menu took the keyboard.
     buttons_before_menu: bool,
@@ -42,6 +46,7 @@ impl Session {
             },
             sway: None,
             menu_proc: None,
+            buttons_applied: false,
             pointer_proc: None,
             buttons_before_menu: false,
         };
@@ -146,11 +151,12 @@ impl Session {
             let moved = workspace != self.status.workspace;
             self.status.workspace = workspace;
             self.status.app = app;
-            if moved && self.menu_proc.is_none() {
+            if (moved || !self.buttons_applied) && self.menu_proc.is_none() {
                 let buttons = Self::buttons_for_workspace(&self.apps, workspace);
-                if buttons != self.status.button_mode {
-                    if let Err(e) = self.set_button_mode(buttons) {
-                        log::warn!("button mode: {e}");
+                if buttons != self.status.button_mode || !self.buttons_applied {
+                    match self.set_button_mode(buttons) {
+                        Ok(()) => self.buttons_applied = true,
+                        Err(e) => log::warn!("button mode: {e}"),
                     }
                 }
             }
