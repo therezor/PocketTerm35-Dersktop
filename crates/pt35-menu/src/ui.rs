@@ -69,11 +69,19 @@ pub struct Menu {
     theme: Theme,
     font: Font,
     model: Model,
+    status: Option<pt35_common::ipc::Status>,
+    windows: usize,
 }
 
 impl Menu {
     pub fn new(theme: Theme, font: Font, model: Model) -> Self {
-        Self { theme, font, model }
+        Self {
+            theme,
+            font,
+            model,
+            status: crate::live::status(),
+            windows: providers::items(pt35_common::menu::Builtin::Windows).len(),
+        }
     }
 
     fn draw_header(&mut self, canvas: &mut Canvas) -> i32 {
@@ -261,6 +269,10 @@ impl Menu {
             }
             let focused = index == cursor;
             let tint = row.tint.unwrap_or(theme.color.accent);
+            let note = row
+                .builtin
+                .and_then(|b| crate::live::note(b, self.status.as_ref(), self.windows))
+                .unwrap_or_else(|| row.note.clone());
 
             if focused {
                 // Halo, then border, then face: the focused tile is the only
@@ -318,7 +330,7 @@ impl Menu {
             let text_x = bx + badge + 10;
             let room = (x + tile_w - text_x - 8).max(8) as u32;
             let label = self.font.elide(&row.label, theme.font.size_menu, room);
-            let has_note = !row.note.is_empty();
+            let has_note = !note.is_empty();
             let label_y = if has_note {
                 y + tile_h / 2 - 2
             } else {
@@ -333,7 +345,7 @@ impl Menu {
                 theme.color.foreground,
             );
             if has_note {
-                let note = self.font.elide(&row.note, theme.font.size_hint, room);
+                let note = self.font.elide(&note, theme.font.size_hint, room);
                 self.font.draw(
                     canvas,
                     &note,

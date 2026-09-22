@@ -14,6 +14,9 @@ use pt35_ui::list::{ListState, Outcome};
 pub struct Row {
     pub label: String,
     pub note: String,
+    /// Set when the row opens a builtin screen, so the UI can replace `note`
+    /// with live state.
+    pub builtin: Option<Builtin>,
     pub glyph: String,
     pub tint: Option<Rgb>,
     pub submenu: bool,
@@ -131,6 +134,7 @@ impl Model {
                 Row {
                     label: label.to_string(),
                     note: entry.map(|e| e.note.clone()).unwrap_or_default(),
+                    builtin: entry.and_then(|e| e.builtin),
                     glyph: entry
                         .map(|e| e.glyph.clone())
                         .filter(|g| !g.is_empty())

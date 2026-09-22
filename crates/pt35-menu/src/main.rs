@@ -11,6 +11,7 @@
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
 mod exec;
+mod live;
 mod model;
 mod providers;
 
