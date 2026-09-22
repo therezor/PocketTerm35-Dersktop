@@ -33,14 +33,16 @@ Captured from the board, not guessed. See `docs/hardware-facts.md`.
 
 ## Input model
 
-Six of the twelve buttons type letters, so input is modal, in two places.
+Two modes, nothing else: Buttons (default) and Mouse.
 
-Two modes, nothing else: Buttons (default) and Mouse. Buttons mode is D-pad as
-arrows, A Enter, B Escape, X Tab, Y fullscreen. Mouse mode is D-pad moving the
-cursor, A and B the clicks, X and Y the wheel. L and R switch app in both and
-close the window together, Start is the menu and Select switches mode. Both are sway bindings on the firmware's
-keysyms (`pt35d`'s `modes.rs`), dropped while the menu is open because a sway
-binding beats any surface and the menu reads the same keys.
+Buttons mode is the D-pad as arrows, A Enter, B Escape, X Tab, Y fullscreen.
+Mouse mode is the D-pad moving the cursor, A and B the clicks, X and Y the
+wheel. In both: L and R switch app, L+R closes the window, Start is the menu
+and Select switches mode.
+
+Both are sway bindings on the firmware's keysyms (`pt35d`'s `modes.rs`),
+dropped while the menu is open because a sway binding beats any surface and the
+menu reads the same keys. L and R fire on release so the chord is reachable.
 
 The menu itself is still modal, for a stock unit where the letters are the
 buttons: nav mode (A opens, B back, X search, Y home) and filter mode.
