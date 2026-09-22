@@ -9,6 +9,7 @@ pub mod apps;
 pub mod ipc;
 pub mod menu;
 pub mod paths;
+pub mod sway;
 pub mod theme;
 
 mod merge;

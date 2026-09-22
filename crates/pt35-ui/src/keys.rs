@@ -15,11 +15,21 @@ pub struct Key {
 
 impl Key {
     pub fn new(sym: u32) -> Self {
-        Self { sym, text: None, ctrl: false, shift: false }
+        Self {
+            sym,
+            text: None,
+            ctrl: false,
+            shift: false,
+        }
     }
 
     pub fn with_text(sym: u32, text: char) -> Self {
-        Self { sym, text: Some(text), ctrl: false, shift: false }
+        Self {
+            sym,
+            text: Some(text),
+            ctrl: false,
+            shift: false,
+        }
     }
 }
 
@@ -109,25 +119,40 @@ mod tests {
         assert_eq!(navigate(&Key::new(sym::DOWN), false), Navigation::Down);
         assert_eq!(navigate(&Key::new(sym::RIGHT), false), Navigation::Activate);
         assert_eq!(navigate(&Key::new(sym::LEFT), false), Navigation::Back);
-        assert_eq!(navigate(&Key::new(sym::RETURN), false), Navigation::Activate);
+        assert_eq!(
+            navigate(&Key::new(sym::RETURN), false),
+            Navigation::Activate
+        );
         assert_eq!(navigate(&Key::new(sym::ESCAPE), false), Navigation::Cancel);
     }
 
     #[test]
     fn digits_are_shortcuts_until_you_type() {
-        assert_eq!(navigate(&Key::with_text(0x0033, '3'), false), Navigation::Select(2));
-        assert_eq!(navigate(&Key::with_text(0x0033, '3'), true), Navigation::Filter('3'));
+        assert_eq!(
+            navigate(&Key::with_text(0x0033, '3'), false),
+            Navigation::Select(2)
+        );
+        assert_eq!(
+            navigate(&Key::with_text(0x0033, '3'), true),
+            Navigation::Filter('3')
+        );
     }
 
     #[test]
     fn backspace_leaves_the_filter_before_it_leaves_the_menu() {
-        assert_eq!(navigate(&Key::new(sym::BACKSPACE), true), Navigation::FilterBackspace);
+        assert_eq!(
+            navigate(&Key::new(sym::BACKSPACE), true),
+            Navigation::FilterBackspace
+        );
         assert_eq!(navigate(&Key::new(sym::BACKSPACE), false), Navigation::Back);
     }
 
     #[test]
     fn unprintable_keys_are_ignored() {
         assert_eq!(navigate(&Key::new(0xffe1), false), Navigation::Ignored); // shift
-        assert_eq!(navigate(&Key::with_text(0x0020, ' '), true), Navigation::Filter(' '));
+        assert_eq!(
+            navigate(&Key::with_text(0x0020, ' '), true),
+            Navigation::Filter(' ')
+        );
     }
 }

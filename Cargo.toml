@@ -6,6 +6,8 @@ members = [
     "crates/pt35d",
     "crates/pt35-ui",
     "crates/pt35-bar",
+    "crates/pt35-menu",
+    "crates/pt35-pointer",
 ]
 
 [workspace.package]

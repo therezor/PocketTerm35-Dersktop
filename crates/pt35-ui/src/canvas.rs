@@ -10,7 +10,11 @@ pub struct Canvas {
 
 impl Canvas {
     pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height, pixels: vec![0xff00_0000; (width * height) as usize] }
+        Self {
+            width,
+            height,
+            pixels: vec![0xff00_0000; (width * height) as usize],
+        }
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -27,6 +31,20 @@ impl Canvas {
 
     pub fn fill(&mut self, color: Rgb) {
         self.pixels.fill(color.to_argb8888());
+    }
+
+    /// Wipe the surface to fully transparent — for overlays (the pointer grid)
+    /// that must let the application below show through.
+    pub fn clear_transparent(&mut self) {
+        self.pixels.fill(0);
+    }
+
+    /// Fill with a colour at a given alpha, premultiplied as Wayland expects.
+    pub fn fill_alpha(&mut self, color: Rgb, alpha: u8) {
+        let a = alpha as u32;
+        let premul = |c: u8| ((c as u32 * a) / 255) & 0xff;
+        self.pixels
+            .fill((a << 24) | (premul(color.0) << 16) | (premul(color.1) << 8) | premul(color.2));
     }
 
     pub fn rect(&mut self, x: i32, y: i32, w: u32, h: u32, color: Rgb) {
@@ -68,10 +86,18 @@ mod tests {
         canvas.fill(Rgb(0, 0, 0));
         canvas.rect(-2, -2, 4, 4, Rgb(0xff, 0, 0));
         assert_eq!(canvas.pixel(0, 0), 0xffff_0000);
-        assert_eq!(canvas.pixel(2, 2), 0xff00_0000, "clipped area stays background");
+        assert_eq!(
+            canvas.pixel(2, 2),
+            0xff00_0000,
+            "clipped area stays background"
+        );
 
         canvas.rect(6, 0, 100, 100, Rgb(0, 0xff, 0));
-        assert_eq!(canvas.pixel(7, 3), 0xff00_ff00, "overhanging rect is clipped, not wrapped");
+        assert_eq!(
+            canvas.pixel(7, 3),
+            0xff00_ff00,
+            "overhanging rect is clipped, not wrapped"
+        );
     }
 
     #[test]
@@ -82,7 +108,10 @@ mod tests {
         assert_eq!(canvas.pixel(0, 0), 0xffff_ffff);
         canvas.blend(1, 0, 128, Rgb(0xff, 0xff, 0xff));
         let half = canvas.pixel(1, 0) & 0xff;
-        assert!((120..=136).contains(&half), "50% coverage should be mid grey, got {half}");
+        assert!(
+            (120..=136).contains(&half),
+            "50% coverage should be mid grey, got {half}"
+        );
     }
 
     #[test]
@@ -91,6 +120,17 @@ mod tests {
         canvas.blend(-1, 0, 255, Rgb(0xff, 0, 0));
         canvas.blend(0, 9, 255, Rgb(0xff, 0, 0));
         assert_eq!(canvas.pixel(0, 0), 0xff00_0000);
+    }
+
+    #[test]
+    fn transparent_and_translucent_fills() {
+        let mut canvas = Canvas::new(2, 1);
+        canvas.clear_transparent();
+        assert_eq!(canvas.pixel(0, 0), 0);
+        canvas.fill_alpha(Rgb(0xff, 0xff, 0xff), 128);
+        let px = canvas.pixel(0, 0);
+        assert_eq!(px >> 24, 128, "alpha is kept");
+        assert_eq!(px & 0xff, 128, "colour is premultiplied by alpha");
     }
 
     #[test]

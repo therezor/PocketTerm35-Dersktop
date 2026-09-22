@@ -6,8 +6,13 @@
 
 use anyhow::{Context, Result};
 use pt35_common::theme::Rgb;
+use smithay_client_toolkit::reexports::calloop::{
+    timer::{TimeoutAction, Timer},
+    EventLoop,
+};
+use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::{
-    compositor::{CompositorHandler, CompositorState},
+    compositor::{CompositorHandler, CompositorState, Region},
     delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_registry,
     delegate_seat, delegate_shm,
     output::{OutputHandler, OutputState},
@@ -26,11 +31,6 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use smithay_client_toolkit::reexports::calloop::{
-    timer::{TimeoutAction, Timer},
-    EventLoop,
-};
-use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use std::time::Duration;
 use wayland_client::{
     globals::registry_queue_init,
@@ -50,6 +50,10 @@ pub struct SurfaceSpec {
     /// many pixels of exclusive space (the bar).
     pub height: u32,
     pub keyboard: bool,
+    /// Empty input region: clicks and touches go straight through to whatever
+    /// is underneath. The pointer overlay needs this — it must not swallow the
+    /// clicks it is synthesising.
+    pub passthrough: bool,
 }
 
 impl SurfaceSpec {
@@ -60,6 +64,7 @@ impl SurfaceSpec {
             anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
             height,
             keyboard: false,
+            passthrough: false,
         }
     }
 
@@ -70,6 +75,16 @@ impl SurfaceSpec {
             anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
             height: 0,
             keyboard: true,
+            passthrough: false,
+        }
+    }
+
+    /// A transparent, click-through overlay that still takes the keyboard:
+    /// what `pt35-pointer` draws its grid on.
+    pub fn passthrough_overlay(namespace: &'static str) -> Self {
+        Self {
+            passthrough: true,
+            ..Self::overlay(namespace)
         }
     }
 }
@@ -79,9 +94,18 @@ pub trait App {
     /// Paint one frame. The canvas is already sized to the surface.
     fn draw(&mut self, canvas: &mut Canvas);
 
-    /// React to a key. Return `false` to quit the event loop.
+    /// React to a key press. Return `false` to quit the event loop.
     fn key(&mut self, _key: Key) -> bool {
         true
+    }
+
+    /// React to a key release — needed by anything that repeats while a key is
+    /// held, such as the pointer's D-pad movement.
+    fn key_release(&mut self, _key: Key) {}
+
+    /// Draw onto a fully transparent surface instead of [`App::background`].
+    fn transparent(&self) -> bool {
+        false
     }
 
     /// Called on a timer (see [`App::tick_interval`]); return true to repaint.
@@ -126,12 +150,20 @@ pub fn run<A: App + 'static>(app: A, spec: SurfaceSpec) -> Result<()> {
     let qh: QueueHandle<State<A>> = queue.handle();
 
     let compositor = CompositorState::bind(&globals, &qh).context("wl_compositor")?;
-    let layer_shell = LayerShell::bind(&globals, &qh)
-        .context("this compositor has no wlr-layer-shell; pt35 needs sway or another wlroots compositor")?;
+    let layer_shell = LayerShell::bind(&globals, &qh).context(
+        "this compositor has no wlr-layer-shell; pt35 needs sway or another wlroots compositor",
+    )?;
     let shm = Shm::bind(&globals, &qh).context("wl_shm")?;
 
     let surface = compositor.create_surface(&qh);
-    let layer = layer_shell.create_layer_surface(&qh, surface, spec.layer, Some(spec.namespace), None);
+    if spec.passthrough {
+        // An empty input region: the overlay is visible but not clickable, so
+        // the clicks pt35-pointer synthesises land on the app underneath.
+        let region = Region::new(&compositor).context("creating an empty input region")?;
+        surface.set_input_region(Some(region.wl_region()));
+    }
+    let layer =
+        layer_shell.create_layer_surface(&qh, surface, spec.layer, Some(spec.namespace), None);
     layer.set_anchor(spec.anchor);
     layer.set_keyboard_interactivity(if spec.keyboard {
         KeyboardInteractivity::Exclusive
@@ -175,12 +207,15 @@ pub fn run<A: App + 'static>(app: A, spec: SurfaceSpec) -> Result<()> {
     if let Some(interval) = state.app.tick_interval() {
         event_loop
             .handle()
-            .insert_source(Timer::from_duration(interval), move |_, _, state: &mut State<A>| {
-                if state.app.tick() {
-                    state.dirty = true;
-                }
-                TimeoutAction::ToDuration(interval)
-            })
+            .insert_source(
+                Timer::from_duration(interval),
+                move |_, _, state: &mut State<A>| {
+                    if state.app.tick() {
+                        state.dirty = true;
+                    }
+                    TimeoutAction::ToDuration(interval)
+                },
+            )
             .map_err(|e| anyhow::anyhow!("inserting the tick timer: {e}"))?;
     }
 
@@ -211,7 +246,11 @@ impl<A: App + 'static> State<A> {
         };
 
         let mut canvas = Canvas::new(width, height);
-        canvas.fill(self.app.background());
+        if self.app.transparent() {
+            canvas.clear_transparent();
+        } else {
+            canvas.fill(self.app.background());
+        }
         self.app.draw(&mut canvas);
         slot.copy_from_slice(canvas.as_bytes());
 
@@ -246,14 +285,7 @@ impl<A: App + 'static> CompositorHandler for State<A> {
     ) {
     }
 
-    fn frame(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &wl_surface::WlSurface,
-        _: u32,
-    ) {
-    }
+    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {}
 
     fn surface_enter(
         &mut self,
@@ -304,7 +336,13 @@ impl<A: App + 'static> SeatHandler for State<A> {
         &mut self.seats
     }
 
-    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wayland_client::protocol::wl_seat::WlSeat) {}
+    fn new_seat(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: wayland_client::protocol::wl_seat::WlSeat,
+    ) {
+    }
 
     fn new_capability(
         &mut self,
@@ -335,7 +373,13 @@ impl<A: App + 'static> SeatHandler for State<A> {
         }
     }
 
-    fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wayland_client::protocol::wl_seat::WlSeat) {}
+    fn remove_seat(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: wayland_client::protocol::wl_seat::WlSeat,
+    ) {
+    }
 }
 
 impl<A: App + 'static> KeyboardHandler for State<A> {
@@ -387,8 +431,14 @@ impl<A: App + 'static> KeyboardHandler for State<A> {
         _: &QueueHandle<Self>,
         _: &wl_keyboard::WlKeyboard,
         _: u32,
-        _: KeyEvent,
+        event: KeyEvent,
     ) {
+        self.app.key_release(Key {
+            sym: event.keysym.raw(),
+            text: event.utf8.as_deref().and_then(|s| s.chars().next()),
+            ctrl: self.modifiers.ctrl,
+            shift: self.modifiers.shift,
+        });
     }
 
     fn update_modifiers(

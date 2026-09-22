@@ -39,7 +39,11 @@ impl Hardware {
             .filter(|p| p.file_name().and_then(|n| n.to_str()) != Some("lo"))
             .collect();
 
-        Self { battery, backlight, net }
+        Self {
+            battery,
+            backlight,
+            net,
+        }
     }
 
     pub fn battery_percent(&self) -> Option<u8> {
@@ -74,8 +78,12 @@ impl Hardware {
     /// Apply an absolute percentage. Returns `false` when there is no backlight
     /// to talk to (RP2040-owned), so the caller can say so instead of lying.
     pub fn set_brightness_percent(&self, percent: u8) -> bool {
-        let Some(base) = self.backlight.as_ref() else { return false };
-        let Some(max) = read_u32(&base.join("max_brightness")) else { return false };
+        let Some(base) = self.backlight.as_ref() else {
+            return false;
+        };
+        let Some(max) = read_u32(&base.join("max_brightness")) else {
+            return false;
+        };
         let value = (max as u64 * percent.min(100) as u64 / 100).max(1);
         fs::write(base.join("brightness"), value.to_string()).is_ok()
     }
@@ -104,9 +112,18 @@ pub struct CpuLimits {
 pub fn cpu_limits(profile: pt35_common::ipc::CpuProfile) -> CpuLimits {
     use pt35_common::ipc::CpuProfile::*;
     match profile {
-        Powersave => CpuLimits { governor: "powersave", max_khz: Some(1_500_000) },
-        Balanced => CpuLimits { governor: "ondemand", max_khz: Some(1_800_000) },
-        Performance => CpuLimits { governor: "performance", max_khz: None },
+        Powersave => CpuLimits {
+            governor: "powersave",
+            max_khz: Some(1_500_000),
+        },
+        Balanced => CpuLimits {
+            governor: "ondemand",
+            max_khz: Some(1_800_000),
+        },
+        Performance => CpuLimits {
+            governor: "performance",
+            max_khz: None,
+        },
     }
 }
 
@@ -174,19 +191,25 @@ mod tests {
         assert_eq!(hw.battery_percent(), None);
         assert_eq!(hw.brightness_percent(), None);
         assert_eq!(hw.network(), None);
-        assert!(!hw.set_brightness_percent(50), "must admit it cannot set brightness");
+        assert!(
+            !hw.set_brightness_percent(50),
+            "must admit it cannot set brightness"
+        );
     }
 
     #[test]
     fn reads_battery_and_backlight_when_present() {
-        let root = sysfs_with("full", &[
-            ("class/power_supply/BAT0/type", "Battery\n"),
-            ("class/power_supply/BAT0/capacity", "73\n"),
-            ("class/power_supply/BAT0/status", "Charging\n"),
-            ("class/backlight/rpi_backlight/max_brightness", "255\n"),
-            ("class/backlight/rpi_backlight/brightness", "128\n"),
-            ("class/net/wlan0/operstate", "up\n"),
-        ]);
+        let root = sysfs_with(
+            "full",
+            &[
+                ("class/power_supply/BAT0/type", "Battery\n"),
+                ("class/power_supply/BAT0/capacity", "73\n"),
+                ("class/power_supply/BAT0/status", "Charging\n"),
+                ("class/backlight/rpi_backlight/max_brightness", "255\n"),
+                ("class/backlight/rpi_backlight/brightness", "128\n"),
+                ("class/net/wlan0/operstate", "up\n"),
+            ],
+        );
         let hw = Hardware::probe_in(&root);
         assert_eq!(hw.battery_percent(), Some(73));
         assert_eq!(hw.charging(), Some(true));
@@ -196,20 +219,26 @@ mod tests {
 
     #[test]
     fn derives_capacity_from_charge_counters() {
-        let root = sysfs_with("charge", &[
-            ("class/power_supply/BAT0/type", "Battery\n"),
-            ("class/power_supply/BAT0/charge_now", "2500\n"),
-            ("class/power_supply/BAT0/charge_full", "5000\n"),
-        ]);
+        let root = sysfs_with(
+            "charge",
+            &[
+                ("class/power_supply/BAT0/type", "Battery\n"),
+                ("class/power_supply/BAT0/charge_now", "2500\n"),
+                ("class/power_supply/BAT0/charge_full", "5000\n"),
+            ],
+        );
         assert_eq!(Hardware::probe_in(&root).battery_percent(), Some(50));
     }
 
     #[test]
     fn ignores_a_usb_charger_that_is_not_a_battery() {
-        let root = sysfs_with("usb", &[
-            ("class/power_supply/usb/type", "USB\n"),
-            ("class/power_supply/usb/online", "1\n"),
-        ]);
+        let root = sysfs_with(
+            "usb",
+            &[
+                ("class/power_supply/usb/type", "USB\n"),
+                ("class/power_supply/usb/online", "1\n"),
+            ],
+        );
         assert!(Hardware::probe_in(&root).battery.is_none());
     }
 }

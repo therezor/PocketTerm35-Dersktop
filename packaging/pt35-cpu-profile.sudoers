@@ -1,0 +1,3 @@
+# pt35-desktop: let the session user switch CPU profiles without a password.
+# One fixed helper, three fixed arguments — nothing else is granted.
+%video ALL=(root) NOPASSWD: /usr/lib/pt35/pt35-cpu-profile powersave, /usr/lib/pt35/pt35-cpu-profile balanced, /usr/lib/pt35/pt35-cpu-profile performance

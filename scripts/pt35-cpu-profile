@@ -1,0 +1,32 @@
+#!/bin/sh
+# pt35-cpu-profile — apply a CPU frequency profile.
+#
+# cpufreq is root-owned, so pt35d calls this through the single NOPASSWD rule in
+# /etc/sudoers.d/pt35-cpu-profile. It takes one fixed argument and writes two
+# sysfs files, which is about as small as a privileged surface gets.
+set -eu
+
+case "${1:-}" in
+  powersave)   governor=powersave;   max=1500000 ;;
+  balanced)    governor=ondemand;    max=1800000 ;;
+  performance) governor=performance; max=max ;;
+  *) echo "usage: $0 powersave|balanced|performance" >&2; exit 2 ;;
+esac
+
+applied=0
+for policy in /sys/devices/system/cpu/cpufreq/policy*; do
+  [ -d "$policy" ] || continue
+  if [ "$max" = max ]; then
+    limit=$(cat "$policy/cpuinfo_max_freq")
+  else
+    limit=$max
+  fi
+  # The governor may not be built in; fall back to whatever is available.
+  if ! echo "$governor" > "$policy/scaling_governor" 2>/dev/null; then
+    echo "$(cut -d' ' -f1 < "$policy/scaling_available_governors")" > "$policy/scaling_governor"
+  fi
+  echo "$limit" > "$policy/scaling_max_freq"
+  applied=1
+done
+
+[ "$applied" = 1 ] || { echo "no cpufreq policies found" >&2; exit 1; }

@@ -1,0 +1,115 @@
+#!/bin/sh
+# pt35-desktop postinst — wires the session into the system.
+#
+# Everything here is idempotent and reversible: the boot config is edited inside
+# a marked block with a backup alongside, and prerm puts it all back.
+set -e
+
+MARK_BEGIN="# >>> pt35-desktop >>>"
+MARK_END="# <<< pt35-desktop <<<"
+SHARE=/usr/share/pt35-desktop
+
+case "$1" in
+  configure) ;;
+  *) exit 0 ;;
+esac
+
+# ---------------------------------------------------------------- which user
+# The session runs as a real user, not root: whoever installed it (PT35_USER or
+# SUDO_USER), else the first regular account on the box.
+pt35_user() {
+  for candidate in "${PT35_USER:-}" "${SUDO_USER:-}"; do
+    if [ -n "$candidate" ] && [ "$candidate" != root ] && id "$candidate" >/dev/null 2>&1; then
+      echo "$candidate"; return
+    fi
+  done
+  getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /nologin|false/ { print $1; exit }'
+}
+
+USER_NAME=$(pt35_user)
+if [ -z "$USER_NAME" ]; then
+  echo "pt35-desktop: no regular user found; run 'sudo PT35_USER=<name> dpkg-reconfigure pt35-desktop'" >&2
+  exit 0
+fi
+USER_HOME=$(getent passwd "$USER_NAME" | cut -d: -f6)
+
+# ------------------------------------------------------------- boot config
+BOOTCFG=/boot/firmware/config.txt
+[ -f "$BOOTCFG" ] || BOOTCFG=/boot/config.txt
+
+if [ -f "$BOOTCFG" ]; then
+  OVERLAYS=$(dirname "$BOOTCFG")/overlays
+  if [ -f "$SHARE/boot/waveshare-35dpi-5b.dtbo" ] && [ -d "$OVERLAYS" ]; then
+    install -m644 "$SHARE/boot/waveshare-35dpi-5b.dtbo" "$OVERLAYS/"
+  fi
+
+  if grep -qF "$MARK_BEGIN" "$BOOTCFG"; then
+    sed -i "/pt35-desktop >>>/,/pt35-desktop <<</d" "$BOOTCFG"
+  else
+    cp -n "$BOOTCFG" "$BOOTCFG.pt35.bak"
+  fi
+  cat >> "$BOOTCFG" <<EOF
+$MARK_BEGIN
+# PocketTerm35: touchscreen (Goodix GT911 @0x5d) and USB host for the RP2040
+# keyboard. The '5b' overlay is right on BOTH Pi 4B and Pi 5 — the two Waveshare
+# overlays differ by touch I2C address, not by board.
+dtparam=i2c_arm=on
+dtoverlay=waveshare-35dpi-5b
+dtoverlay=dwc2,dr_mode=host
+$MARK_END
+EOF
+else
+  echo "pt35-desktop: no config.txt found; skipping boot configuration" >&2
+fi
+
+# ------------------------------------------------------------ user session
+install -d -o "$USER_NAME" -g "$USER_NAME" \
+  "$USER_HOME/.config/sway" "$USER_HOME/.config/pt35" "$USER_HOME/.config/pt35/hooks" \
+  "$USER_HOME/.config/foot"
+
+if [ ! -e "$USER_HOME/.config/sway/config" ]; then
+  printf 'include %s/sway/config\n\n# your overrides go below this line\n' "$SHARE" \
+    > "$USER_HOME/.config/sway/config"
+  chown "$USER_NAME:$USER_NAME" "$USER_HOME/.config/sway/config"
+elif ! grep -q "$SHARE/sway/config" "$USER_HOME/.config/sway/config"; then
+  echo "pt35-desktop: keeping your sway config; add 'include $SHARE/sway/config' to it" >&2
+fi
+
+if [ ! -e "$USER_HOME/.config/foot/foot.ini" ]; then
+  install -m644 -o "$USER_NAME" -g "$USER_NAME" "$SHARE/foot/foot.ini" "$USER_HOME/.config/foot/foot.ini"
+fi
+
+usermod -aG input,video,render,audio "$USER_NAME" 2>/dev/null || true
+
+# ---------------------------------------------------------------- services
+install -d /etc/greetd
+if [ -f /etc/greetd/config.toml ] && ! grep -q pt35-session /etc/greetd/config.toml; then
+  cp -n /etc/greetd/config.toml /etc/greetd/config.toml.pt35.bak
+fi
+cat > /etc/greetd/config.toml <<EOF
+[terminal]
+vt = 1
+
+[default_session]
+command = "/usr/bin/pt35-session"
+user = "$USER_NAME"
+EOF
+
+if [ -d /run/systemd/system ]; then
+  systemctl enable seatd.service >/dev/null 2>&1 || true
+  systemctl enable keyd.service >/dev/null 2>&1 || true
+  systemctl disable lightdm.service >/dev/null 2>&1 || true
+  systemctl set-default graphical.target >/dev/null 2>&1 || true
+  systemctl enable greetd.service >/dev/null 2>&1 || true
+  systemctl restart keyd.service >/dev/null 2>&1 || true
+fi
+
+cat <<EOF
+
+pt35-desktop is installed for user '$USER_NAME'.
+Reboot to start it:  sudo reboot
+
+EOF
+
+#DEBHELPER#
+exit 0

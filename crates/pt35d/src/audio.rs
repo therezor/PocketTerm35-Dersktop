@@ -76,7 +76,9 @@ pub fn apply(backend: Backend, change: Delta) -> bool {
 
 fn run(argv: &[&str]) -> Option<String> {
     let out = Command::new(argv[0]).args(&argv[1..]).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// `wpctl get-volume` prints e.g. `Volume: 0.45` or `Volume: 0.45 [MUTED]`.
@@ -114,7 +116,10 @@ mod tests {
     #[test]
     fn parses_wpctl_output() {
         assert_eq!(parse_wpctl("Volume: 0.45\n"), (Some(45), Some(false)));
-        assert_eq!(parse_wpctl("Volume: 1.00 [MUTED]\n"), (Some(100), Some(true)));
+        assert_eq!(
+            parse_wpctl("Volume: 1.00 [MUTED]\n"),
+            (Some(100), Some(true))
+        );
         assert_eq!(parse_wpctl("nonsense"), (None, Some(false)));
     }
 

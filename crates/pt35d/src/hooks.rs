@@ -13,7 +13,9 @@ pub fn fire(name: &str, env: &[(&str, String)]) {
         return;
     }
     let mut cmd = Command::new(&path);
-    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     for (key, value) in env {
         cmd.env(key, value);
     }
@@ -42,7 +44,10 @@ mod tests {
 
     #[test]
     fn missing_hook_is_silently_ignored() {
-        std::env::set_var("XDG_CONFIG_HOME", std::env::temp_dir().join("pt35-no-hooks"));
+        std::env::set_var(
+            "XDG_CONFIG_HOME",
+            std::env::temp_dir().join("pt35-no-hooks"),
+        );
         fire("startup", &[]); // must not panic
         std::env::remove_var("XDG_CONFIG_HOME");
     }

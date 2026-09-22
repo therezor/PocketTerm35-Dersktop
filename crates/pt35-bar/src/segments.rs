@@ -14,14 +14,20 @@ pub struct Segment {
 /// Left-hand side: where you are.
 pub fn left(status: Option<&Status>, theme: &Theme) -> Vec<Segment> {
     let Some(status) = status else {
-        return vec![Segment { text: "pt35d?".into(), color: theme.color.critical }];
+        return vec![Segment {
+            text: "pt35d?".into(),
+            color: theme.color.critical,
+        }];
     };
     let mut out = vec![Segment {
         text: format!("{}", status.workspace),
         color: theme.color.accent,
     }];
     if let Some(app) = &status.app {
-        out.push(Segment { text: app.clone(), color: theme.color.foreground });
+        out.push(Segment {
+            text: app.clone(),
+            color: theme.color.foreground,
+        });
     }
     out
 }
@@ -32,7 +38,10 @@ pub fn right(status: Option<&Status>, theme: &Theme, clock: &str) -> Vec<Segment
     let mut out = Vec::new();
     if let Some(status) = status {
         if status.pointer_armed {
-            out.push(Segment { text: "ptr".into(), color: theme.color.accent });
+            out.push(Segment {
+                text: "ptr".into(),
+                color: theme.color.accent,
+            });
         }
         if (status.scale - 1.0).abs() > 0.01 {
             out.push(Segment {
@@ -43,13 +52,24 @@ pub fn right(status: Option<&Status>, theme: &Theme, clock: &str) -> Vec<Segment
         if let Some(volume) = status.volume_percent {
             let muted = status.muted.unwrap_or(false);
             out.push(Segment {
-                text: if muted { "mute".into() } else { format!("{volume}%") },
-                color: if muted { theme.color.muted } else { theme.color.foreground },
+                text: if muted {
+                    "mute".into()
+                } else {
+                    format!("{volume}%")
+                },
+                color: if muted {
+                    theme.color.muted
+                } else {
+                    theme.color.foreground
+                },
             });
         }
         if theme.bar.show_network {
             if let Some(net) = &status.network {
-                out.push(Segment { text: net.clone(), color: theme.color.foreground });
+                out.push(Segment {
+                    text: net.clone(),
+                    color: theme.color.foreground,
+                });
             }
         }
         match (theme.bar.show_battery, status.battery_percent) {
@@ -57,9 +77,10 @@ pub fn right(status: Option<&Status>, theme: &Theme, clock: &str) -> Vec<Segment
             // `auto` is the interesting case: on a unit where the RP2040 keeps
             // the gauge to itself there is nothing to show, so show nothing.
             (Visibility::Auto, None) => {}
-            (Visibility::Always, None) => {
-                out.push(Segment { text: "--".into(), color: theme.color.muted })
-            }
+            (Visibility::Always, None) => out.push(Segment {
+                text: "--".into(),
+                color: theme.color.muted,
+            }),
             (_, Some(percent)) => {
                 let charging = status.charging.unwrap_or(false);
                 let color = match percent {
@@ -69,11 +90,17 @@ pub fn right(status: Option<&Status>, theme: &Theme, clock: &str) -> Vec<Segment
                     _ => theme.color.foreground,
                 };
                 let mark = if charging { "+" } else { "" };
-                out.push(Segment { text: format!("{percent}{mark}%"), color });
+                out.push(Segment {
+                    text: format!("{percent}{mark}%"),
+                    color,
+                });
             }
         }
     }
-    out.push(Segment { text: clock.to_string(), color: theme.color.foreground });
+    out.push(Segment {
+        text: clock.to_string(),
+        color: theme.color.foreground,
+    });
     out
 }
 
@@ -82,7 +109,12 @@ mod tests {
     use super::*;
 
     fn status() -> Status {
-        Status { workspace: 3, app: Some("helix".into()), scale: 1.0, ..Status::default() }
+        Status {
+            workspace: 3,
+            app: Some("helix".into()),
+            scale: 1.0,
+            ..Status::default()
+        }
     }
 
     #[test]
@@ -105,7 +137,10 @@ mod tests {
     fn hides_battery_when_the_hardware_does_not_expose_one() {
         let theme = Theme::default();
         let segments = right(Some(&status()), &theme, "12:34");
-        assert_eq!(segments.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), ["12:34"]);
+        assert_eq!(
+            segments.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(),
+            ["12:34"]
+        );
     }
 
     #[test]
@@ -129,7 +164,11 @@ mod tests {
     #[test]
     fn surfaces_a_non_native_scale_and_the_pointer() {
         let theme = Theme::default();
-        let status = Status { scale: 0.75, pointer_armed: true, ..status() };
+        let status = Status {
+            scale: 0.75,
+            pointer_armed: true,
+            ..status()
+        };
         let texts: Vec<String> = right(Some(&status), &theme, "12:34")
             .into_iter()
             .map(|s| s.text)

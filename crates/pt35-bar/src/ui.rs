@@ -11,7 +11,6 @@ use std::time::Duration;
 use crate::segments;
 use crate::status::StatusFeed;
 
-
 struct Bar {
     theme: Theme,
     font: Font,
@@ -22,12 +21,19 @@ struct Bar {
 impl Bar {
     fn new(theme: Theme, font: Font, feed: StatusFeed) -> Self {
         let clock = now(&theme);
-        Self { theme, font, feed, clock }
+        Self {
+            theme,
+            font,
+            feed,
+            clock,
+        }
     }
 }
 
 fn now(theme: &Theme) -> String {
-    chrono::Local::now().format(&theme.bar.clock_format).to_string()
+    chrono::Local::now()
+        .format(&theme.bar.clock_format)
+        .to_string()
 }
 
 impl App for Bar {
@@ -59,19 +65,26 @@ impl App for Bar {
         let mut x = pad;
         for segment in segments::left(status.as_ref(), &self.theme) {
             let text = self.font.elide(&segment.text, size, canvas.width / 2);
-            x = self.font.draw(canvas, &text, x, baseline, size, segment.color) + pad * 2;
+            x = self
+                .font
+                .draw(canvas, &text, x, baseline, size, segment.color)
+                + pad * 2;
         }
 
         // The right-hand side is laid out backwards from the edge so the clock
         // never moves when a widget appears or disappears.
         let mut right = canvas.width as i32 - pad;
-        for segment in segments::right(status.as_ref(), &self.theme, &self.clock).into_iter().rev() {
+        for segment in segments::right(status.as_ref(), &self.theme, &self.clock)
+            .into_iter()
+            .rev()
+        {
             let width = self.font.measure(&segment.text, size) as i32;
             right -= width;
             if right <= x {
                 break; // out of room: drop the least important widgets
             }
-            self.font.draw(canvas, &segment.text, right, baseline, size, segment.color);
+            self.font
+                .draw(canvas, &segment.text, right, baseline, size, segment.color);
             right -= pad * 2;
         }
     }

@@ -5,20 +5,25 @@ use pt35_common::{apps::AppTable, menu::Kind, menu::MenuTree, theme::Theme};
 use std::path::PathBuf;
 
 fn config(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/pt35").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../config/pt35")
+        .join(name)
 }
 
 fn load<T: serde::de::DeserializeOwned>(name: &str) -> T {
     let path = config(name);
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("{} : {e}", path.display()));
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{} : {e}", path.display()));
     toml::from_str(&text).unwrap_or_else(|e| panic!("{} : {e}", path.display()))
 }
 
 #[test]
 fn shipped_theme_parses() {
     let theme: Theme = load("theme.toml");
-    assert!(theme.bar.height >= 12 && theme.bar.height <= 40, "bar must fit on a 480px screen");
+    assert!(
+        theme.bar.height >= 12 && theme.bar.height <= 40,
+        "bar must fit on a 480px screen"
+    );
     assert!(theme.menu.row_height * theme.menu.rows_visible + theme.bar.height <= 480);
 }
 
@@ -57,7 +62,13 @@ fn gui_apps_that_need_room_ask_for_a_smaller_scale() {
     // Anything launching a known-big GUI app must say so in its profile.
     let apps: AppTable = load("apps.toml");
     for id in ["browser", "pdf"] {
-        let app = apps.get(id).unwrap_or_else(|| panic!("missing app profile {id:?}"));
-        assert!(app.scale < 1.0, "{id} should request a fractional scale, got {}", app.scale);
+        let app = apps
+            .get(id)
+            .unwrap_or_else(|| panic!("missing app profile {id:?}"));
+        assert!(
+            app.scale < 1.0,
+            "{id} should request a fractional scale, got {}",
+            app.scale
+        );
     }
 }

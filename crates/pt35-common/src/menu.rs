@@ -17,7 +17,10 @@ pub struct MenuTree {
 
 impl Default for MenuTree {
     fn default() -> Self {
-        Self { root: "main".into(), menus: BTreeMap::new() }
+        Self {
+            root: "main".into(),
+            menus: BTreeMap::new(),
+        }
     }
 }
 
@@ -165,9 +168,10 @@ entries = [ { label = "Terminal", app = "terminal" } ]
 
     #[test]
     fn rejects_dangling_submenu() {
-        let tree: MenuTree =
-            toml::from_str("root = \"main\"\n[menu.main]\nentries = [{ label=\"x\", goto=\"nope\" }]\n")
-                .unwrap();
+        let tree: MenuTree = toml::from_str(
+            "root = \"main\"\n[menu.main]\nentries = [{ label=\"x\", goto=\"nope\" }]\n",
+        )
+        .unwrap();
         assert!(matches!(tree.validate(), Err(TreeError::DanglingGoto(..))));
     }
 
@@ -177,7 +181,10 @@ entries = [ { label = "Terminal", app = "terminal" } ]
             "root = \"main\"\n[menu.main]\nentries = [{ label=\"x\", exec=\"ls\", action=\"reload\" }]\n",
         )
         .unwrap();
-        assert!(matches!(tree.validate(), Err(TreeError::Entry(EntryError::Ambiguous(..)))));
+        assert!(matches!(
+            tree.validate(),
+            Err(TreeError::Entry(EntryError::Ambiguous(..)))
+        ));
     }
 
     #[test]

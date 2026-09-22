@@ -8,22 +8,41 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Request {
     /// Open, close or toggle the menu overlay.
-    Menu { action: Toggle, page: Option<String> },
+    Menu {
+        action: Toggle,
+        page: Option<String>,
+    },
     /// Launch an app by its `apps.toml` id.
-    Launch { app: String },
+    Launch {
+        app: String,
+    },
     /// Relative (`+5`, `-5`) or absolute (`50`) volume, or mute toggle.
-    Volume { change: Delta },
-    Brightness { change: Delta },
+    Volume {
+        change: Delta,
+    },
+    Brightness {
+        change: Delta,
+    },
     /// Arm / disarm the keyboard-driven pointer, or enter grid-jump mode.
-    Pointer { mode: PointerMode },
+    Pointer {
+        mode: PointerMode,
+    },
     /// Set the sway output scale, or cycle through the configured ones.
-    Scale { value: Option<f32> },
+    Scale {
+        value: Option<f32>,
+    },
     /// Force the focused window back inside 640x480.
     WindowFit,
     Screenshot,
-    Cpu { profile: CpuProfile },
-    Power { action: PowerAction },
-    Touch { action: Toggle },
+    Cpu {
+        profile: CpuProfile,
+    },
+    Power {
+        action: PowerAction,
+    },
+    Touch {
+        action: Toggle,
+    },
     /// Re-read theme/menu/apps from disk.
     Reload,
     /// Everything the bar draws, in one message.
@@ -125,7 +144,11 @@ pub struct Status {
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
     Status(Status),
-    Notification { summary: String, body: String, urgency: u8 },
+    Notification {
+        summary: String,
+        body: String,
+        urgency: u8,
+    },
 }
 
 #[cfg(test)]
@@ -140,11 +163,20 @@ mod tests {
 
     #[test]
     fn requests_roundtrip() {
-        roundtrip(Request::Menu { action: Toggle::Toggle, page: None });
-        roundtrip(Request::Launch { app: "browser".into() });
-        roundtrip(Request::Volume { change: Delta::Relative(5) });
+        roundtrip(Request::Menu {
+            action: Toggle::Toggle,
+            page: None,
+        });
+        roundtrip(Request::Launch {
+            app: "browser".into(),
+        });
+        roundtrip(Request::Volume {
+            change: Delta::Relative(5),
+        });
         roundtrip(Request::Scale { value: Some(0.75) });
-        roundtrip(Request::Power { action: PowerAction::Poweroff });
+        roundtrip(Request::Power {
+            action: PowerAction::Poweroff,
+        });
         roundtrip(Request::Status);
     }
 
@@ -159,7 +191,11 @@ mod tests {
 
     #[test]
     fn status_survives_missing_hardware() {
-        let status = Status { workspace: 1, scale: 1.0, ..Status::default() };
+        let status = Status {
+            workspace: 1,
+            scale: 1.0,
+            ..Status::default()
+        };
         let line = serde_json::to_string(&Response::Status(status.clone())).unwrap();
         match serde_json::from_str::<Response>(&line).unwrap() {
             Response::Status(got) => {

@@ -45,15 +45,24 @@ impl Font {
     pub fn load(family: &str) -> Result<Self> {
         let tried = candidates(family);
         for path in &tried {
-            let Ok(bytes) = std::fs::read(path) else { continue };
+            let Ok(bytes) = std::fs::read(path) else {
+                continue;
+            };
             let inner = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
                 .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
             log::debug!("font {family:?} from {}", path.display());
-            return Ok(Self { inner, cache: HashMap::new() });
+            return Ok(Self {
+                inner,
+                cache: HashMap::new(),
+            });
         }
         Err(anyhow::anyhow!(
             "no font file for {family:?}; tried: {}",
-            tried.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
+            tried
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
         ))
         .context("install fonts-dejavu-core, or set PT35_FONT to a .ttf")
     }
@@ -61,12 +70,17 @@ impl Font {
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
         let inner = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
             .map_err(|e| anyhow::anyhow!("{e}"))?;
-        Ok(Self { inner, cache: HashMap::new() })
+        Ok(Self {
+            inner,
+            cache: HashMap::new(),
+        })
     }
 
     fn glyph(&mut self, ch: char, size: f32) -> &(fontdue::Metrics, Vec<u8>) {
         let key = (ch, (size * 10.0) as u32);
-        self.cache.entry(key).or_insert_with(|| self.inner.rasterize(ch, size))
+        self.cache
+            .entry(key)
+            .or_insert_with(|| self.inner.rasterize(ch, size))
     }
 
     /// Width in pixels of `text` at `size`.
@@ -80,7 +94,15 @@ impl Font {
 
     /// Draw `text` with its left edge at `x` and its baseline at `y`.
     /// Returns the x coordinate just past the last glyph.
-    pub fn draw(&mut self, canvas: &mut Canvas, text: &str, x: i32, y: i32, size: f32, color: Rgb) -> i32 {
+    pub fn draw(
+        &mut self,
+        canvas: &mut Canvas,
+        text: &str,
+        x: i32,
+        y: i32,
+        size: f32,
+        color: Rgb,
+    ) -> i32 {
         let mut pen = x as f32;
         for ch in text.chars() {
             let (metrics, bitmap) = self.glyph(ch, size).clone();
@@ -156,7 +178,10 @@ mod tests {
             Err(err) => err,
         };
         let text = format!("{err:#}");
-        assert!(text.contains("fonts-dejavu-core"), "error should say how to fix it: {text}");
+        assert!(
+            text.contains("fonts-dejavu-core"),
+            "error should say how to fix it: {text}"
+        );
     }
 
     #[test]
@@ -168,11 +193,17 @@ mod tests {
 
         let elided = font.elide("a very long menu entry indeed", 16.0, wide);
         assert!(elided.ends_with('…'), "{elided:?}");
-        assert!(font.measure(&elided, 16.0) <= wide, "elided text must fit the budget");
+        assert!(
+            font.measure(&elided, 16.0) <= wide,
+            "elided text must fit the budget"
+        );
 
         // Budget too small even for the ellipsis: truncate rather than overflow.
         let tiny = font.elide("a very long menu entry indeed", 16.0, 4);
-        assert!(font.measure(&tiny, 16.0) <= 4, "{tiny:?} overflows a 4px budget");
+        assert!(
+            font.measure(&tiny, 16.0) <= 4,
+            "{tiny:?} overflows a 4px budget"
+        );
     }
 
     #[test]
@@ -182,7 +213,9 @@ mod tests {
         canvas.fill(Rgb(0, 0, 0));
         let end = font.draw(&mut canvas, "Hi", 2, 18, 14.0, Rgb(0xff, 0xff, 0xff));
         assert!(end > 2);
-        let lit = (0..64 * 24).filter(|i| canvas.pixel(i % 64, i / 64) != 0xff00_0000).count();
+        let lit = (0..64 * 24)
+            .filter(|i| canvas.pixel(i % 64, i / 64) != 0xff00_0000)
+            .count();
         assert!(lit > 10, "expected glyph coverage, got {lit} lit pixels");
     }
 }

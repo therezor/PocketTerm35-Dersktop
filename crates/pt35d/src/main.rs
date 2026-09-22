@@ -14,7 +14,6 @@ mod hardware;
 mod hooks;
 mod server;
 mod state;
-mod sway;
 
 /// How often the sampled hardware is re-read. 2 s is invisible on a clock that
 /// shows minutes and costs a few sysfs reads.
@@ -31,16 +30,18 @@ fn main() -> Result<()> {
     {
         let session = Arc::clone(&session);
         let subscribers = Arc::clone(&subscribers);
-        std::thread::Builder::new().name("poll".into()).spawn(move || loop {
-            {
-                let mut session = session.lock().expect("session");
-                session.refresh();
-                if !subscribers.is_empty() {
-                    subscribers.broadcast(&Event::Status(session.status.clone()));
+        std::thread::Builder::new()
+            .name("poll".into())
+            .spawn(move || loop {
+                {
+                    let mut session = session.lock().expect("session");
+                    session.refresh();
+                    if !subscribers.is_empty() {
+                        subscribers.broadcast(&Event::Status(session.status.clone()));
+                    }
                 }
-            }
-            std::thread::sleep(POLL);
-        })?;
+                std::thread::sleep(POLL);
+            })?;
     }
 
     let server = server::Server::bind(session, subscribers)?;

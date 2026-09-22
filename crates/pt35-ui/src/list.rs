@@ -35,7 +35,14 @@ pub enum Outcome {
 impl ListState {
     pub fn new(items: Vec<String>, rows: usize) -> Self {
         let visible = (0..items.len()).collect();
-        Self { items, visible, filter: String::new(), selected: 0, offset: 0, rows: rows.max(1) }
+        Self {
+            items,
+            visible,
+            filter: String::new(),
+            selected: 0,
+            offset: 0,
+            rows: rows.max(1),
+        }
     }
 
     pub fn filter(&self) -> &str {
@@ -180,7 +187,11 @@ mod tests {
         list.handle(&Key::new(sym::UP));
         assert_eq!(list.selected(), Some(5), "up from the top wraps to the end");
         list.handle(&Key::new(sym::DOWN));
-        assert_eq!(list.selected(), Some(0), "down from the end wraps to the top");
+        assert_eq!(
+            list.selected(),
+            Some(0),
+            "down from the end wraps to the top"
+        );
     }
 
     #[test]
@@ -204,18 +215,28 @@ mod tests {
         assert_eq!(list.len(), 5);
         let window: Vec<&str> = list.window().iter().map(|(_, l)| *l).collect();
         assert_eq!(window, ["Terminal", "Files", "Editor"]);
-        assert_eq!(list.selected(), Some(1), "Files stays selected through the filter");
+        assert_eq!(
+            list.selected(),
+            Some(1),
+            "Files stays selected through the filter"
+        );
     }
 
     #[test]
     fn digit_shortcut_activates_the_visible_row() {
         let mut list = list();
-        assert_eq!(list.handle(&Key::with_text(0x0032, '2')), Outcome::Activate(1));
+        assert_eq!(
+            list.handle(&Key::with_text(0x0032, '2')),
+            Outcome::Activate(1)
+        );
         // After scrolling, "2" means the second row on screen, not item 2.
         for _ in 0..4 {
             list.handle(&Key::new(sym::DOWN));
         }
-        assert_eq!(list.handle(&Key::with_text(0x0031, '1')), Outcome::Activate(2));
+        assert_eq!(
+            list.handle(&Key::with_text(0x0031, '1')),
+            Outcome::Activate(2)
+        );
     }
 
     #[test]

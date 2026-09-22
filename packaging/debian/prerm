@@ -1,0 +1,29 @@
+#!/bin/sh
+# pt35-desktop prerm — undo what postinst did, in the order that keeps the
+# machine bootable if anything fails half way.
+set -e
+
+case "$1" in
+  remove|purge|deconfigure) ;;
+  *) exit 0 ;;
+esac
+
+BOOTCFG=/boot/firmware/config.txt
+[ -f "$BOOTCFG" ] || BOOTCFG=/boot/config.txt
+
+if [ -f "$BOOTCFG.pt35.bak" ]; then
+  mv "$BOOTCFG.pt35.bak" "$BOOTCFG"
+elif [ -f "$BOOTCFG" ]; then
+  sed -i "/pt35-desktop >>>/,/pt35-desktop <<</d" "$BOOTCFG"
+fi
+
+if [ -d /run/systemd/system ]; then
+  systemctl disable greetd.service >/dev/null 2>&1 || true
+  systemctl enable lightdm.service >/dev/null 2>&1 || true
+fi
+[ -f /etc/greetd/config.toml.pt35.bak ] && mv /etc/greetd/config.toml.pt35.bak /etc/greetd/config.toml
+
+echo "pt35-desktop removed. Your ~/.config/{sway,pt35,foot} were left alone."
+
+#DEBHELPER#
+exit 0

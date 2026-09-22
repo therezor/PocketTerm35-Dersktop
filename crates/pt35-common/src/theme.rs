@@ -2,7 +2,7 @@
 
 use serde::Deserialize;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Theme {
     pub color: Colors,
@@ -104,18 +104,6 @@ impl<'de> Deserialize<'de> for Rgb {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = String::deserialize(d)?;
         s.parse().map_err(serde::de::Error::custom)
-    }
-}
-
-impl Default for Theme {
-    fn default() -> Self {
-        Self {
-            color: Colors::default(),
-            font: Fonts::default(),
-            bar: Bar::default(),
-            menu: Menu::default(),
-            pointer: Pointer::default(),
-        }
     }
 }
 

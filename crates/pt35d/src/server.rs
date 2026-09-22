@@ -56,10 +56,14 @@ impl Server {
             }
             std::fs::remove_file(&path).ok();
         }
-        let listener = UnixListener::bind(&path)
-            .with_context(|| format!("binding {}", path.display()))?;
+        let listener =
+            UnixListener::bind(&path).with_context(|| format!("binding {}", path.display()))?;
         log::info!("listening on {}", path.display());
-        Ok(Self { listener, session, subscribers })
+        Ok(Self {
+            listener,
+            session,
+            subscribers,
+        })
     }
 
     pub fn serve(&self) {
@@ -96,7 +100,9 @@ fn handle_client(
         let request: Request = match serde_json::from_str(&line) {
             Ok(request) => request,
             Err(e) => {
-                let response = Response::Error { message: format!("bad request: {e}") };
+                let response = Response::Error {
+                    message: format!("bad request: {e}"),
+                };
                 writeln!(writer, "{}", serde_json::to_string(&response)?)?;
                 writer.flush()?;
                 continue;
@@ -144,7 +150,10 @@ mod tests {
     fn broadcast_reaches_live_subscribers() {
         let subs = Subscribers::default();
         let rx = subs.add();
-        subs.broadcast(&Event::Status(Status { workspace: 4, ..Status::default() }));
+        subs.broadcast(&Event::Status(Status {
+            workspace: 4,
+            ..Status::default()
+        }));
         match rx.recv().unwrap() {
             Event::Status(s) => assert_eq!(s.workspace, 4),
             other => panic!("unexpected {other:?}"),

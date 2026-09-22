@@ -541,6 +541,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "pt35-menu"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "log",
+ "pt35-common",
+ "pt35-ui",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
+name = "pt35-pointer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "log",
+ "pt35-common",
+ "pt35-ui",
+ "wayland-client",
+ "wayland-protocols-wlr",
+]
+
+[[package]]
 name = "pt35-ui"
 version = "0.1.0"
 dependencies = [

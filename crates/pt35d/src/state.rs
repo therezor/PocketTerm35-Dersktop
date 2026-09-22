@@ -9,7 +9,9 @@ use pt35_common::menu::MenuTree;
 use pt35_common::theme::Theme;
 use std::process::{Child, Command, Stdio};
 
-use crate::{audio, hardware::Hardware, hooks, sway::Sway};
+use pt35_common::sway::Sway;
+
+use crate::{audio, hardware::Hardware, hooks};
 
 pub struct Session {
     pub theme: Theme,
@@ -31,7 +33,11 @@ impl Session {
             apps: load_or_default("pt35/apps.toml"),
             hw: Hardware::probe(),
             audio: audio::detect(),
-            status: Status { workspace: 1, scale: 1.0, ..Status::default() },
+            status: Status {
+                workspace: 1,
+                scale: 1.0,
+                ..Status::default()
+            },
             sway: None,
             menu_proc: None,
             pointer_proc: None,
@@ -100,7 +106,9 @@ impl Session {
     pub fn handle(&mut self, request: Request) -> Response {
         match self.dispatch(request) {
             Ok(response) => response,
-            Err(e) => Response::Error { message: format!("{e:#}") },
+            Err(e) => Response::Error {
+                message: format!("{e:#}"),
+            },
         }
     }
 
@@ -219,7 +227,10 @@ impl Session {
     }
 
     fn toggle_menu(&mut self, action: Toggle, page: Option<String>) -> Result<()> {
-        let running = matches!(self.menu_proc.as_mut().map(|c| c.try_wait()), Some(Ok(None)));
+        let running = matches!(
+            self.menu_proc.as_mut().map(|c| c.try_wait()),
+            Some(Ok(None))
+        );
         let want_open = match action {
             Toggle::On => true,
             Toggle::Off => false,
@@ -242,7 +253,10 @@ impl Session {
     }
 
     fn set_pointer(&mut self, mode: PointerMode) -> Result<()> {
-        let running = matches!(self.pointer_proc.as_mut().map(|c| c.try_wait()), Some(Ok(None)));
+        let running = matches!(
+            self.pointer_proc.as_mut().map(|c| c.try_wait()),
+            Some(Ok(None))
+        );
         let target = match mode {
             PointerMode::Toggle if running => PointerMode::Off,
             PointerMode::Toggle => PointerMode::Move,
@@ -257,9 +271,18 @@ impl Session {
         match target {
             PointerMode::Off => self.status.pointer_armed = false,
             PointerMode::Move | PointerMode::Grid => {
-                let arg = if matches!(target, PointerMode::Grid) { "grid" } else { "move" };
-                self.pointer_proc =
-                    Some(Command::new("pt35-pointer").arg("--mode").arg(arg).stdin(Stdio::null()).spawn()?);
+                let arg = if matches!(target, PointerMode::Grid) {
+                    "grid"
+                } else {
+                    "move"
+                };
+                self.pointer_proc = Some(
+                    Command::new("pt35-pointer")
+                        .arg("--mode")
+                        .arg(arg)
+                        .stdin(Stdio::null())
+                        .spawn()?,
+                );
                 self.status.pointer_armed = true;
             }
             PointerMode::Toggle => unreachable!("resolved above"),

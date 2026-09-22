@@ -48,14 +48,18 @@ impl Sway {
         header.extend_from_slice(&(payload.len() as u32).to_ne_bytes());
         header.extend_from_slice(&(kind as u32).to_ne_bytes());
         header.extend_from_slice(payload.as_bytes());
-        self.stream.write_all(&header).context("writing to the sway socket")?;
+        self.stream
+            .write_all(&header)
+            .context("writing to the sway socket")?;
         self.stream.flush()?;
         self.read_reply()
     }
 
     fn read_reply(&mut self) -> Result<String> {
         let mut head = [0u8; 14];
-        self.stream.read_exact(&mut head).context("short read from the sway socket")?;
+        self.stream
+            .read_exact(&mut head)
+            .context("short read from the sway socket")?;
         if &head[..6] != MAGIC {
             bail!("sway sent a reply without the i3-ipc magic");
         }
@@ -96,7 +100,8 @@ impl Sway {
             .unwrap_or(1)
             .clamp(0, 9) as u8;
 
-        let tree: serde_json::Value = serde_json::from_str(&self.request(MessageType::GetTree, "")?)?;
+        let tree: serde_json::Value =
+            serde_json::from_str(&self.request(MessageType::GetTree, "")?)?;
         Ok((number, focused_window_name(&tree)))
     }
 }
@@ -105,7 +110,8 @@ impl Sway {
 pub fn focused_window_name(node: &serde_json::Value) -> Option<String> {
     if node["focused"].as_bool() == Some(true) {
         if let Some(name) = node["name"].as_str() {
-            if node["type"].as_str() != Some("workspace") && node["type"].as_str() != Some("output") {
+            if node["type"].as_str() != Some("workspace") && node["type"].as_str() != Some("output")
+            {
                 return Some(name.to_string());
             }
         }
@@ -140,7 +146,10 @@ mod tests {
               ],"floating_nodes":[]}"#,
         )
         .unwrap();
-        assert_eq!(focused_window_name(&tree).as_deref(), Some("helix — main.rs"));
+        assert_eq!(
+            focused_window_name(&tree).as_deref(),
+            Some("helix — main.rs")
+        );
     }
 
     #[test]
