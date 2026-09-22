@@ -1,63 +1,72 @@
-# pt35-desktop menu tree — the hub of the whole shell (sxmo's idea, done natively).
+# pt35-desktop menu tree.
 #
-# System defaults live here; ~/.config/pt35/menu.toml is merged over the top,
-# menu by menu: a user menu with the same id replaces this one, new ids are added.
+# System defaults. `~/.config/pt35/menu.toml` is merged over this, menu by menu:
+# a user menu with the same id replaces it, new ids are added.
 #
-# Entry kinds (exactly one per entry):
+# Entry kinds, exactly one per entry:
 #   goto    = "<menu id>"      open a submenu
 #   app     = "<apps.toml id>" launch an app with its profile
-#   exec    = "<command>"      run a command (sh -c)
+#   exec    = "<command>"      run a command through sh -c
 #   action  = "<pt35ctl args>" ask pt35d to do something
-#   builtin = "<screen>"       a screen pt35-menu draws itself
-#                              (windows | wifi | bluetooth | audio | display | about)
+#   builtin = "<screen>"       a screen pt35-menu builds itself
+#                              (windows | wifi | bluetooth | audio | display |
+#                               desktop_entries | about)
+#
+# Tiles also take `glyph` (1-2 characters), `tint` (#rrggbb) and `note`.
+# `layout = "grid"` draws tiles, the default draws rows.
 
 root = "main"
 
 [menu.main]
 title = "PT35"
+layout = "grid"
 entries = [
-  { label = "Applications", goto = "apps" },
-  { label = "Windows",      builtin = "windows" },
-  { label = "Network",      builtin = "wifi" },
-  { label = "Bluetooth",    builtin = "bluetooth" },
-  { label = "Settings",     goto = "settings" },
-  { label = "Power",        goto = "power" },
+  { label = "Apps",      goto = "apps",         glyph = "A",  tint = "#2f81f7", note = "launcher" },
+  { label = "Windows",   builtin = "windows",   glyph = "W",  tint = "#3fb950", note = "running" },
+  { label = "Wi-Fi",     builtin = "wifi",      glyph = "wf", tint = "#48e6fe", note = "networks" },
+  { label = "Bluetooth", builtin = "bluetooth", glyph = "bt", tint = "#7c72ff", note = "devices" },
+  { label = "Volume",    builtin = "audio",     glyph = "V",  tint = "#d29922", note = "level" },
+  { label = "Settings",  goto = "settings",     glyph = "S",  tint = "#8b949e", note = "system" },
+  { label = "Files",     app = "files",         glyph = "F",  tint = "#f0883e", note = "browse" },
+  { label = "Terminal",  app = "terminal",      glyph = ">_", tint = "#3fb950", note = "shell" },
+  { label = "Power",     goto = "power",        glyph = "P",  tint = "#f85149", note = "off" },
 ]
 
 [menu.apps]
-title = "Applications"
+title = "Apps"
+layout = "grid"
 entries = [
-  { label = "Terminal",       app = "terminal" },
-  { label = "Files",          app = "files" },
-  { label = "Editor",         app = "editor" },
-  { label = "System Monitor", app = "monitor" },
-  { label = "Music",          app = "music" },
-  { label = "Images",         app = "images" },
-  { label = "PDF",            app = "pdf" },
-  { label = "Video",          app = "video" },
-  { label = "Browser",        app = "browser" },
-  { label = "All apps…",      builtin = "desktop_entries" },
+  { label = "Terminal", app = "terminal", glyph = ">_", tint = "#3fb950" },
+  { label = "Files",    app = "files",    glyph = "F",  tint = "#f0883e" },
+  { label = "Editor",   app = "editor",   glyph = "E",  tint = "#2f81f7" },
+  { label = "Monitor",  app = "monitor",  glyph = "M",  tint = "#d29922" },
+  { label = "Music",    app = "music",    glyph = "Mu", tint = "#7c72ff" },
+  { label = "Images",   app = "images",   glyph = "Im", tint = "#48e6fe" },
+  { label = "PDF",      app = "pdf",      glyph = "P",  tint = "#f85149" },
+  { label = "Video",    app = "video",    glyph = "V",  tint = "#db61a2" },
+  { label = "Browser",  app = "browser",  glyph = "@",  tint = "#2f81f7" },
+  { label = "All apps", builtin = "desktop_entries", glyph = "...", tint = "#8b949e" },
 ]
 
 [menu.settings]
 title = "Settings"
 entries = [
-  { label = "Volume",          builtin = "audio" },
-  { label = "Brightness",      builtin = "display" },
-  { label = "Pointer mode",    action = "pointer toggle" },
-  { label = "Screen scale",    action = "scale cycle" },
-  { label = "CPU profile",     goto = "cpu" },
-  { label = "Touchscreen",     action = "touch toggle" },
-  { label = "Screenshot",      action = "screenshot" },
-  { label = "Reload shell",    action = "reload" },
-  { label = "About",           builtin = "about" },
+  { label = "Volume",       builtin = "audio" },
+  { label = "Brightness",   builtin = "display" },
+  { label = "Pointer mode", action = "pointer toggle" },
+  { label = "Screen scale", action = "scale cycle" },
+  { label = "CPU profile",  goto = "cpu" },
+  { label = "Touchscreen",  action = "touch toggle" },
+  { label = "Screenshot",   action = "screenshot" },
+  { label = "Reload shell", action = "reload" },
+  { label = "About",        builtin = "about" },
 ]
 
 [menu.cpu]
 title = "CPU profile"
 entries = [
-  { label = "Powersave  (battery)", action = "cpu powersave" },
-  { label = "Balanced   (default)", action = "cpu balanced" },
+  { label = "Powersave (battery)",   action = "cpu powersave" },
+  { label = "Balanced (default)",    action = "cpu balanced" },
   { label = "Performance (27W PSU)", action = "cpu performance" },
 ]
 

@@ -252,7 +252,18 @@ impl<A: App + 'static> State<A> {
             canvas.fill(self.app.background());
         }
         self.app.draw(&mut canvas);
-        slot.copy_from_slice(canvas.as_bytes());
+
+        // SlotPool hands back the whole slot, which may be larger than this
+        // buffer needs — it reuses any slot big enough, and the surface shrinks
+        // whenever the output scale changes. Copy only what we drew.
+        let pixels = canvas.as_bytes();
+        match slot.len().cmp(&pixels.len()) {
+            std::cmp::Ordering::Less => {
+                log::error!("shm slot too small: {} < {}", slot.len(), pixels.len());
+                return;
+            }
+            _ => slot[..pixels.len()].copy_from_slice(pixels),
+        }
 
         let surface = self.layer.wl_surface();
         surface.damage_buffer(0, 0, width as i32, height as i32);

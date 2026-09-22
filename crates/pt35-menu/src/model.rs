@@ -4,9 +4,20 @@
 //! navigation model — including "what happens when you confirm a shutdown" —
 //! is unit-testable.
 
-use pt35_common::menu::{Builtin, Kind, MenuTree};
+use pt35_common::menu::{Builtin, Kind, Layout, MenuTree};
+use pt35_common::theme::Rgb;
 use pt35_ui::keys::Key;
 use pt35_ui::list::{ListState, Outcome};
+
+/// A row or tile as the UI draws it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Row {
+    pub label: String,
+    pub note: String,
+    pub glyph: String,
+    pub tint: Option<Rgb>,
+    pub submenu: bool,
+}
 
 /// One screen on the stack.
 #[derive(Debug, Clone)]
@@ -14,6 +25,7 @@ pub struct Screen {
     pub title: String,
     pub list: ListState,
     pub source: Source,
+    pub layout: Layout,
 }
 
 /// Where a screen's items came from, which decides what activating one does.
@@ -62,15 +74,26 @@ pub struct Model {
     tree: MenuTree,
     stack: Vec<Screen>,
     rows: usize,
+    grid_rows: usize,
+    columns: usize,
 }
 
 impl Model {
-    /// Open `page` (or the tree's root when `None`).
-    pub fn new(tree: MenuTree, page: Option<&str>, rows: usize) -> Self {
+    /// Open `page`, or the tree's root when `None`.
+    /// `rows` is list rows. `grid_rows` x `columns` is one page of tiles.
+    pub fn sized(
+        tree: MenuTree,
+        page: Option<&str>,
+        rows: usize,
+        grid_rows: usize,
+        columns: usize,
+    ) -> Self {
         let mut model = Self {
             tree,
             stack: Vec::new(),
             rows: rows.max(1),
+            grid_rows: grid_rows.max(1),
+            columns: columns.max(1),
         };
         let root = page
             .map(str::to_string)
@@ -95,8 +118,64 @@ impl Model {
         self.stack.len()
     }
 
+    /// The rows to draw: their label and whether they lead somewhere deeper
+    /// (which earns a chevron).
+    pub fn visible_rows(&self) -> Vec<Row> {
+        let screen = self.screen();
+        screen
+            .list
+            .window()
+            .into_iter()
+            .map(|(index, label)| {
+                let entry = self.entry(&screen.source, index);
+                Row {
+                    label: label.to_string(),
+                    note: entry.map(|e| e.note.clone()).unwrap_or_default(),
+                    glyph: entry
+                        .map(|e| e.glyph.clone())
+                        .filter(|g| !g.is_empty())
+                        .unwrap_or_else(|| {
+                            label
+                                .chars()
+                                .next()
+                                .unwrap_or('?')
+                                .to_uppercase()
+                                .to_string()
+                        }),
+                    tint: entry.and_then(|e| e.tint),
+                    submenu: self.leads_deeper(&screen.source, index),
+                }
+            })
+            .collect()
+    }
+
+    /// Tiles or rows for the screen on top.
+    pub fn layout(&self) -> Layout {
+        self.screen().layout
+    }
+
+    fn entry(&self, source: &Source, index: usize) -> Option<&pt35_common::menu::Entry> {
+        let Source::Page(id) = source else {
+            return None;
+        };
+        self.tree.page(id)?.entries.get(index)
+    }
+
+    fn leads_deeper(&self, source: &Source, index: usize) -> bool {
+        let Source::Page(id) = source else {
+            return false;
+        };
+        let Some(page) = self.tree.page(id) else {
+            return false;
+        };
+        matches!(
+            page.entries.get(index).map(|entry| entry.kind()),
+            Some(Ok(Kind::Goto(_))) | Some(Ok(Kind::Builtin(_)))
+        )
+    }
+
     fn push_page(&mut self, id: &str) {
-        let (title, labels) = match self.tree.page(id) {
+        let (title, labels, layout) = match self.tree.page(id) {
             Some(page) => (
                 if page.title.is_empty() {
                     id.to_string()
@@ -107,17 +186,23 @@ impl Model {
                     .iter()
                     .map(|e| e.label.clone())
                     .collect::<Vec<_>>(),
+                page.layout,
             ),
             None => (
                 "missing menu".to_string(),
                 vec![format!("no menu {id:?} in menu.toml")],
+                Layout::List,
             ),
         };
-        let rows = self.rows;
+        let list = match layout {
+            Layout::Grid => ListState::new(labels, self.grid_rows).with_columns(self.columns),
+            Layout::List => ListState::new(labels, self.rows),
+        };
         self.stack.push(Screen {
             title,
-            list: ListState::new(labels, rows),
+            list,
             source: Source::Page(id.to_string()),
+            layout,
         });
     }
 
@@ -129,6 +214,7 @@ impl Model {
             title: title.to_string(),
             list: ListState::new(labels, rows),
             source: Source::Dynamic { builtin, payloads },
+            layout: Layout::List,
         });
     }
 
@@ -138,6 +224,7 @@ impl Model {
             title: format!("{label}?"),
             list: ListState::new(vec!["No".into(), "Yes".into()], rows),
             source: Source::Confirm { command },
+            layout: Layout::List,
         });
     }
 
@@ -148,6 +235,16 @@ impl Model {
             Outcome::Redraw => Step::Redraw,
             Outcome::Nothing => Step::Nothing,
             Outcome::Cancel => Step::Quit,
+            // Y jumps back to the root menu — on a handheld, backing out of
+            // four levels one press at a time is the thing people complain about.
+            Outcome::Secondary => {
+                if self.stack.len() > 1 {
+                    self.stack.truncate(1);
+                    Step::Redraw
+                } else {
+                    Step::Nothing
+                }
+            }
             Outcome::Back => {
                 if self.stack.len() > 1 {
                     self.stack.pop();
@@ -244,7 +341,7 @@ entries = [
 "#;
 
     fn model() -> Model {
-        Model::new(toml::from_str(TREE).unwrap(), None, 9)
+        Model::sized(toml::from_str(TREE).unwrap(), None, 9, 4, 3)
     }
 
     fn press(model: &mut Model, sym: u32) -> Step {
@@ -314,6 +411,35 @@ entries = [
     }
 
     #[test]
+    fn submenu_rows_are_marked_for_the_chevron() {
+        let model = model();
+        let rows = model.visible_rows();
+        assert_eq!(rows[0].label, "Applications");
+        assert!(rows[0].submenu);
+        assert!(rows[1].submenu);
+        assert!(!rows[2].submenu, "an action row gets no chevron");
+        assert_eq!(
+            rows[0].glyph, "A",
+            "a tile with no glyph falls back to the initial"
+        );
+    }
+
+    #[test]
+    fn y_jumps_back_to_the_root() {
+        let mut model = model();
+        press(&mut model, sym::RETURN); // into Applications
+        assert_eq!(model.depth(), 2);
+        assert_eq!(model.handle(&Key::with_text('y' as u32, 'y')), Step::Redraw);
+        assert_eq!(model.depth(), 1);
+        assert_eq!(model.screen().title, "PT35");
+        // Already home: nothing to do.
+        assert_eq!(
+            model.handle(&Key::with_text('y' as u32, 'y')),
+            Step::Nothing
+        );
+    }
+
+    #[test]
     fn escape_always_quits() {
         let mut model = model();
         press(&mut model, sym::RETURN);
@@ -344,7 +470,7 @@ entries = [
     #[test]
     fn a_missing_menu_page_shows_an_error_rather_than_panicking() {
         let tree: MenuTree = toml::from_str("root = \"nope\"\n[menu.main]\n").unwrap();
-        let model = Model::new(tree, None, 9);
+        let model = Model::sized(tree, None, 9, 4, 3);
         assert_eq!(model.screen().title, "missing menu");
         assert_eq!(model.depth(), 1);
     }

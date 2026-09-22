@@ -28,13 +28,30 @@ impl Default for MenuTree {
 #[serde(default, deny_unknown_fields)]
 pub struct MenuPage {
     pub title: String,
+    /// Tiles or rows. A grid reads better for a small set of destinations you
+    /// pick by shape; a list is better for many similar items you scan.
+    pub layout: Layout,
     pub entries: Vec<Entry>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Layout {
+    #[default]
+    List,
+    Grid,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct Entry {
     pub label: String,
+    /// Second line on a grid tile: what this is, or its current state.
+    pub note: String,
+    /// One or two characters drawn in the tile's coloured badge.
+    pub glyph: String,
+    /// Badge colour, `#rrggbb`. Defaults to the theme accent.
+    pub tint: Option<crate::theme::Rgb>,
     /// Ask before running (used for reboot / shut down).
     pub confirm: bool,
     pub goto: Option<String>,

@@ -59,6 +59,57 @@ impl Canvas {
         }
     }
 
+    /// A filled rectangle with rounded corners, with the corner pixels
+    /// anti-aliased — on a 640x480 panel a hard corner reads as a stair-step.
+    pub fn rounded_rect(&mut self, x: i32, y: i32, w: u32, h: u32, radius: u32, color: Rgb) {
+        let r = radius.min(w / 2).min(h / 2) as i32;
+        if r <= 0 {
+            self.rect(x, y, w, h, color);
+            return;
+        }
+        // Middle band and the two side bands, then the four corners.
+        self.rect(x, y + r, w, h - 2 * r as u32, color);
+        self.rect(x + r, y, w - 2 * r as u32, r as u32, color);
+        self.rect(x + r, y + h as i32 - r, w - 2 * r as u32, r as u32, color);
+
+        let corners = [
+            (x + r, y + r, -1, -1),
+            (x + w as i32 - r - 1, y + r, 1, -1),
+            (x + r, y + h as i32 - r - 1, -1, 1),
+            (x + w as i32 - r - 1, y + h as i32 - r - 1, 1, 1),
+        ];
+        for (cx, cy, sx, sy) in corners {
+            for dy in 0..=r {
+                for dx in 0..=r {
+                    let distance = ((dx * dx + dy * dy) as f32).sqrt();
+                    let coverage = ((r as f32 + 0.5 - distance) * 255.0).clamp(0.0, 255.0) as u8;
+                    self.blend(cx + sx * dx, cy + sy * dy, coverage, color);
+                }
+            }
+        }
+    }
+
+    /// A filled circle — the hint bar's button chips.
+    pub fn circle(&mut self, cx: i32, cy: i32, radius: u32, color: Rgb) {
+        let r = radius as i32;
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let distance = ((dx * dx + dy * dy) as f32).sqrt();
+                let coverage = ((r as f32 + 0.5 - distance) * 255.0).clamp(0.0, 255.0) as u8;
+                self.blend(cx + dx, cy + dy, coverage, color);
+            }
+        }
+    }
+
+    /// A rectangle blended at `alpha` over what is already there.
+    pub fn rect_alpha(&mut self, x: i32, y: i32, w: u32, h: u32, color: Rgb, alpha: u8) {
+        for row in 0..h as i32 {
+            for col in 0..w as i32 {
+                self.blend(x + col, y + row, alpha, color);
+            }
+        }
+    }
+
     /// Blend one coverage value (0..=255, from the font rasteriser) over a pixel.
     pub fn blend(&mut self, x: i32, y: i32, coverage: u8, color: Rgb) {
         if x < 0 || y < 0 || x as u32 >= self.width || y as u32 >= self.height || coverage == 0 {
@@ -131,6 +182,49 @@ mod tests {
         let px = canvas.pixel(0, 0);
         assert_eq!(px >> 24, 128, "alpha is kept");
         assert_eq!(px & 0xff, 128, "colour is premultiplied by alpha");
+    }
+
+    #[test]
+    fn rounded_rect_fills_the_middle_and_softens_the_corners() {
+        let mut canvas = Canvas::new(20, 20);
+        canvas.fill(Rgb(0, 0, 0));
+        canvas.rounded_rect(0, 0, 20, 20, 6, Rgb(0xff, 0xff, 0xff));
+        assert_eq!(canvas.pixel(10, 10), 0xffff_ffff, "the middle is solid");
+        let corner = canvas.pixel(0, 0) & 0xff;
+        assert!(
+            corner < 0x40,
+            "the very corner is mostly background, got {corner:#x}"
+        );
+        assert_eq!(
+            canvas.pixel(10, 0),
+            0xffff_ffff,
+            "the top edge is solid between corners"
+        );
+    }
+
+    #[test]
+    fn circles_are_centred() {
+        let mut canvas = Canvas::new(21, 21);
+        canvas.fill(Rgb(0, 0, 0));
+        canvas.circle(10, 10, 8, Rgb(0xff, 0xff, 0xff));
+        assert_eq!(canvas.pixel(10, 10), 0xffff_ffff);
+        assert_eq!(
+            canvas.pixel(0, 0),
+            0xff00_0000,
+            "outside the radius is untouched"
+        );
+    }
+
+    #[test]
+    fn rect_alpha_blends_instead_of_replacing() {
+        let mut canvas = Canvas::new(4, 4);
+        canvas.fill(Rgb(0, 0, 0));
+        canvas.rect_alpha(0, 0, 4, 4, Rgb(0xff, 0xff, 0xff), 128);
+        let value = canvas.pixel(1, 1) & 0xff;
+        assert!(
+            (120..=136).contains(&value),
+            "expected a mid grey, got {value:#x}"
+        );
     }
 
     #[test]

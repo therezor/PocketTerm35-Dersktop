@@ -1,39 +1,46 @@
-# pt35-desktop theme. Sizes are in physical pixels on the 640x480 panel.
-# User override: ~/.config/pt35/theme.toml (merged over this file, key by key).
+# pt35-desktop theme. Sizes are physical pixels on the 640x480 panel.
+# User override: ~/.config/pt35/theme.toml, merged over this file key by key.
+#
+# The panel is 3.5" at 640x480 — roughly 9 px/mm — so a 46px row is about 5mm
+# and comfortable both to read at arm's length and to hit with a thumb.
 
 [color]
-background      = "#101418"
-background_alt  = "#171c22"
-foreground      = "#d4d8dd"
-muted           = "#7d8794"
-accent          = "#61afef"
-accent_fg       = "#0b0e11"
-warning         = "#e5c07b"
-critical        = "#e06c75"
-ok              = "#98c379"
-border          = "#242b33"
+background      = "#0d1117"
+background_alt  = "#161b22"
+foreground      = "#e6edf3"
+muted           = "#8b949e"
+accent          = "#2f81f7"
+accent_fg       = "#ffffff"
+warning         = "#d29922"
+critical        = "#f85149"
+ok              = "#3fb950"
+border          = "#30363d"
 
 [font]
-# One bundled font, loaded once, rasterised by fontdue. No fontconfig.
+# One bundled font, rasterised by fontdue. No fontconfig, no shaping engine.
 family     = "DejaVu Sans"
-size_bar   = 12.0
-size_menu  = 16.0
-size_title = 18.0
-size_hint  = 11.0
+size_bar   = 14.0
+size_menu  = 21.0
+size_title = 22.0
+size_hint  = 13.0
 
 [bar]
-height        = 18
-padding_x     = 4
+height        = 26
+padding_x     = 10
 show_battery  = "auto"   # auto | always | never
 show_network  = true
 clock_format  = "%H:%M"
 
 [menu]
-rows_visible  = 9        # 480px / (16px font + padding) minus header/footer
-row_height    = 34
-padding_x     = 10
-show_numbers  = true     # 1-9 direct selection
-filter_hint   = "type to filter"
+# 480 - 26 (bar) - 44 (header) - 44 (hints) = 366px of list, 7 rows of 46 + slack
+rows_visible  = 7
+row_height    = 46
+padding_x     = 14
+show_numbers  = true
+filter_hint   = "X to search"
+header_height = 44
+hint_height   = 44
+radius        = 10
 
 [pointer]
 speed         = 380.0    # px/s at full deflection

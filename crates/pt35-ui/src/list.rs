@@ -3,7 +3,7 @@
 //! Pure state: no Wayland, no drawing. The menu, the window switcher and the
 //! Wi-Fi picker all drive this, so its behaviour is tested once here.
 
-use crate::keys::{navigate, Key, Navigation};
+use crate::keys::{navigate, Key, Mode, Navigation};
 
 #[derive(Debug, Clone)]
 pub struct ListState {
@@ -15,6 +15,8 @@ pub struct ListState {
     selected: usize,
     offset: usize,
     rows: usize,
+    columns: usize,
+    mode: Mode,
 }
 
 /// What the caller should do after feeding a key in.
@@ -26,8 +28,10 @@ pub enum Outcome {
     Activate(usize),
     /// Leave this screen (Escape).
     Cancel,
-    /// Go up one level (Left / Backspace on an empty filter).
+    /// Go up one level (B / Left / Backspace in nav mode).
     Back,
+    /// The screen's own secondary action (Y).
+    Secondary,
     /// Nothing happened; do not repaint.
     Nothing,
 }
@@ -42,7 +46,38 @@ impl ListState {
             selected: 0,
             offset: 0,
             rows: rows.max(1),
+            columns: 1,
+            mode: Mode::Nav,
         }
+    }
+
+    /// Lay the items out as a grid this many tiles wide.
+    pub fn with_columns(mut self, columns: usize) -> Self {
+        self.columns = columns.max(1);
+        self
+    }
+
+    pub fn columns(&self) -> usize {
+        self.columns
+    }
+
+    fn page(&self) -> usize {
+        self.rows * self.columns
+    }
+
+    /// Index of the cursor inside the drawn window.
+    pub fn cursor_index(&self) -> usize {
+        self.selected.saturating_sub(self.offset)
+    }
+
+    /// Nav or filter — the hint bar shows a different legend for each.
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    /// How many rows fit on screen; the caller sets this from the theme.
+    pub fn rows(&self) -> usize {
+        self.rows
     }
 
     pub fn filter(&self) -> &str {
@@ -66,7 +101,7 @@ impl ListState {
         self.visible
             .iter()
             .skip(self.offset)
-            .take(self.rows)
+            .take(self.page())
             .map(|&i| (i, self.items[i].as_str()))
             .collect()
     }
@@ -77,11 +112,28 @@ impl ListState {
     }
 
     pub fn handle(&mut self, key: &Key) -> Outcome {
-        match navigate(key, !self.filter.is_empty()) {
-            Navigation::Up => self.move_by(-1),
-            Navigation::Down => self.move_by(1),
-            Navigation::PageUp => self.move_by(-(self.rows as isize)),
-            Navigation::PageDown => self.move_by(self.rows as isize),
+        match navigate(key, self.mode) {
+            Navigation::Up => self.move_by(-(self.columns as isize)),
+            Navigation::Down => self.move_by(self.columns as isize),
+            Navigation::Left => {
+                if self.columns > 1 {
+                    self.move_by(-1)
+                } else {
+                    Outcome::Back
+                }
+            }
+            Navigation::Right => {
+                if self.columns > 1 {
+                    self.move_by(1)
+                } else {
+                    match self.selected() {
+                        Some(index) => Outcome::Activate(index),
+                        None => Outcome::Nothing,
+                    }
+                }
+            }
+            Navigation::PageUp => self.move_by(-(self.page() as isize)),
+            Navigation::PageDown => self.move_by(self.page() as isize),
             Navigation::First => {
                 self.selected = 0;
                 self.scroll_into_view();
@@ -103,15 +155,33 @@ impl ListState {
                     None => Outcome::Nothing,
                 }
             }
-            Navigation::Cancel => Outcome::Cancel,
+            Navigation::Cancel => {
+                // Select/Escape leaves filtering before it leaves the screen.
+                if self.mode == Mode::Filter {
+                    self.mode = Mode::Nav;
+                    self.filter.clear();
+                    self.refilter();
+                    return Outcome::Redraw;
+                }
+                Outcome::Cancel
+            }
             Navigation::Back => Outcome::Back,
+            Navigation::StartFilter => {
+                self.mode = Mode::Filter;
+                Outcome::Redraw
+            }
+            Navigation::Secondary => Outcome::Secondary,
             Navigation::Filter(ch) => {
                 self.filter.push(ch);
                 self.refilter();
                 Outcome::Redraw
             }
             Navigation::FilterBackspace => {
-                self.filter.pop();
+                // Backspacing past the start of the filter returns to nav mode,
+                // where B and the other letters are buttons again.
+                if self.filter.pop().is_none() {
+                    self.mode = Mode::Nav;
+                }
                 self.refilter();
                 Outcome::Redraw
             }
@@ -124,11 +194,12 @@ impl ListState {
             return Outcome::Nothing;
         }
         let last = self.visible.len() as isize - 1;
-        // Wrapping at the ends: on a D-pad, holding one direction to reach the
-        // other end of a nine-item menu is worse than wrapping.
+        // A list wraps at the ends. A grid clamps: wrapping a 2D cursor sends it
+        // somewhere the eye did not follow.
+        let wraps = self.columns == 1 && delta.abs() == 1;
         let next = match self.selected as isize + delta {
-            n if n < 0 && delta == -1 => last,
-            n if n > last && delta == 1 => 0,
+            n if n < 0 && wraps && delta == -1 => last,
+            n if n > last && wraps && delta == 1 => 0,
             n => n.clamp(0, last),
         };
         self.selected = next as usize;
@@ -137,10 +208,13 @@ impl ListState {
     }
 
     fn scroll_into_view(&mut self) {
+        let page = self.page();
         if self.selected < self.offset {
-            self.offset = self.selected;
-        } else if self.selected >= self.offset + self.rows {
-            self.offset = self.selected + 1 - self.rows;
+            // Keep a grid's scroll on a row boundary, or tiles jump by a third.
+            self.offset = self.selected - self.selected % self.columns;
+        } else if self.selected >= self.offset + page {
+            let last_row_start = self.selected - self.selected % self.columns;
+            self.offset = last_row_start + self.columns - page;
         }
     }
 
@@ -177,6 +251,10 @@ mod tests {
         )
     }
 
+    fn letter(list: &mut ListState, ch: char) -> Outcome {
+        list.handle(&Key::with_text(ch as u32, ch))
+    }
+
     #[test]
     fn moves_and_wraps() {
         let mut list = list();
@@ -206,15 +284,47 @@ mod tests {
     }
 
     #[test]
-    fn filters_case_insensitively_and_keeps_the_highlight() {
+    fn face_buttons_page_and_activate() {
         let mut list = list();
-        list.handle(&Key::new(sym::DOWN)); // Files
-        list.handle(&Key::with_text(0x0069, 'i'));
+        // R is Page Down, L is Page Up — and they are the letters r and l.
+        assert_eq!(letter(&mut list, 'r'), Outcome::Redraw);
+        assert_eq!(list.selected(), Some(3));
+        assert_eq!(letter(&mut list, 'l'), Outcome::Redraw);
+        assert_eq!(list.selected(), Some(0));
+        // A opens, B goes back.
+        assert_eq!(letter(&mut list, 'a'), Outcome::Activate(0));
+        assert_eq!(letter(&mut list, 'b'), Outcome::Back);
+        // Y is the screen's secondary action.
+        assert_eq!(letter(&mut list, 'y'), Outcome::Secondary);
+    }
+
+    #[test]
+    fn start_confirms_and_select_cancels() {
+        let mut list = list();
+        assert_eq!(list.handle(&Key::new(sym::PAUSE)), Outcome::Activate(0));
+        assert_eq!(list.handle(&Key::new(sym::PRINT)), Outcome::Cancel);
+    }
+
+    #[test]
+    fn x_starts_filtering_and_then_letters_type() {
+        let mut list = list();
+        assert_eq!(list.mode(), Mode::Nav);
+        assert_eq!(letter(&mut list, 'x'), Outcome::Redraw);
+        assert_eq!(list.mode(), Mode::Filter);
+
+        // 'a' now types instead of activating.
+        letter(&mut list, 'i');
         assert_eq!(list.filter(), "i");
         // 'i' matches Terminal, Files, Editor, Monitor and Music — not Browser.
         assert_eq!(list.len(), 5);
-        let window: Vec<&str> = list.window().iter().map(|(_, l)| *l).collect();
-        assert_eq!(window, ["Terminal", "Files", "Editor"]);
+    }
+
+    #[test]
+    fn filtering_keeps_the_highlight_on_the_same_item() {
+        let mut list = list();
+        list.handle(&Key::new(sym::DOWN)); // Files
+        letter(&mut list, 'x');
+        letter(&mut list, 'i');
         assert_eq!(
             list.selected(),
             Some(1),
@@ -223,39 +333,102 @@ mod tests {
     }
 
     #[test]
-    fn digit_shortcut_activates_the_visible_row() {
+    fn select_leaves_filtering_before_it_leaves_the_screen() {
         let mut list = list();
-        assert_eq!(
-            list.handle(&Key::with_text(0x0032, '2')),
-            Outcome::Activate(1)
-        );
-        // After scrolling, "2" means the second row on screen, not item 2.
-        for _ in 0..4 {
-            list.handle(&Key::new(sym::DOWN));
-        }
-        assert_eq!(
-            list.handle(&Key::with_text(0x0031, '1')),
-            Outcome::Activate(2)
-        );
+        letter(&mut list, 'x');
+        letter(&mut list, 'e');
+        assert_eq!(list.handle(&Key::new(sym::PRINT)), Outcome::Redraw);
+        assert_eq!(list.mode(), Mode::Nav);
+        assert_eq!(list.filter(), "");
+        assert_eq!(list.handle(&Key::new(sym::PRINT)), Outcome::Cancel);
     }
 
     #[test]
-    fn backspace_clears_the_filter_then_goes_back() {
+    fn backspacing_past_the_start_returns_to_nav_mode() {
         let mut list = list();
-        list.handle(&Key::with_text(0x0065, 'e'));
-        assert_eq!(list.handle(&Key::new(sym::BACKSPACE)), Outcome::Redraw);
-        assert_eq!(list.filter(), "");
+        letter(&mut list, 'x');
+        letter(&mut list, 'e');
+        list.handle(&Key::new(sym::BACKSPACE));
+        assert_eq!(
+            list.mode(),
+            Mode::Filter,
+            "one backspace only clears the character"
+        );
+        list.handle(&Key::new(sym::BACKSPACE));
+        assert_eq!(list.mode(), Mode::Nav);
         assert_eq!(list.handle(&Key::new(sym::BACKSPACE)), Outcome::Back);
+    }
+
+    #[test]
+    fn digit_shortcut_activates_the_visible_row() {
+        let mut list = list();
+        assert_eq!(letter(&mut list, '2'), Outcome::Activate(1));
+        // After scrolling, "1" means the first row on screen, not item 1.
+        for _ in 0..4 {
+            list.handle(&Key::new(sym::DOWN));
+        }
+        assert_eq!(letter(&mut list, '1'), Outcome::Activate(2));
     }
 
     #[test]
     fn an_empty_filter_result_cannot_be_activated() {
         let mut list = list();
+        letter(&mut list, 'x');
         for ch in "zzz".chars() {
-            list.handle(&Key::with_text(ch as u32, ch));
+            letter(&mut list, ch);
         }
         assert!(list.is_empty());
         assert_eq!(list.handle(&Key::new(sym::RETURN)), Outcome::Nothing);
+    }
+
+    #[test]
+    fn a_grid_moves_in_two_dimensions_and_clamps() {
+        let items: Vec<String> = (1..=9).map(|n| format!("app {n}")).collect();
+        let mut grid = ListState::new(items, 3).with_columns(3);
+
+        grid.handle(&Key::new(sym::RIGHT));
+        assert_eq!(grid.selected(), Some(1));
+        grid.handle(&Key::new(sym::DOWN));
+        assert_eq!(grid.selected(), Some(4), "down moves a whole row");
+        grid.handle(&Key::new(sym::LEFT));
+        assert_eq!(grid.selected(), Some(3));
+        grid.handle(&Key::new(sym::LEFT));
+        assert_eq!(
+            grid.selected(),
+            Some(2),
+            "left off the edge walks back a row"
+        );
+
+        for _ in 0..10 {
+            grid.handle(&Key::new(sym::UP));
+        }
+        assert_eq!(
+            grid.selected(),
+            Some(0),
+            "a grid clamps instead of wrapping"
+        );
+    }
+
+    #[test]
+    fn a_grid_right_moves_instead_of_activating() {
+        let mut grid = ListState::new(vec!["a".into(), "b".into()], 2).with_columns(2);
+        assert_eq!(grid.handle(&Key::new(sym::RIGHT)), Outcome::Redraw);
+        // In a grid, Back is B or Select, never Left.
+        assert_eq!(grid.handle(&Key::new(sym::LEFT)), Outcome::Redraw);
+        assert_eq!(grid.handle(&Key::with_text('b' as u32, 'b')), Outcome::Back);
+    }
+
+    #[test]
+    fn a_grid_scrolls_by_whole_rows() {
+        let items: Vec<String> = (1..=12).map(|n| format!("app {n}")).collect();
+        let mut grid = ListState::new(items, 2).with_columns(3);
+        assert_eq!(grid.window().len(), 6);
+        for _ in 0..3 {
+            grid.handle(&Key::new(sym::DOWN));
+        }
+        assert_eq!(grid.selected(), Some(9));
+        let first = grid.window()[0].0;
+        assert_eq!(first % 3, 0, "the window starts on a row boundary");
     }
 
     #[test]

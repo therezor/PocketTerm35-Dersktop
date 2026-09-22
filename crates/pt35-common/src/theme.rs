@@ -16,6 +16,13 @@ pub struct Theme {
 #[serde(default, deny_unknown_fields)]
 pub struct Colors {
     pub background: Rgb,
+    /// Face-button colours, used by the hint bar so the legend matches the
+    /// physical buttons: A green, B red, X cyan, Y amber.
+    pub button_a: Rgb,
+    pub button_b: Rgb,
+    pub button_x: Rgb,
+    pub button_y: Rgb,
+    pub button_neutral: Rgb,
     pub background_alt: Rgb,
     pub foreground: Rgb,
     pub muted: Rgb,
@@ -55,6 +62,17 @@ pub struct Menu {
     pub padding_x: u32,
     pub show_numbers: bool,
     pub filter_hint: String,
+    /// Height of the header strip that carries the screen title.
+    pub header_height: u32,
+    /// Height of the button-legend bar along the bottom. It doubles as a touch
+    /// target, so it is deliberately taller than the text needs.
+    pub hint_height: u32,
+    /// Corner radius of the selection pill and the grid tiles.
+    pub radius: u32,
+    /// Grid layout: how many tiles across, how tall each one is, and the gap.
+    pub columns: u32,
+    pub tile_height: u32,
+    pub gap: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -110,7 +128,12 @@ impl<'de> Deserialize<'de> for Rgb {
 impl Default for Colors {
     fn default() -> Self {
         Self {
-            background: Rgb(0x10, 0x14, 0x18),
+            background: Rgb(0x0d, 0x11, 0x17),
+            button_a: Rgb(0x52, 0xa4, 0x41),
+            button_b: Rgb(0xf8, 0x51, 0x49),
+            button_x: Rgb(0x48, 0xe6, 0xfe),
+            button_y: Rgb(0xff, 0xc1, 0x07),
+            button_neutral: Rgb(0x3a, 0x41, 0x4a),
             background_alt: Rgb(0x17, 0x1c, 0x22),
             foreground: Rgb(0xd4, 0xd8, 0xdd),
             muted: Rgb(0x7d, 0x87, 0x94),
@@ -128,10 +151,10 @@ impl Default for Fonts {
     fn default() -> Self {
         Self {
             family: "DejaVu Sans".into(),
-            size_bar: 12.0,
-            size_menu: 16.0,
-            size_title: 18.0,
-            size_hint: 11.0,
+            size_bar: 14.0,
+            size_menu: 21.0,
+            size_title: 22.0,
+            size_hint: 13.0,
         }
     }
 }
@@ -139,8 +162,8 @@ impl Default for Fonts {
 impl Default for Bar {
     fn default() -> Self {
         Self {
-            height: 18,
-            padding_x: 4,
+            height: 26,
+            padding_x: 10,
             show_battery: Visibility::Auto,
             show_network: true,
             clock_format: "%H:%M".into(),
@@ -151,11 +174,17 @@ impl Default for Bar {
 impl Default for Menu {
     fn default() -> Self {
         Self {
-            rows_visible: 9,
-            row_height: 34,
-            padding_x: 10,
+            rows_visible: 7,
+            row_height: 46,
+            padding_x: 14,
             show_numbers: true,
-            filter_hint: "type to filter".into(),
+            filter_hint: "X to search".into(),
+            header_height: 44,
+            hint_height: 44,
+            radius: 10,
+            columns: 3,
+            tile_height: 80,
+            gap: 8,
         }
     }
 }
@@ -193,6 +222,6 @@ mod tests {
         let theme: Theme = toml::from_str("[color]\naccent = \"#ff0000\"\n").unwrap();
         assert_eq!(theme.color.accent, Rgb(0xff, 0, 0));
         assert_eq!(theme.color.background, Colors::default().background);
-        assert_eq!(theme.bar.height, 18);
+        assert_eq!(theme.bar.height, Bar::default().height);
     }
 }
