@@ -1,5 +1,7 @@
 # pt35-desktop theme. Sizes are physical pixels on the 640x480 panel.
 # User override: ~/.config/pt35/theme.toml, merged over this file key by key.
+# Settings > Appearance writes ~/.config/pt35/appearance.toml, which sits
+# between the two: a hand edit in theme.toml still wins over a pick.
 #
 # Mint on charcoal. Terminal green without the neon: a saturated #00ff88 buzzes
 # on an emissive panel this small, so the accent is toned down and the text is
@@ -42,7 +44,12 @@ height        = 34
 padding_x     = 10
 show_battery  = "auto"   # auto | always | never
 show_network  = true
-clock_format  = "%H:%M"
+show_volume   = true
+show_mode     = true     # the BTN / MOUSE readout
+show_clock    = true
+clock_format  = "%H:%M"  # strftime; "%-I:%M %p" for 12-hour
+menu_icon     = "skull"  # skull | bars
+dock_labels   = false    # names next to the taskbar icons
 
 [menu]
 # 480 - 34 (bar) - 46 (header) - 46 (hints) = 354px of body. pt35-menu
@@ -51,13 +58,26 @@ rows_visible  = 7
 row_height    = 50
 padding_x     = 14
 show_numbers  = true
-filter_hint   = "X to search"
+filter_hint   = "type to search"   # header text while a search is empty
+recents       = 5        # launches kept at the top of the launcher, 0 for none
+show_desktop_entries = true   # false: only the apps in apps.toml
+animations    = true     # selection glide and screen settle, ~0.1s each
+type_to_search = true    # typing on the launcher searches; false on stock firmware
+window_previews = true   # switcher cards show each window as it last looked
 header_height = 46
 hint_height   = 46
 radius        = 2
 columns       = 3
 tile_height   = 86
 gap           = 10
+scrollbar_width = 8      # also a target: click the track, drag the thumb
+
+# GTK and Qt apps. dark | light | keep (leave the desktop settings alone).
+# Applied through gsettings at login and on reload; Qt follows GTK.
+[apps]
+color_scheme  = "dark"
+gtk_dark      = "Adwaita-dark"
+gtk_light     = "Adwaita"
 
 # Papirus is packaged and readable at this size. Anything the theme does not
 # have falls back to a letter in a coloured badge.
@@ -72,6 +92,10 @@ size_tile     = 32
 step          = 16
 repeat_delay  = 200
 repeat_rate   = 40
+# Bibata: a clear outline on dark and light alike. 20px is a fingertip on this
+# panel without covering what it points at.
+cursor_theme  = "Bibata-Modern-Classic"
+cursor_size   = 20
 
 # Buttons mode. Slower, because one press of the D-pad should move one row.
 # `hide_cursor` is milliseconds of stillness; there is no cursor worth keeping

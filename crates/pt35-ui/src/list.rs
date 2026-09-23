@@ -9,6 +9,8 @@ use crate::keys::{navigate, Key, Mode, Navigation};
 pub struct ListState {
     /// Every item, in definition order.
     items: Vec<String>,
+    /// Extra words a search also matches, per item: an app's id or command.
+    keywords: Vec<String>,
     /// Indices into `items` that survive the current filter.
     visible: Vec<usize>,
     filter: String,
@@ -46,6 +48,7 @@ impl ListState {
     pub fn new(items: Vec<String>, rows: usize) -> Self {
         let visible = (0..items.len()).collect();
         Self {
+            keywords: vec![String::new(); items.len()],
             items,
             visible,
             filter: String::new(),
@@ -55,6 +58,14 @@ impl ListState {
             columns: 1,
             mode: Mode::Nav,
         }
+    }
+
+    /// Words a search matches besides each label, one string per item.
+    pub fn with_keywords(mut self, keywords: Vec<String>) -> Self {
+        if keywords.len() == self.items.len() {
+            self.keywords = keywords;
+        }
+        self
     }
 
     /// Lay the items out as a grid this many tiles wide.
@@ -79,6 +90,24 @@ impl ListState {
         }
         self.selected = target;
         true
+    }
+
+    /// Put the cursor and the scroll back where another list had them, clamped
+    /// to this one. For rows rebuilt in place, where a jump to the top would
+    /// lose your place on every toggle.
+    pub fn keep_position(&mut self, from: &ListState) {
+        let last = self.visible.len().saturating_sub(1);
+        self.selected = from.selected.min(last);
+        self.offset = from.offset.min(self.selected);
+    }
+
+    /// Put the cursor on this item, by its index in the full list, scrolling
+    /// it into view. Nothing happens if a filter hides it.
+    pub fn select_item(&mut self, item: usize) {
+        if let Some(at) = self.visible.iter().position(|&i| i == item) {
+            self.selected = at;
+            self.scroll_into_view();
+        }
     }
 
     /// Index of the cursor inside the drawn window.
@@ -130,6 +159,24 @@ impl ListState {
     /// First visible row, counted in filtered positions.
     pub fn offset(&self) -> usize {
         self.offset
+    }
+
+    /// Scroll so the drawn window sits at `fraction` of the way down, the
+    /// scrollbar's measure, and keep the cursor inside it. True if it moved.
+    pub fn scroll_to(&mut self, fraction: f32) -> bool {
+        let page = self.page();
+        let total = self.len();
+        if total <= page {
+            return false;
+        }
+        let span = total - page;
+        let offset = (fraction.clamp(0.0, 1.0) * span as f32).round() as usize;
+        // A grid scrolls by whole rows of tiles.
+        let offset = offset - offset % self.columns;
+        let before = (self.offset, self.selected);
+        self.offset = offset;
+        self.selected = self.selected.clamp(offset, offset + page - 1);
+        before != (self.offset, self.selected)
     }
 
     /// Where the drawn window sits, 0.0 at the top and 1.0 at the bottom.
@@ -252,26 +299,66 @@ impl ListState {
 
     fn refilter(&mut self) {
         let needle = self.filter.to_lowercase();
-        let previous = self.selected();
-        self.visible = self
+        let mut scored: Vec<(u8, usize)> = self
             .items
             .iter()
+            .zip(&self.keywords)
             .enumerate()
-            .filter(|(_, label)| label.to_lowercase().contains(&needle))
-            .map(|(i, _)| i)
+            .filter_map(|(i, (label, keywords))| {
+                let label = score(&label.to_lowercase(), &needle);
+                let keywords = score(&keywords.to_lowercase(), &needle).map(|s| s + 1);
+                label.into_iter().chain(keywords).min().map(|s| (s, i))
+            })
             .collect();
-        // Keep the highlight on the same item when it survives the filter.
-        self.selected = previous
-            .and_then(|index| self.visible.iter().position(|&i| i == index))
-            .unwrap_or(0);
+        // Best match first, ties in the list's own order: Enter opens what
+        // the search most likely meant.
+        scored.sort();
+        self.visible = scored.into_iter().map(|(_, i)| i).collect();
+        self.selected = 0;
         self.offset = 0;
         self.scroll_into_view();
     }
 }
 
+/// How well `needle` matches `hay`, lower is better, `None` for no match: the
+/// start of it, the start of a word, anywhere, then its letters in order.
+pub fn score(hay: &str, needle: &str) -> Option<u8> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    if hay.starts_with(needle) {
+        return Some(0);
+    }
+    let word_start = hay
+        .match_indices(needle)
+        .any(|(at, _)| hay[..at].ends_with([' ', '-', '_', '.', ':', '/']));
+    if word_start {
+        return Some(2);
+    }
+    if hay.contains(needle) {
+        return Some(4);
+    }
+    let mut rest = hay.chars();
+    needle.chars().all(|c| rest.any(|h| h == c)).then_some(6)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_scrollbar_moves_the_window_and_the_cursor_stays_in_it() {
+        let items = (0..20).map(|i| i.to_string()).collect();
+        let mut list = ListState::new(items, 5);
+        assert!(list.scroll_to(1.0));
+        assert_eq!(list.offset(), 15);
+        assert_eq!(list.cursor_index(), 0, "dragged along to the top row shown");
+        assert!(list.scroll_to(0.5));
+        assert_eq!(list.offset(), 8);
+        assert!(!list.scroll_to(0.5), "nothing moved");
+        let short = ListState::new(vec!["a".into(), "b".into()], 5);
+        assert!(!short.clone().scroll_to(1.0), "everything fits");
+    }
     use crate::keys::sym;
 
     fn list() -> ListState {
@@ -285,6 +372,70 @@ mod tests {
 
     fn letter(list: &mut ListState, ch: char) -> Outcome {
         list.handle(&Key::with_text(ch as u32, ch))
+    }
+
+    #[test]
+    fn search_ranks_a_name_that_starts_with_it_first() {
+        let mut list = ListState::new(
+            ["Text Editor", "Terminal", "Thonny", "Files"]
+                .map(String::from)
+                .to_vec(),
+            5,
+        )
+        .with_keywords(
+            ["app:editor", "app:terminal", "exec:thonny", "exec:yazi"]
+                .map(String::from)
+                .to_vec(),
+        );
+        list.handle(&Key::new(sym::BUTTON_X));
+        for ch in "te".chars() {
+            list.handle(&Key::with_text(ch as u32, ch));
+        }
+        let order: Vec<&str> = list.window().iter().map(|(_, l)| *l).collect();
+        assert_eq!(
+            order,
+            ["Text Editor", "Terminal"],
+            "prefix matches, in list order"
+        );
+
+        let mut list = list.clone();
+        list.handle(&Key::new(sym::BACKSPACE));
+        list.handle(&Key::new(sym::BACKSPACE));
+        for ch in "tny".chars() {
+            list.handle(&Key::with_text(ch as u32, ch));
+        }
+        assert_eq!(
+            list.window()[0].1,
+            "Thonny",
+            "letters in order still find it"
+        );
+    }
+
+    #[test]
+    fn search_reaches_an_app_by_its_command() {
+        assert_eq!(
+            score("exec:yazi", "yazi"),
+            Some(2),
+            "a word inside the keywords"
+        );
+        assert_eq!(score("files", "yazi"), None);
+        assert_eq!(score("thonny", "tny"), Some(6));
+    }
+
+    #[test]
+    fn a_rebuilt_list_keeps_your_place() {
+        let mut old = list();
+        for _ in 0..4 {
+            old.handle(&Key::new(sym::DOWN));
+        }
+        let mut new = list();
+        new.keep_position(&old);
+        assert_eq!(new.selected(), Some(4));
+        assert_eq!(new.offset(), old.offset());
+
+        let mut short = ListState::new(vec!["one".into(), "two".into()], 3);
+        short.keep_position(&old);
+        assert_eq!(short.selected(), Some(1), "clamped to what is left");
     }
 
     #[test]
@@ -316,12 +467,11 @@ mod tests {
     }
 
     #[test]
-    fn face_buttons_page_and_activate() {
+    fn face_buttons_activate_and_the_shoulders_leave_the_list_alone() {
         let mut list = list();
-        // R is Page Down, L is Page Up — and they are the letters r and l.
-        assert_eq!(letter(&mut list, 'r'), Outcome::Redraw);
-        assert_eq!(list.selected(), Some(3));
-        assert_eq!(letter(&mut list, 'l'), Outcome::Redraw);
+        // L and R belong to the shell (close, mode), not to paging.
+        assert_eq!(letter(&mut list, 'r'), Outcome::Nothing);
+        assert_eq!(letter(&mut list, 'l'), Outcome::Nothing);
         assert_eq!(list.selected(), Some(0));
         // A opens, B goes back.
         assert_eq!(letter(&mut list, 'a'), Outcome::Activate(0));
@@ -352,16 +502,14 @@ mod tests {
     }
 
     #[test]
-    fn filtering_keeps_the_highlight_on_the_same_item() {
+    fn filtering_puts_the_highlight_on_the_best_match() {
         let mut list = list();
         list.handle(&Key::new(sym::DOWN)); // Files
         letter(&mut list, 'x');
         letter(&mut list, 'i');
-        assert_eq!(
-            list.selected(),
-            Some(1),
-            "Files stays selected through the filter"
-        );
+        // Several labels hold an "i" and none starts with it, so list order
+        // decides, and Enter opens the top one.
+        assert_eq!(list.cursor_row(), 0, "the top match, not where you were");
     }
 
     #[test]

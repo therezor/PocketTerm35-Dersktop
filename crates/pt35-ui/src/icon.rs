@@ -59,6 +59,9 @@ impl Icon {
     }
 }
 
+/// What an app with no icon of its own is drawn with.
+pub const GENERIC_APP: &str = "application-x-executable";
+
 /// An icon theme, with its inherited fallbacks, rasterising on first use.
 pub struct Icons {
     themes: Vec<String>,
@@ -102,6 +105,19 @@ impl Icons {
         self.get(&key, size)
     }
 
+    /// The first of `names` the theme has, else the generic app icon. An app
+    /// with no icon of its own still gets a picture rather than two letters.
+    /// Returns the name found, so a caller can hold on to it.
+    pub fn resolve(&mut self, names: &[&str], size: u32) -> Option<String> {
+        names
+            .iter()
+            .copied()
+            .filter(|name| !name.is_empty())
+            .chain(std::iter::once(GENERIC_APP))
+            .find(|name| self.get(name, size).is_some())
+            .map(str::to_string)
+    }
+
     pub fn get(&mut self, name: &str, size: u32) -> Option<&Icon> {
         let key = (name.to_string(), size);
         if !self.cache.contains_key(&key) {
@@ -114,6 +130,10 @@ impl Icons {
 
 /// First `<root>/<theme>/<size>/<category>/<name>.svg` that exists.
 fn find(themes: &[String], name: &str) -> Option<PathBuf> {
+    // Not a theme name: one of ours (`pt35:skull`) or a path.
+    if name.is_empty() || name.contains([':', '/']) {
+        return None;
+    }
     let file = format!("{name}.svg");
     for root in ROOTS {
         for theme in themes {
@@ -127,7 +147,12 @@ fn find(themes: &[String], name: &str) -> Option<PathBuf> {
                     if candidate.is_file() {
                         return Some(candidate);
                     }
-                    // Papirus nests its symbolic set one level deeper.
+                    // Papirus nests its symbolic set one level deeper. Only
+                    // that one: listing `apps` to look for folders reads 8000
+                    // entries, and a miss did it for every size of every theme.
+                    if category.file_name() != "symbolic" {
+                        continue;
+                    }
                     let Ok(nested) = std::fs::read_dir(category.path()) else {
                         continue;
                     };

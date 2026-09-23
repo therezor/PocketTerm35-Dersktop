@@ -86,6 +86,10 @@ pub mod sym {
     pub const BUTTON_Y: u32 = 0x1008ff47; // KEY_F16, XF86Launch7
     pub const BUTTON_B: u32 = 0x1008ff48; // KEY_F17, XF86Launch8
     pub const BUTTON_A: u32 = 0x1008ff49; // KEY_F18, XF86Launch9
+    /// Select and Start on the pt35 firmware: F21 and F22, so that Fn+Select
+    /// and Fn+Start stay the real Print Screen and Pause.
+    pub const BUTTON_SELECT: u32 = 0x1008ffa9; // KEY_F21, XF86TouchpadToggle
+    pub const BUTTON_START: u32 = 0x1008ffb0; // KEY_F22, XF86TouchpadOn
 
     /// The same keys under a layout that does map them to F13-F18.
     pub const F13: u32 = 0xffca;
@@ -133,6 +137,20 @@ impl Button {
     }
 }
 
+/// Whether the letters a b x y l r are also the face buttons: true on stock
+/// firmware, false once the pt35 firmware sends F13-F18 for them. Set once
+/// at startup by whoever knows which firmware is on the keyboard.
+static LETTERS_ARE_BUTTONS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+
+pub fn set_letters_are_buttons(on: bool) {
+    LETTERS_ARE_BUTTONS.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn letters_are_buttons() -> bool {
+    LETTERS_ARE_BUTTONS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Which button a key press is, if any. Letters only count in [`Mode::Nav`];
 /// in [`Mode::Filter`] they are text the user is typing.
 pub fn button(key: &Key, mode: Mode) -> Option<Button> {
@@ -141,8 +159,8 @@ pub fn button(key: &Key, mode: Mode) -> Option<Button> {
         sym::DOWN => Some(Button::Down),
         sym::LEFT => Some(Button::Left),
         sym::RIGHT => Some(Button::Right),
-        sym::PAUSE => Some(Button::Start),
-        sym::PRINT | sym::SYS_REQ => Some(Button::Select),
+        sym::PAUSE | sym::BUTTON_START => Some(Button::Start),
+        sym::PRINT | sym::SYS_REQ | sym::BUTTON_SELECT => Some(Button::Select),
         sym::BUTTON_A | sym::F18 => Some(Button::A),
         sym::BUTTON_B | sym::F17 => Some(Button::B),
         sym::BUTTON_X | sym::F15 => Some(Button::X),
@@ -151,7 +169,7 @@ pub fn button(key: &Key, mode: Mode) -> Option<Button> {
         sym::BUTTON_R | sym::F14 => Some(Button::R),
         _ => None,
     };
-    if by_sym.is_some() || mode == Mode::Filter {
+    if by_sym.is_some() || mode == Mode::Filter || !letters_are_buttons() {
         return by_sym;
     }
     match key.text.map(|c| c.to_ascii_lowercase()) {
@@ -221,8 +239,9 @@ pub fn navigate(key: &Key, mode: Mode) -> Navigation {
         Some(Button::B) => return Navigation::Back,
         Some(Button::X) => return Navigation::StartFilter,
         Some(Button::Y) => return Navigation::Secondary,
-        Some(Button::L) => return Navigation::PageUp,
-        Some(Button::R) => return Navigation::PageDown,
+        // The shoulders mean one thing everywhere (R the input mode, L close
+        // a window), so a list does not borrow them for paging.
+        Some(Button::L) | Some(Button::R) => return Navigation::Ignored,
         None => {}
     }
 
@@ -276,8 +295,8 @@ mod tests {
         assert_eq!(navigate(&letter('b'), Mode::Nav), Navigation::Back);
         assert_eq!(navigate(&letter('x'), Mode::Nav), Navigation::StartFilter);
         assert_eq!(navigate(&letter('y'), Mode::Nav), Navigation::Secondary);
-        assert_eq!(navigate(&letter('l'), Mode::Nav), Navigation::PageUp);
-        assert_eq!(navigate(&letter('r'), Mode::Nav), Navigation::PageDown);
+        assert_eq!(navigate(&letter('l'), Mode::Nav), Navigation::Ignored);
+        assert_eq!(navigate(&letter('r'), Mode::Nav), Navigation::Ignored);
     }
 
     #[test]
@@ -296,10 +315,13 @@ mod tests {
                 navigate(&Key::new(sym::BUTTON_Y), mode),
                 Navigation::Secondary
             );
-            assert_eq!(navigate(&Key::new(sym::BUTTON_L), mode), Navigation::PageUp);
+            assert_eq!(
+                navigate(&Key::new(sym::BUTTON_L), mode),
+                Navigation::Ignored
+            );
             assert_eq!(
                 navigate(&Key::new(sym::BUTTON_R), mode),
-                Navigation::PageDown
+                Navigation::Ignored
             );
         }
     }

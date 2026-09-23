@@ -23,19 +23,20 @@
 label     = "Terminal"
 glyph     = ">_"
 icon      = "foot"
-exec      = "foot"
+exec      = "foot pt35-hello"
 match     = { app_id = "foot" }
 workspace = 1
 multiple  = true
 
+# Yazi in a terminal: keyboard first, which is what this device is. Installed
+# by install.sh from upstream, because Trixie does not package it.
 [app.files]
 label     = "Files"
 glyph     = "F"
 icon      = "system-file-manager"
-exec      = "pcmanfm"
-match     = { app_id = "pcmanfm", class = "Pcmanfm" }
+exec      = "foot -a pt35-files yazi"
+match     = { app_id = "pt35-files" }
 workspace = 2
-scale     = 0.75
 
 [app.editor]
 label     = "Editor"
@@ -53,6 +54,15 @@ icon      = "utilities-system-monitor"
 exec      = "foot -a pt35-monitor htop"
 match     = { app_id = "pt35-monitor" }
 workspace = 4
+
+# What is filling the disk, sorted, in a terminal. No workspace of its own:
+# it opens on the first free one.
+[app.disk]
+label     = "Disk usage"
+glyph     = "D"
+icon      = "baobab"
+exec      = "foot -a pt35-ncdu ncdu /home"
+match     = { app_id = "pt35-ncdu" }
 
 [app.music]
 label     = "Music"

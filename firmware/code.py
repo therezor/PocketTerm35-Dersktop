@@ -11,6 +11,7 @@ import digitalio
 import time
 import pwmio
 import supervisor
+import sys
 # from typing import Optional, Set, List, Tuple, Dict, Callable, Any
 
 
@@ -597,8 +598,11 @@ class KeyboardController:
             [Keycode.TAB, Keycode.CAPS_LOCK, Keycode.MINUS, Keycode.EQUALS, 
              Keycode.SEMICOLON, Keycode.QUOTE, Keycode.COMMA, 
              Keycode.PERIOD, Keycode.SHIFT, None],
+            # pt35-desktop: Select and Start send F21 and F22, keys of their
+            # own, so Fn+Select and Fn+Start can be the real Print Screen and
+            # Pause the keycaps show.
             [CustomKeycodes.FN_KEY, Keycode.CONTROL, Keycode.LEFT_ALT, 
-             Keycode.PRINT_SCREEN, Keycode.SPACE, Keycode.PAUSE, 
+             Keycode.F21, Keycode.SPACE, Keycode.F22, 
              Keycode.RIGHT_ALT, Keycode.WINDOWS, CustomKeycodes.FN_KEY, None]
         ]
     
@@ -690,13 +694,48 @@ class KeyboardController:
             self.hid.press_consumer(ConsumerControlCode.SCAN_NEXT_TRACK)
             self.hid.release_consumer()
     
+    # pt35-desktop: the backlight from Linux. The host writes `B<0-100>` or
+    # `B?` and a newline on the USB console; the answer is `PT35 B=<percent>`,
+    # a line nothing else here prints. 5% is the floor: a black panel on a
+    # device with no other screen is not a brightness.
+    BL_FLOOR = 5
+
+    def _backlight_percent(self):
+        duty = self.pin_manager.get_pwm_value("bl_pwm")
+        # Inverted circuit: duty 0 is full brightness.
+        return (Config.PWM_MAX - duty) * 100 // Config.PWM_MAX
+
+    def _host_command(self, line):
+        line = line.strip()
+        if line == "B?":
+            pass
+        elif line.startswith("B") and line[1:].isdigit():
+            percent = max(self.BL_FLOOR, min(100, int(line[1:])))
+            duty = Config.PWM_MAX - percent * Config.PWM_MAX // 100
+            self.pin_manager.set_pwm_value("bl_pwm", duty)
+        else:
+            return
+        print("PT35 B=%d" % self._backlight_percent())
+
+    def _poll_host(self):
+        # Only what has already arrived: the scan loop must never wait on it.
+        while supervisor.runtime.serial_bytes_available:
+            ch = sys.stdin.read(1)
+            if ch in "\r\n":
+                self._host_command(self._host_line)
+                self._host_line = ""
+            elif len(self._host_line) < 16:
+                self._host_line += ch
+
     def run(self):
         """主循环"""
         Logger.debug("[System] 系统启动完成")
         Logger.debug("[System] 等待键盘输入...")
+        self._host_line = ""
         
         while True:
             self.processor.process()
+            self._poll_host()
             time.sleep(Config.SCAN_INTERVAL)
 
 

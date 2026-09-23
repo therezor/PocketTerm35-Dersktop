@@ -16,6 +16,9 @@ export QT_QPA_PLATFORM=wayland
 export QT_WAYLAND_DISABLE_WINDOWDECORATION=1
 export QT_ENABLE_HIGHDPI_SCALING=0
 export QT_FONT_DPI=96
+# Qt draws with the GTK theme, so the dark scheme pt35d sets reaches Qt apps
+# too. Needs qt5-/qt6-gtk-platformtheme; without them Qt keeps its own style.
+export QT_QPA_PLATFORMTHEME=gtk3
 
 export GDK_BACKEND=wayland,x11
 export GDK_DPI_SCALE=1.0
@@ -29,7 +32,8 @@ export CLUTTER_BACKEND=wayland
 export ELECTRON_OZONE_PLATFORM_HINT=wayland
 
 # Small screen: keep terminal and GUI font sizes sane.
-export XCURSOR_SIZE=16
+export XCURSOR_THEME=Bibata-Modern-Classic
+export XCURSOR_SIZE=20
 export PT35_SHARE=/usr/share/pt35-desktop
 
 # --- logs ------------------------------------------------------------------

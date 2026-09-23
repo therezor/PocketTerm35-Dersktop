@@ -137,6 +137,7 @@ install_from_source() {
         pipewire pipewire-alsa pipewire-pulse wireplumber \
         xdg-desktop-portal-wlr wl-clipboard grim wtype \
         fonts-dejavu-core papirus-icon-theme i2c-tools evtest python3-serial htop \
+        qt5-gtk-platformtheme qt6-gtk-platformtheme fastfetch bibata-cursor-theme ncdu \
         build-essential pkg-config libxkbcommon-dev"
 
   # A login shell, so a rustup toolchain in ~/.cargo/bin wins over the older
@@ -154,8 +155,11 @@ install_from_source() {
   run "install -m755 '$src/scripts/pt35-session' /usr/bin/pt35-session"
   run "install -m755 '$src/scripts/pt35-kbd' /usr/bin/pt35-kbd"
   run "install -m755 '$src/scripts/pt35-quick' /usr/bin/pt35-quick"
+  run "install -m755 '$src/scripts/pt35-hello' /usr/bin/pt35-hello"
   run "install -d /usr/lib/pt35 && install -m755 '$src/scripts/pt35-cpu-profile' /usr/lib/pt35/pt35-cpu-profile"
-  run "install -d '$SHARE/sway' '$SHARE/pt35' '$SHARE/foot' '$SHARE/boot'"
+  run "install -d '$SHARE/sway' '$SHARE/pt35' '$SHARE/foot' '$SHARE/boot' '$SHARE/fastfetch'"
+  run "install -m644 '$src/config/fastfetch/skull.txt' '$SHARE/fastfetch/'"
+  run "install -d /etc/xdg/fastfetch && install -m644 '$src/config/fastfetch/config.jsonc' /etc/xdg/fastfetch/"
   run "install -m644 '$src/config/sway/config' '$SHARE/sway/config'"
   run "install -m644 '$src/config/foot/foot.ini' '$SHARE/foot/foot.ini'"
   run "install -m644 '$src/config/pt35/'*.toml '$SHARE/pt35/'"
@@ -168,6 +172,7 @@ install_from_source() {
   run "install -d '$SHARE/systemd' && install -m644 '$src/config/systemd/greetd-vt1.conf' '$SHARE/systemd/'"
   run "install -d /etc/keyd && install -m644 '$src/config/keyd/pocketterm35.conf' /etc/keyd/"
   run "install -m440 '$src/packaging/pt35-cpu-profile.sudoers' /etc/sudoers.d/pt35-cpu-profile"
+  run "install -m644 '$src/packaging/70-pt35-uinput.rules' /etc/udev/rules.d/70-pt35-uinput.rules"
   run "install -d /usr/share/wayland-sessions && install -m644 '$src/config/pt35-session.desktop' /usr/share/wayland-sessions/"
   if [ -f "$src/boot/waveshare-35dpi-5b.dtbo" ]; then
     [ -f "$src/boot/SHA256SUMS" ] && run "(cd '$src/boot' && sha256sum -c SHA256SUMS)"
@@ -179,6 +184,35 @@ install_from_source() {
 
   msg "wiring up the session"
   run "PT35_USER='$TARGET_USER' '$src/packaging/debian/postinst' configure"
+}
+
+# Yazi is the file manager, and Trixie does not package it. Upstream's static
+# musl build runs on any arm64 Pi. Its icons are Nerd Font glyphs, also not
+# packaged: the symbols-only font is enough, foot finds it as a fallback.
+install_yazi() {
+  local tmp url fonts=/usr/local/share/fonts/nerd-symbols
+  tmp=$(mktemp -d)
+  run "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends unzip file fontconfig"
+  if [ ! -d "$fonts" ]; then
+    msg "installing the Nerd Font symbols"
+    # Unpacked aside and moved into place, so a failure leaves no empty folder
+    # that would stop the next run from trying again.
+    if run "curl -fsSL -o '$tmp/symbols.zip' https://github.com/ryanoasis/nerd-fonts/releases/latest/download/NerdFontsSymbolsOnly.zip" \
+      && run "unzip -q -o '$tmp/symbols.zip' '*.ttf' -d '$tmp/fonts'"; then
+      run "install -d '$fonts' && install -m644 '$tmp/fonts/'*.ttf '$fonts/' && fc-cache -f '$fonts'"
+    else
+      warn "could not install the Nerd Font symbols; yazi will show boxes for icons"
+    fi
+  fi
+  command -v yazi >/dev/null && { msg "yazi: $(yazi --version | head -n1)"; return; }
+  url="https://github.com/sxyazi/yazi/releases/latest/download/yazi-aarch64-unknown-linux-musl.zip"
+  msg "installing yazi"
+  if ! run "curl -fsSL -o '$tmp/yazi.zip' '$url'"; then
+    warn "could not download yazi; Files will not open until it is installed"
+    return
+  fi
+  run "unzip -q -o '$tmp/yazi.zip' -d '$tmp'"
+  run "install -m755 '$tmp/yazi-aarch64-unknown-linux-musl/yazi' '$tmp/yazi-aarch64-unknown-linux-musl/ya' /usr/local/bin/"
 }
 
 do_install() {
@@ -194,6 +228,7 @@ do_install() {
   else
     install_from_release
   fi
+  install_yazi
 
   if [ "$FLASH_KEYBOARD" = 1 ]; then
     msg "putting the face buttons on F13-F18"
@@ -233,9 +268,10 @@ do_uninstall() {
     fi
   fi
   run "rm -f /usr/bin/pt35d /usr/bin/pt35ctl /usr/bin/pt35-bar /usr/bin/pt35-menu \
-        /usr/bin/pt35-session /usr/bin/pt35-kbd /usr/bin/pt35-quick \
+        /usr/bin/pt35-session /usr/bin/pt35-kbd /usr/bin/pt35-quick /usr/bin/pt35-hello \
         /etc/keyd/pocketterm35.conf \
-        /etc/sudoers.d/pt35-cpu-profile /usr/share/wayland-sessions/pt35-session.desktop"
+        /etc/sudoers.d/pt35-cpu-profile /etc/udev/rules.d/70-pt35-uinput.rules /etc/xdg/fastfetch/config.jsonc \
+        /usr/share/wayland-sessions/pt35-session.desktop"
   run "rm -rf '$SHARE' /usr/lib/pt35"
   msg "done — your ~/.config/{sway,pt35,foot} were left untouched. Reboot."
 }

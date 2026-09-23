@@ -63,6 +63,9 @@ pub struct Entry {
     pub state: Option<StateField>,
     /// Ask before running (used for reboot / shut down).
     pub confirm: bool,
+    /// Keep the menu open after running, so the change can be seen: the CPU
+    /// profile's tick moving to the row you picked.
+    pub stay: bool,
     pub goto: Option<String>,
     pub app: Option<String>,
     pub exec: Option<String>,
@@ -118,6 +121,8 @@ pub enum Builtin {
     Audio,
     Display,
     DesktopEntries,
+    /// Accent colour and clock, written to `appearance.toml`.
+    Appearance,
     About,
 }
 
@@ -135,6 +140,7 @@ impl Builtin {
             "audio" => Builtin::Audio,
             "display" => Builtin::Display,
             "desktop_entries" => Builtin::DesktopEntries,
+            "appearance" => Builtin::Appearance,
             "about" => Builtin::About,
             _ => return None,
         })

@@ -1,0 +1,12 @@
+#!/bin/sh
+# pt35-hello: the terminal's greeting, then your shell.
+#
+# A wrapper rather than a line in ~/.bashrc, so it runs only in terminals opened
+# on the device, not over ssh, and leaves your dotfiles alone.
+#
+# The layout is fastfetch's system default, /etc/xdg/fastfetch/config.jsonc, so
+# `fastfetch` typed by hand looks the same. ~/.config/fastfetch wins over it.
+if command -v fastfetch >/dev/null 2>&1; then
+  fastfetch
+fi
+exec "${SHELL:-/bin/sh}"

@@ -88,27 +88,61 @@ impl Hardware {
         fs::write(base.join("brightness"), value.to_string()).is_ok()
     }
 
-    /// A short description of the live connection: `wlan0` state, or the first
-    /// interface that is up. `None` when nothing is connected.
-    /// Link quality as a percentage, for the bar's signal meter. The kernel
-    /// reports it out of 70 in `/proc/net/wireless`.
-    pub fn network_signal(&self) -> Option<u8> {
-        let text = std::fs::read_to_string("/proc/net/wireless").ok()?;
-        let line = text.lines().nth(2)?;
-        let quality = line.split_whitespace().nth(2)?.trim_end_matches('.');
-        let quality: f32 = quality.parse().ok()?;
-        Some(((quality / 70.0) * 100.0).clamp(0.0, 100.0) as u8)
+    /// The interface carrying traffic: a cable beats Wi-Fi, as NetworkManager's
+    /// route metrics do, then anything else that is up (a USB tether, a VPN).
+    pub fn network(&self) -> Option<String> {
+        let up: Vec<&PathBuf> = self.net.iter().filter(|i| is_up(i)).collect();
+        up.iter()
+            .find(|i| is_ethernet(i))
+            .or_else(|| up.iter().find(|i| is_wireless(i)))
+            .or_else(|| up.first())
+            .and_then(|i| name(i))
     }
 
-    pub fn network(&self) -> Option<String> {
-        for iface in &self.net {
-            if read_trim(&iface.join("operstate")).as_deref() == Some("up") {
-                let name = iface.file_name()?.to_string_lossy().into_owned();
-                return Some(name);
-            }
-        }
-        None
+    /// A wired interface with a cable in. Only a real device counts: a bridge
+    /// or a container's veth is up too, and is not a cable.
+    pub fn ethernet(&self) -> Option<String> {
+        self.net
+            .iter()
+            .find(|i| is_ethernet(i) && is_up(i))
+            .and_then(|i| name(i))
     }
+
+    /// Wi-Fi link quality as a percentage, whether or not the cable is the
+    /// route. `None` with no Wi-Fi link.
+    pub fn network_signal(&self) -> Option<u8> {
+        let iface = self.net.iter().find(|i| is_wireless(i) && is_up(i))?;
+        let text = fs::read_to_string("/proc/net/wireless").ok()?;
+        wireless_quality(&text, &name(iface)?)
+    }
+}
+
+fn is_up(iface: &Path) -> bool {
+    read_trim(&iface.join("operstate")).as_deref() == Some("up")
+}
+
+fn is_wireless(iface: &Path) -> bool {
+    iface.join("wireless").is_dir() || iface.join("phy80211").exists()
+}
+
+fn is_ethernet(iface: &Path) -> bool {
+    iface.join("device").exists() && !is_wireless(iface)
+}
+
+fn name(iface: &Path) -> Option<String> {
+    Some(iface.file_name()?.to_string_lossy().into_owned())
+}
+
+/// `/proc/net/wireless` reports link quality out of 70, one line per radio.
+fn wireless_quality(text: &str, iface: &str) -> Option<u8> {
+    let line = text.lines().skip(2).find(|l| {
+        l.trim_start()
+            .strip_prefix(iface)
+            .is_some_and(|rest| rest.starts_with(':'))
+    })?;
+    let quality = line.split_whitespace().nth(2)?.trim_end_matches('.');
+    let quality: f32 = quality.parse().ok()?;
+    Some(((quality / 70.0) * 100.0).clamp(0.0, 100.0) as u8)
 }
 
 /// CPU frequency profiles. The Pi 5 in this chassis browns out under a full
@@ -141,7 +175,7 @@ pub fn cpu_limits(profile: pt35_common::ipc::CpuProfile) -> CpuLimits {
 /// without cpufreq write access this is a no-op and the caller reports it.
 pub fn apply_cpu_profile(profile: pt35_common::ipc::CpuProfile) -> bool {
     let limits = cpu_limits(profile);
-    let policies = list(Path::new("/sys/devices/system/cpu/cpufreq"));
+    let policies = cpu_policies();
     if policies.is_empty() {
         return false;
     }
@@ -155,6 +189,43 @@ pub fn apply_cpu_profile(profile: pt35_common::ipc::CpuProfile) -> bool {
         }
     }
     ok
+}
+
+/// Which profile the CPU is in now, read back from cpufreq. `None` when the
+/// settings match no profile, as on a fresh boot: ondemand at full speed.
+pub fn current_cpu_profile() -> Option<pt35_common::ipc::CpuProfile> {
+    let policy = cpu_policies().into_iter().next()?;
+    cpu_profile_of(
+        &read_trim(&policy.join("scaling_governor"))?,
+        read_u32(&policy.join("scaling_max_freq"))?,
+        read_u32(&policy.join("cpuinfo_max_freq"))?,
+    )
+}
+
+pub fn cpu_profile_of(
+    governor: &str,
+    max_khz: u32,
+    hardware_max: u32,
+) -> Option<pt35_common::ipc::CpuProfile> {
+    use pt35_common::ipc::CpuProfile::*;
+    [Powersave, Balanced, Performance]
+        .into_iter()
+        .find(|&profile| {
+            let limits = cpu_limits(profile);
+            limits.governor == governor && limits.max_khz.unwrap_or(hardware_max) == max_khz
+        })
+}
+
+/// The `policy*` folders only: with ondemand active, cpufreq also holds an
+/// `ondemand/` tunables folder, and it sorts first.
+fn cpu_policies() -> Vec<PathBuf> {
+    list(Path::new("/sys/devices/system/cpu/cpufreq"))
+        .into_iter()
+        .filter(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("policy"))
+        })
+        .collect()
 }
 
 fn list(dir: &Path) -> Vec<PathBuf> {
@@ -174,6 +245,29 @@ fn read_trim(path: &Path) -> Option<String> {
 
 fn read_u32(path: &Path) -> Option<u32> {
     read_trim(path)?.parse().ok()
+}
+
+#[cfg(test)]
+mod cpu_tests {
+    use super::*;
+    use pt35_common::ipc::CpuProfile;
+
+    #[test]
+    fn a_profile_is_read_back_from_what_it_wrote() {
+        assert_eq!(
+            cpu_profile_of("ondemand", 1_800_000, 2_400_000),
+            Some(CpuProfile::Balanced)
+        );
+        assert_eq!(
+            cpu_profile_of("performance", 2_400_000, 2_400_000),
+            Some(CpuProfile::Performance)
+        );
+        assert_eq!(
+            cpu_profile_of("ondemand", 2_400_000, 2_400_000),
+            None,
+            "the boot default is no profile"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -225,6 +319,35 @@ mod tests {
         assert_eq!(hw.charging(), Some(true));
         assert_eq!(hw.brightness_percent(), Some(50));
         assert_eq!(hw.network().as_deref(), Some("wlan0"));
+    }
+
+    #[test]
+    fn a_cable_beats_wifi_and_a_bridge_is_not_a_cable() {
+        let root = sysfs_with(
+            "wired",
+            &[
+                ("class/net/docker0/operstate", "up\n"),
+                ("class/net/eth0/device/uevent", ""),
+                ("class/net/eth0/operstate", "down\n"),
+                ("class/net/wlan0/device/uevent", ""),
+                ("class/net/wlan0/wireless/.keep", ""),
+                ("class/net/wlan0/operstate", "up\n"),
+            ],
+        );
+        let hw = Hardware::probe_in(&root);
+        assert_eq!(hw.ethernet(), None, "unplugged");
+        assert_eq!(hw.network().as_deref(), Some("wlan0"));
+
+        fs::write(root.join("class/net/eth0/operstate"), "up\n").unwrap();
+        assert_eq!(hw.ethernet().as_deref(), Some("eth0"));
+        assert_eq!(hw.network().as_deref(), Some("eth0"));
+    }
+
+    #[test]
+    fn signal_is_read_for_the_named_radio() {
+        let text = "Inter-| sta-|   Quality\n face | tus | link level noise\n wlan0: 0000   62.  -48.  -256        0\n";
+        assert_eq!(wireless_quality(text, "wlan0"), Some(88));
+        assert_eq!(wireless_quality(text, "wlan1"), None);
     }
 
     #[test]

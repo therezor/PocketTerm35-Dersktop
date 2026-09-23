@@ -7,10 +7,11 @@ set -eu
 
 usage() {
   echo "usage: pt35-quick wifi|bluetooth on|off|toggle" >&2
+  echo "       pt35-quick bluetooth scan | connect MAC | disconnect MAC" >&2
   exit 2
 }
 
-[ $# -eq 2 ] || usage
+[ $# -ge 2 ] || usage
 
 case "$1" in
   wifi)
@@ -37,6 +38,25 @@ case "$1" in
         else
           bluetoothctl power on
         fi
+        ;;
+      # Twelve seconds of discovery, detached: the menu re-reads the list while
+      # it runs, so devices appear as they are found.
+      scan)
+        bluetoothctl --timeout 12 scan on >/dev/null 2>&1 &
+        ;;
+      # Pair only what is not paired yet, and trust it so it reconnects on its
+      # own next time. Run in a terminal: a keyboard asks for a PIN.
+      connect)
+        [ $# -eq 3 ] || usage
+        if ! bluetoothctl info "$3" | grep -q "Paired: yes"; then
+          bluetoothctl pair "$3"
+        fi
+        bluetoothctl trust "$3" >/dev/null
+        bluetoothctl connect "$3"
+        ;;
+      disconnect)
+        [ $# -eq 3 ] || usage
+        bluetoothctl disconnect "$3" >/dev/null
         ;;
       *) usage ;;
     esac

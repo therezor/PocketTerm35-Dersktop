@@ -1,13 +1,13 @@
 //! What the launcher learned about you.
 //!
 //! `apps.toml` is a `BTreeMap`, so the launcher was sorted by app id, which is
-//! an order nobody chose. The five things you opened last go on top instead.
+//! an order nobody chose. The things you opened last go on top instead.
 
 use std::io::Write;
 use std::path::PathBuf;
 
-/// How many entries are kept, and how many the launcher shows.
-pub const KEEP: usize = 5;
+/// How many entries are kept. `[menu] recents` picks how many the launcher shows.
+pub const KEEP: usize = 10;
 
 fn path() -> PathBuf {
     pt35_common::paths::recents_path()
@@ -60,10 +60,12 @@ mod tests {
 
     #[test]
     fn newest_first_no_repeats_and_capped() {
-        let text = "editor\nbrowser\neditor\nfiles\n\nmusic\nterminal\nshell\n";
-        let list = parse(text);
-        assert_eq!(list, ["editor", "browser", "files", "music", "terminal"]);
+        let text = "editor\nbrowser\neditor\nfiles\n\nmusic\n";
+        assert_eq!(parse(text), ["editor", "browser", "files", "music"]);
+        let many: String = (0..KEEP + 3).map(|i| format!("app{i}\n")).collect();
+        let list = parse(&many);
         assert_eq!(list.len(), KEEP);
+        assert_eq!(list[0], "app0");
     }
 
     #[test]

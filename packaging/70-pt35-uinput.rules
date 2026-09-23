@@ -1,0 +1,4 @@
+# pt35d sends the face buttons' Enter, Escape and Tab through a uinput keyboard,
+# because wtype's keys arrive garbled in XWayland apps. The session user is in
+# `input`, so give that group the device.
+KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"

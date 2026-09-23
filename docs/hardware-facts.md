@@ -61,6 +61,12 @@ the D-pad and the face buttons. Row 6 carries Fn, Ctrl, Alt, Select
 (`PRINT_SCREEN`), Space, Start (`PAUSE`), right Alt and **Super** (`WINDOWS`),
 so the unit does have a Super key.
 
+### Network: Ethernet and Wi-Fi
+The Pi's own `eth0` (RJ45 on the board) and `wlan0`, both under
+NetworkManager. With no cable `eth0` is `down` and nmcli calls it
+`unavailable`. `/proc/net/wireless` lists only the radio, so a wired link has
+no signal reading. A cable with link carries the traffic when both are up.
+
 ### Boot configuration
 ```
 dtparam=i2c_arm=on

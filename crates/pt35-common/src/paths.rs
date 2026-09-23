@@ -35,7 +35,22 @@ pub fn user_config(relative: &str) -> Option<PathBuf> {
     Some(config_dir().join(name))
 }
 
+/// The picks made in Settings > Appearance. Machine-written, so it is kept
+/// apart from the `theme.toml` a person edits.
+pub fn appearance_path() -> PathBuf {
+    config_dir().join("appearance.toml")
+}
+
 /// Unix socket `pt35d` listens on and `pt35ctl` talks to.
+/// Window previews for the switcher, one raw PPM per sway container id. In
+/// the runtime dir: tmpfs, so writing one costs no flash and a reboot clears it.
+pub fn previews_dir() -> PathBuf {
+    let run = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
+    run.join("pt35").join("previews")
+}
+
 pub fn socket_path() -> PathBuf {
     let run = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
@@ -59,6 +74,11 @@ pub fn state_dir() -> PathBuf {
         Some(home) => PathBuf::from(home).join(".local/state/pt35"),
         None => std::env::temp_dir().join("pt35"),
     }
+}
+
+/// The launcher rows you pinned to the top, in the order you pinned them.
+pub fn pins_path() -> PathBuf {
+    state_dir().join("pinned")
 }
 
 /// The apps you have opened, most recent first.

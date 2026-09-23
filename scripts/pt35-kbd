@@ -37,6 +37,18 @@ START, END = b"<<<PT35", b">>>PT35"
 class Keyboard:
     def __init__(self, port=PORT):
         self.serial = serial.Serial(port, 115200, timeout=2)
+        # pt35d talks to this port too (the backlight). A line of its landing
+        # in the REPL mid-write breaks the flash, so hold the port alone. It
+        # skips its turn while this lock is held.
+        import fcntl
+        for _ in range(50):
+            try:
+                fcntl.flock(self.serial.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                time.sleep(0.1)
+        else:
+            raise SystemExit("the keyboard's serial port is busy")
 
     def __enter__(self):
         # Ctrl-C stops code.py, Ctrl-A is the raw REPL, which does not echo.

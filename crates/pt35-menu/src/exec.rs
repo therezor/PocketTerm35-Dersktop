@@ -14,6 +14,8 @@ pub enum Plan {
     Ctl(Vec<String>),
     /// Run this through `sh -c`.
     Shell(String),
+    /// Record an Appearance pick, `section.key=value`.
+    Theme(String),
     /// Nothing to do (an informational row, e.g. on the About screen).
     Nothing,
 }
@@ -30,6 +32,7 @@ pub fn plan(command: &Command) -> Plan {
         // and routing it through the daemon would file it under "apps you
         // recently opened".
         Command::Helper(cmd) => Plan::Shell(cmd.clone()),
+        Command::Theme(pick) => Plan::Theme(pick.clone()),
         Command::Dynamic { builtin, payload } => dynamic(*builtin, payload),
     }
 }
@@ -51,8 +54,9 @@ fn dynamic(builtin: Builtin, payload: &str) -> Plan {
             "foot -a pt35-wifi sh -c \"nmcli --ask device wifi connect {}; read -r _\"",
             shell_quote(payload)
         )),
+        // Pairing may ask for a PIN, so it runs where it can be typed.
         Builtin::Bluetooth => Plan::Shell(format!(
-            "foot -a pt35-bt sh -c \"bluetoothctl connect {}; read -r _\"",
+            "foot -a pt35-bt sh -c \"pt35-quick bluetooth connect {}; read -r _\"",
             shell_quote(payload)
         )),
         // "volume 40" / "brightness 70" are already pt35ctl commands.
@@ -61,8 +65,46 @@ fn dynamic(builtin: Builtin, payload: &str) -> Plan {
         }
         Builtin::DesktopEntries => Plan::Shell(payload.to_string()),
         // The model reads these payloads itself: half of them navigate.
-        Builtin::Launcher | Builtin::Quick | Builtin::System | Builtin::About => Plan::Nothing,
+        Builtin::Launcher
+        | Builtin::Quick
+        | Builtin::System
+        | Builtin::Appearance
+        | Builtin::About => Plan::Nothing,
     }
+}
+
+/// Section, keys, and whether the section is replaced whole.
+pub type Pick<'a> = (&'a str, Vec<(String, toml::Value)>, bool);
+
+/// What one Appearance row writes.
+pub fn picks(pick: &str) -> Result<Pick<'_>, String> {
+    if let Some(name) = pick.strip_prefix("palette=") {
+        let (_, colours) = crate::providers::PALETTES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .ok_or_else(|| format!("no palette {name}"))?;
+        let entries = colours
+            .iter()
+            .map(|(key, hex)| (key.to_string(), toml::Value::String(hex.to_string())))
+            .collect();
+        return Ok(("color", entries, true));
+    }
+    let (section, key, value) =
+        crate::providers::parse_pick(pick).ok_or_else(|| format!("bad pick {pick}"))?;
+    let mut entries = vec![(key.to_string(), value.clone())];
+    // Text on the accent has to stay readable whatever the accent is.
+    if section == "color" && key == "accent" {
+        if let Some(ink) = value
+            .as_str()
+            .and_then(|hex| hex.parse::<pt35_common::theme::Rgb>().ok())
+        {
+            entries.push((
+                "accent_fg".into(),
+                toml::Value::String(ink.ink().to_string()),
+            ));
+        }
+    }
+    Ok((section, entries, false))
 }
 
 /// Single-quote for `sh`, the way a network name with a space or a quote needs.
@@ -85,6 +127,22 @@ pub fn perform(command: &Command) -> Result<(), String> {
                 Ok(_) => Ok(()),
                 Err(message) => Err(message),
             }
+        }
+        Plan::Theme(pick) => {
+            let (section, entries, replace) = picks(&pick)?;
+            let entries: Vec<(&str, toml::Value)> = entries
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.clone()))
+                .collect();
+            pt35_common::set_appearance(section, &entries, replace).map_err(|e| e.to_string())?;
+            // The bar watches the file. The daemon needs telling about [apps],
+            // which it hands to gsettings, a palette, whose background is also
+            // the wallpaper, and previews, which it captures.
+            let daemon_reads = entries.iter().any(|(key, _)| *key == "window_previews");
+            if section == "apps" || replace || daemon_reads {
+                let _ = crate::live::request(&pt35_common::ipc::Request::Reload);
+            }
+            Ok(())
         }
         Plan::Shell(cmd) => std::process::Command::new("sh")
             .arg("-c")

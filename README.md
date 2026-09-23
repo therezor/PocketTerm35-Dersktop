@@ -61,9 +61,9 @@ its service is left disabled: the firmware already sends standard keysyms.
 | key | what it does |
 |---|---|
 | `Start` | open or close the menu, the hub for everything |
-| `Select` | switch between Buttons mode and Mouse mode |
-| `L` | the keyboard Menu key: the focused app's own context menu |
-| `R` | open the window picker |
+| `Select` | open the window switcher |
+| `L` | close the focused window |
+| `R` | switch between Buttons mode and Mouse mode |
 | `Super`+`Space` | open the menu |
 | `Super`+`m` | switch between Buttons mode and Mouse mode |
 | `Super`+`Enter` | new terminal |
@@ -74,8 +74,8 @@ its service is left disabled: the firmware already sends standard keysyms.
 | `Super`+`r` | drag an oversized window back on screen |
 | `Super`+`s` | screenshot |
 
-Nothing closes a window from a shoulder button: that is `Super`+`q`, the `x` at
-the right of the bar, or `Y` on the window picker.
+Closing a window is `L`, `Super`+`q`, the `x` at the right of the bar, or `Y` on
+the window switcher.
 
 Close the last window and the menu takes the screen. It is the desktop, so it
 stays until something is open behind it.

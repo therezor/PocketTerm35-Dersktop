@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 mod audio;
+mod backlight;
 mod events;
 mod hardware;
 mod hooks;
@@ -17,6 +18,7 @@ mod modes;
 mod recents;
 mod server;
 mod state;
+mod vkbd;
 
 /// How often the sampled hardware is re-read. 2 s is invisible on a clock that
 /// shows minutes and costs a few sysfs reads.

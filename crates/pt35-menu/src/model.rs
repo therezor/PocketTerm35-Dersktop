@@ -26,6 +26,10 @@ pub struct Row {
     pub icon: String,
     pub tint: Option<Rgb>,
     pub submenu: bool,
+    /// The row that is current right now: connected, in use, picked.
+    pub active: bool,
+    /// Asks before it acts, because what it does is hard to undo.
+    pub confirm: bool,
     /// What activating this row does, for a caller that needs to know. Empty
     /// on a row that came from `menu.toml` rather than a provider.
     pub payload: String,
@@ -70,6 +74,8 @@ pub enum Command {
     /// not remembered, not deduplicated, and does not hold the desktop's menu
     /// off waiting for a window that will never appear.
     Helper(String),
+    /// An Appearance pick, `section.key=value`.
+    Theme(String),
 }
 
 /// Result of feeding a key into the model.
@@ -91,6 +97,8 @@ pub enum Step {
     RunStay(Command),
     /// Close the menu.
     Quit,
+    /// Pin this launcher row to the top, or unpin it.
+    TogglePin(String),
 }
 
 pub struct Model {
@@ -99,6 +107,10 @@ pub struct Model {
     rows: usize,
     grid_rows: usize,
     columns: usize,
+    /// Depth of the screen the menu was opened on, when that was not the root:
+    /// the picker from R, Power from the power key. Back there means "put me
+    /// back where I was", not "show me what is underneath".
+    entry: usize,
 }
 
 impl Model {
@@ -117,6 +129,7 @@ impl Model {
             rows: rows.max(1),
             grid_rows: grid_rows.max(1),
             columns: columns.max(1),
+            entry: 1,
         };
         let root = page
             .map(str::to_string)
@@ -180,9 +193,22 @@ impl Model {
                         .map(|e| e.icon.clone())
                         .or_else(|| item.map(|i| i.icon.clone()))
                         .unwrap_or_default(),
-                    tint: entry.and_then(|e| e.tint),
+                    tint: entry
+                        .and_then(|e| e.tint)
+                        .or_else(|| item.and_then(|i| i.tint)),
                     submenu: self.leads_deeper(&screen.source, index),
-                    payload: item.map(|i| i.payload.clone()).unwrap_or_default(),
+                    active: item.is_some_and(|i| i.active),
+                    confirm: entry.is_some_and(|e| e.confirm),
+                    // A menu.toml row carries its action, so the screen can
+                    // tell which of several is the one in effect.
+                    payload: item
+                        .map(|i| i.payload.clone())
+                        .or_else(|| {
+                            entry
+                                .and_then(|e| e.action.clone())
+                                .map(|a| format!("action:{a}"))
+                        })
+                        .unwrap_or_default(),
                 }
             })
             .collect()
@@ -292,9 +318,15 @@ impl Model {
         items: Vec<crate::providers::Item>,
     ) {
         let layout = crate::providers::screen(builtin).layout;
+        let mut list = self.list_for(builtin, layout, &items);
+        // The picker opens on the window you are in, centred, so you see
+        // where you are before you move. Never on the Launcher card in front.
+        if builtin == Builtin::Windows && items.len() > 1 {
+            list.select_item(picker_start(&items));
+        }
         self.stack.push(Screen {
             title: title.to_string(),
-            list: self.list_for(builtin, layout, &items),
+            list,
             layout,
             source: Source::Dynamic { builtin, items },
         });
@@ -307,21 +339,35 @@ impl Model {
         items: &[crate::providers::Item],
     ) -> ListState {
         let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        // A search also finds an app by its id or command: "yazi" finds Files.
+        // Without the `app:` / `exec:` in front: "ap" must not match every
+        // profiled app before the one whose name holds it.
+        let keywords: Vec<String> = items
+            .iter()
+            .map(|i| {
+                let p = i.payload.as_str();
+                p.split_once(':').map_or(p, |(_, rest)| rest).to_string()
+            })
+            .collect();
         match layout {
             Layout::Grid => ListState::new(labels, self.grid_rows).with_columns(self.columns),
             // The quick panel is one screenful by design: it never scrolls.
-            Layout::List if builtin == Builtin::Quick => {
+            // The switcher strip draws every card and scrolls itself.
+            Layout::List if matches!(builtin, Builtin::Quick | Builtin::Windows) => {
                 let rows = labels.len().max(1);
-                ListState::new(labels, rows)
+                ListState::new(labels, rows).with_keywords(keywords)
             }
-            Layout::List => ListState::new(labels, self.rows),
+            Layout::List => ListState::new(labels, self.rows).with_keywords(keywords),
         }
     }
 
     /// Put a confirmation in front of closing every window.
     fn confirm_close_all(&mut self) -> Step {
         let count = match &self.screen().source {
-            Source::Dynamic { items, .. } => items.len(),
+            Source::Dynamic { items, .. } => items
+                .iter()
+                .filter(|item| item.payload != crate::providers::HOME)
+                .count(),
             _ => 0,
         };
         if count == 0 {
@@ -354,10 +400,93 @@ impl Model {
     pub fn go_home(&mut self) -> Step {
         if self.stack.len() > 1 {
             self.stack.truncate(1);
+            self.forget_entry();
             Step::Redraw
         } else {
             Step::Nothing
         }
+    }
+
+    /// Every screen's title, the top one first: the breadcrumb trail.
+    pub fn trail(&self) -> Vec<&str> {
+        self.stack.iter().map(|s| s.title.as_str()).collect()
+    }
+
+    /// Back to the screen at this depth, 1 being the top. A breadcrumb click.
+    pub fn back_to(&mut self, depth: usize) -> Step {
+        if depth == 0 || depth >= self.stack.len() {
+            return Step::Nothing;
+        }
+        self.stack.truncate(depth);
+        self.forget_entry();
+        Step::Redraw
+    }
+
+    /// Put the cursor on the row with this payload, wherever it now sits.
+    pub fn focus_payload(&mut self, payload: &str) {
+        let Some(index) = (match &self.screen().source {
+            Source::Dynamic { items, .. } => items.iter().position(|i| i.payload == payload),
+            _ => None,
+        }) else {
+            return;
+        };
+        self.screen_mut().list.select_item(index);
+    }
+
+    /// Remember the screen on top as the one the menu was opened on.
+    pub fn mark_entry(&mut self) {
+        self.entry = self.stack.len();
+    }
+
+    /// Once you have gone above it, the screen you came in on is just a screen.
+    fn forget_entry(&mut self) {
+        if self.stack.len() < self.entry {
+            self.entry = 1;
+        }
+    }
+
+    /// Whether Back leaves the menu from here, rather than going up a screen.
+    pub fn back_closes(&self) -> bool {
+        self.entry > 1 && self.stack.len() == self.entry
+    }
+
+    /// The menu.toml page in front, or the one a yes/no question on top came
+    /// from. `None` on a dynamic screen.
+    pub fn page_name(&self) -> Option<&str> {
+        self.stack
+            .iter()
+            .rev()
+            .find(|s| !matches!(s.source, Source::Confirm { .. }))
+            .and_then(|s| match &s.source {
+                Source::Page(name) => Some(name.as_str()),
+                _ => None,
+            })
+    }
+
+    /// True on a screen opened straight over an app, or one reached from it:
+    /// the launcher is underneath, but not what you are looking at.
+    pub fn over_app(&self) -> bool {
+        self.entry > 1 && self.stack.len() >= self.entry
+    }
+
+    /// True when the bottom of the stack is the launcher.
+    pub fn launcher_is_root(&self) -> bool {
+        matches!(
+            self.stack.first().map(|s| &s.source),
+            Some(Source::Dynamic {
+                builtin: Builtin::Launcher,
+                ..
+            })
+        )
+    }
+
+    /// Payload of the row under the cursor on a dynamic screen.
+    pub fn selected_payload(&self) -> Option<&str> {
+        let Source::Dynamic { items, .. } = &self.screen().source else {
+            return None;
+        };
+        let index = self.screen().list.selected()?;
+        items.get(index).map(|item| item.payload.as_str())
     }
 
     /// Whether this screen is asking you to confirm something.
@@ -388,8 +517,11 @@ impl Model {
         }) else {
             return;
         };
-        let list = self.list_for(builtin, crate::providers::screen(builtin).layout, &items);
+        let mut list = self.list_for(builtin, crate::providers::screen(builtin).layout, &items);
         let screen = self.screen_mut();
+        if screen.list.mode() == pt35_ui::keys::Mode::Nav {
+            list.keep_position(&screen.list);
+        }
         screen.list = list;
         screen.source = Source::Dynamic { builtin, items };
     }
@@ -432,6 +564,20 @@ impl Model {
         {
             return self.confirm_close_all();
         }
+        // The picker is a strip: left and right move along it.
+        if self.dynamic_builtin() == Some(Builtin::Windows) {
+            let mode = self.screen().list.mode();
+            use pt35_ui::keys::Button;
+            let step = match pt35_ui::keys::button(key, mode) {
+                Some(Button::Right) => Some(pt35_ui::keys::sym::DOWN),
+                Some(Button::Left) => Some(pt35_ui::keys::sym::UP),
+                _ => None,
+            };
+            if let Some(sym) = step {
+                self.screen_mut().list.handle(&Key::new(sym));
+                return Step::Redraw;
+            }
+        }
         let rows = self.rows;
         let outcome = self.screen_mut().list.handle(key);
         match outcome {
@@ -441,6 +587,15 @@ impl Model {
             // Y jumps back to the root menu — on a handheld, backing out of
             // four levels one press at a time is the thing people complain about.
             Outcome::Secondary => {
+                // On the launcher, Y pins the app under the cursor.
+                if self.dynamic_builtin() == Some(Builtin::Launcher) {
+                    return match self.selected_payload() {
+                        Some(p) if p.starts_with("app:") || p.starts_with("exec:") => {
+                            Step::TogglePin(p.to_string())
+                        }
+                        _ => Step::Nothing,
+                    };
+                }
                 // On the switcher, Y closes the window under the cursor.
                 if let Source::Dynamic {
                     builtin: Builtin::Windows,
@@ -455,20 +610,32 @@ impl Model {
                         .map(|item| &item.payload)
                         .cloned()
                     {
+                        // The launcher is not a window and cannot be closed.
+                        if payload == crate::providers::HOME {
+                            return Step::Nothing;
+                        }
                         return Step::Close(payload);
                     }
                 }
                 if self.stack.len() > 1 {
                     self.stack.truncate(1);
+                    self.forget_entry();
                     Step::Redraw
                 } else {
                     Step::Nothing
                 }
             }
             Outcome::Back => {
-                if self.stack.len() > 1 {
+                if self.back_closes() {
+                    Step::Quit
+                } else if self.stack.len() > 1 {
                     self.stack.pop();
+                    self.forget_entry();
                     Step::Redraw
+                } else if self.launcher_is_root() {
+                    // The launcher is the home screen: nothing to go back to.
+                    // You leave it by picking something, or with Start.
+                    Step::Nothing
                 } else {
                     Step::Quit
                 }
@@ -494,6 +661,7 @@ impl Model {
                 // Item 0 is "No": back out instead of doing something drastic.
                 if index == 0 {
                     self.stack.pop();
+                    self.forget_entry();
                     Step::Redraw
                 } else {
                     Step::Run(command)
@@ -527,6 +695,27 @@ impl Model {
                 }
             }
             Source::Dynamic { builtin, items } => match items.get(index).map(|i| &i.payload) {
+                // A row you read. Running "nothing" would close the menu.
+                Some(payload) if payload.is_empty() => Step::Nothing,
+                Some(payload)
+                    if builtin == Builtin::Windows && payload == crate::providers::HOME =>
+                {
+                    match self.go_home() {
+                        Step::Nothing => Step::Redraw,
+                        step => step,
+                    }
+                }
+                // Only on screens of ours: a network could be called "sh:x".
+                Some(payload)
+                    if matches!(builtin, Builtin::Appearance | Builtin::Bluetooth)
+                        && (payload.starts_with("theme:") || payload.starts_with("sh:")) =>
+                {
+                    let (kind, rest) = payload.split_once(':').unwrap_or_default();
+                    Step::RunStay(match kind {
+                        "theme" => Command::Theme(rest.to_string()),
+                        _ => Command::Helper(rest.to_string()),
+                    })
+                }
                 Some(payload) => Step::Run(Command::Dynamic {
                     builtin,
                     payload: payload.clone(),
@@ -544,7 +733,7 @@ impl Model {
                 let confirm = entry.confirm;
                 // A row that reads out its own state is a switch, and a switch
                 // you cannot see flip is a guess.
-                let stay = entry.state.is_some();
+                let stay = entry.state.is_some() || entry.stay;
                 let kind = match entry.kind() {
                     Ok(kind) => kind,
                     Err(e) => {
@@ -574,6 +763,18 @@ impl Model {
                 }
             }
         }
+    }
+}
+
+/// Where the picker's cursor starts: the current window, or the first one
+/// when none is current. The Launcher card at 0 only with no windows at all.
+pub fn picker_start(items: &[crate::providers::Item]) -> usize {
+    if items.len() <= 1 {
+        return 0;
+    }
+    match items.iter().position(|item| item.active) {
+        Some(at) if at >= 1 => at,
+        _ => 1,
     }
 }
 
@@ -732,6 +933,41 @@ entries = [
     }
 
     #[test]
+    fn back_from_the_screen_you_came_in_on_leaves_the_menu() {
+        let mut model = model();
+        model.push_dynamic(Builtin::Windows, "Windows", Vec::new());
+        model.mark_entry();
+        assert_eq!(press(&mut model, sym::BACKSPACE), Step::Quit);
+
+        // Walk above it and come back down: now Back is only Back.
+        model.go_home();
+        model.push_dynamic(Builtin::Windows, "Windows", Vec::new());
+        assert_eq!(press(&mut model, sym::BACKSPACE), Step::Redraw);
+        assert_eq!(model.depth(), 1);
+    }
+
+    #[test]
+    fn the_picker_starts_on_the_window_you_are_in() {
+        use crate::providers::Item;
+        let item = |payload: &str, active: bool| Item {
+            payload: payload.into(),
+            active,
+            ..Item::default()
+        };
+        let home = item(crate::providers::HOME, false);
+        let three = [
+            home.clone(),
+            item("con:1", false),
+            item("con:2", true),
+            item("con:3", false),
+        ];
+        assert_eq!(picker_start(&three), 2);
+        let none = [home.clone(), item("con:1", false), item("con:2", false)];
+        assert_eq!(picker_start(&none), 1, "the first window, not the launcher");
+        assert_eq!(picker_start(&[home]), 0);
+    }
+
+    #[test]
     fn escape_always_quits() {
         let mut model = model();
         press(&mut model, sym::RETURN);
@@ -745,10 +981,12 @@ entries = [
             Builtin::Windows,
             "Windows",
             vec![
+                crate::providers::Item::new("Launcher", crate::providers::HOME),
                 crate::providers::Item::new("foot", "con:12"),
                 crate::providers::Item::new("helix", "con:34"),
             ],
         );
+        // Opens on the first window, past the Launcher row.
         press(&mut model, sym::DOWN);
         assert_eq!(
             press(&mut model, sym::RETURN),

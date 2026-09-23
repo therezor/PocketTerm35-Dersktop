@@ -31,6 +31,7 @@ fits no other way. Nothing does it automatically.
 | `foot` | native | 1.0 | no | *(to test)* |
 | `imv` | native | 1.0 | no | *(to test)* |
 | `mpv` | native | 1.0 | no | *(to test)* |
+| `yazi` (in foot) | terminal | 1.0 | no | the Files app |
 | `pcmanfm` | GTK3 | 0.75 | yes | usable, text shrinks only |
 | `zathura` | GTK3 | 0.75 | no | *(to test)* |
 | `chromium` | own | 0.75 | yes | *(to test)* |

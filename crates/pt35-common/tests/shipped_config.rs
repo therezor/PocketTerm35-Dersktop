@@ -78,7 +78,7 @@ fn gui_apps_that_need_room_shrink_themselves() {
     // either a profile scale (which becomes GDK_DPI_SCALE / QT_SCALE_FACTOR) or
     // a scale flag of its own on the command line.
     let apps: AppTable = load("apps.toml");
-    for id in ["browser", "files"] {
+    for id in ["browser", "editor"] {
         let app = apps
             .get(id)
             .unwrap_or_else(|| panic!("missing app profile {id:?}"));

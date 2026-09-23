@@ -24,6 +24,13 @@ pub struct Session {
     pub status: Status,
     sway: Option<Sway>,
     menu_proc: Option<Child>,
+    /// The menu.toml page the menu shows, as it last said.
+    menu_page: Option<String>,
+    /// Opened at startup: sway takes a moment to adopt a new keyboard, and the
+    /// first press must not be the one that is lost.
+    keyboard: Option<crate::vkbd::Keyboard>,
+    /// Opened at startup for the same reason.
+    wheel: Option<crate::vkbd::Wheel>,
     /// False until the mode binds have been sent once. Nothing changes
     /// workspace at startup, so waiting for a workspace change would leave the
     /// buttons doing nothing.
@@ -35,6 +42,14 @@ pub struct Session {
     /// swaylock, while it is up. It is a layer surface and not in the tree, so
     /// the desktop reads as empty under it.
     lock_proc: Option<Child>,
+    /// The backlight through the keyboard, when its firmware answers.
+    serial_backlight: Option<crate::backlight::SerialBacklight>,
+    /// A background look for the pt35 firmware, while it has not answered:
+    /// the keyboard reboots after a flash and is replugged now and then.
+    backlight_probe: Option<std::sync::mpsc::Receiver<Option<crate::backlight::SerialBacklight>>>,
+    last_probe: std::time::Instant,
+    /// When the focused window was last captured for the switcher.
+    last_preview: std::time::Instant,
     /// True while the menu on screen is standing in for a desktop. It gets out
     /// of the way as soon as there is a window to get out of the way of.
     menu_is_desktop: bool,
@@ -56,10 +71,19 @@ const LAUNCH_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 /// rather than the sway config, because it changes hands when the menu opens.
 const START: &str = "Pause";
 
+/// Select, by both keysyms `KEY_SYSRQ` can arrive as. Handed to the menu with
+/// Start, so Select on the switcher closes it instead of reopening it.
+const SELECT: [&str; 2] = ["Print", "Sys_Req"];
+
+/// Start and Select on the pt35 firmware: F21 and F22. Fn+Select is then the
+/// real Print Screen, a screenshot, and Fn+Start the real Pause, left to apps.
+const PT35_START: &str = "XF86TouchpadOn";
+const PT35_SELECT: &str = "XF86TouchpadToggle";
+
 impl Session {
     pub fn new() -> Self {
         let mut session = Self {
-            theme: load_or_default("pt35/theme.toml"),
+            theme: load_theme_or_default(),
             menu: load_or_default("pt35/menu.toml"),
             apps: load_or_default("pt35/apps.toml"),
             hw: Hardware::probe(),
@@ -72,10 +96,21 @@ impl Session {
             },
             sway: None,
             menu_proc: None,
+            menu_page: None,
+            keyboard: crate::vkbd::Keyboard::open()
+                .map_err(|e| log::warn!("/dev/uinput: {e}; face buttons will use wtype"))
+                .ok(),
+            wheel: crate::vkbd::Wheel::open()
+                .map_err(|e| log::warn!("/dev/uinput: {e}; X and Y will not scroll"))
+                .ok(),
             mode_applied: false,
             mode_before_menu: InputMode::Buttons,
             bound: Vec::new(),
             lock_proc: None,
+            last_preview: std::time::Instant::now(),
+            serial_backlight: crate::backlight::SerialBacklight::find(),
+            backlight_probe: None,
+            last_probe: std::time::Instant::now(),
             menu_is_desktop: false,
             pending: Vec::new(),
             launch_pending: Some(std::time::Instant::now()),
@@ -93,8 +128,134 @@ impl Session {
             session.audio
         );
         session.apply_assignments();
+        session.status.cpu_profile = crate::hardware::current_cpu_profile();
+        session.apply_wallpaper();
+        apply_color_scheme(&session.theme);
+        apply_cursor(&session.theme.pointer);
         session.kill_stray_menu();
         session
+    }
+
+    /// Save a small picture of the window in front, in the background.
+    ///
+    /// Only when nothing covers it: a shot with the menu in it is worse than
+    /// an old one.
+    fn capture_preview(&mut self) {
+        self.last_preview = std::time::Instant::now();
+        if !self.theme.menu.window_previews || self.menu_proc.is_some() || self.lock_proc.is_some()
+        {
+            return;
+        }
+        let Some(id) = front_window(&self.status) else {
+            return;
+        };
+        let dir = pt35_common::paths::previews_dir();
+        if std::fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let path = dir.join(format!("{id}.ppm"));
+        let top = self.theme.bar.height;
+        let area = format!("0,{top} 640x{}", 480 - top);
+        // Written aside and renamed, so the menu never reads half a picture.
+        let spawned = Command::new("sh")
+            .args([
+                "-c",
+                r#"grim -s 0.3 -t ppm -g "$1" "$2.tmp" && mv "$2.tmp" "$2""#,
+                "pt35-preview",
+                &area,
+                &path.to_string_lossy(),
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        if let Ok(mut child) = spawned {
+            std::thread::spawn(move || child.wait());
+        }
+    }
+
+    /// Look for the pt35 firmware off the poll thread, every PROBE_EVERY until
+    /// it answers; a stock keyboard costs a 0.4s read each time. When it
+    /// does answer, Start and Select move to its keys.
+    fn probe_firmware(&mut self) {
+        if self.serial_backlight.is_some() {
+            return;
+        }
+        if let Some(rx) = &self.backlight_probe {
+            match rx.try_recv() {
+                Ok(found) => {
+                    self.backlight_probe = None;
+                    if found.is_some() {
+                        self.serial_backlight = found;
+                        log::info!("pt35 keyboard firmware found");
+                        if self.menu_proc.is_none() {
+                            self.grab_start();
+                        }
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.backlight_probe = None,
+            }
+            return;
+        }
+        if self.last_probe.elapsed() >= PROBE_EVERY {
+            self.last_probe = std::time::Instant::now();
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(crate::backlight::SerialBacklight::find());
+            });
+            self.backlight_probe = Some(rx);
+        }
+    }
+
+    /// Whether the menu is up, for the bar. The switcher's hover goes with it.
+    fn sync_menu_open(&mut self) {
+        self.status.menu_open = self.menu_proc.is_some();
+        if !self.status.menu_open {
+            self.status.switcher_hover = None;
+            self.status.launcher_active = false;
+            self.menu_page = None;
+        }
+    }
+
+    /// Send a key through the virtual keyboard, opened on first use and kept.
+    /// `wtype` is the fallback for a machine without the udev rule.
+    fn send_key(&mut self, key: crate::vkbd::Key) {
+        if self.keyboard.is_none() {
+            match crate::vkbd::Keyboard::open() {
+                Ok(keyboard) => self.keyboard = Some(keyboard),
+                Err(e) => log::warn!("/dev/uinput: {e}; sending keys with wtype"),
+            }
+        }
+        let sent = self
+            .keyboard
+            .as_mut()
+            .map(|keyboard| keyboard.tap(key).is_ok())
+            .unwrap_or(false);
+        if !sent {
+            self.keyboard = None;
+            let _ = Command::new("wtype")
+                .args(["-k", key.keysym()])
+                .stdin(Stdio::null())
+                .spawn()
+                .map(|mut child| std::thread::spawn(move || child.wait()));
+        }
+    }
+
+    /// The desktop behind the windows is the theme's background, so a palette
+    /// changes the whole screen and not just the shell's own surfaces.
+    fn apply_wallpaper(&mut self) {
+        let pointer = &self.theme.pointer;
+        let cursor = format!(
+            "seat * xcursor_theme {} {}",
+            pointer.cursor_theme, pointer.cursor_size
+        );
+        let cmd = format!("output * bg {} solid_color", self.theme.color.background);
+        for cmd in [cmd, cursor] {
+            if let Err(e) = self.sway_command(&cmd) {
+                log::warn!("{cmd}: {e}");
+            }
+        }
     }
 
     /// Take down a menu left behind by a previous daemon.
@@ -194,11 +355,17 @@ impl Session {
     pub fn refresh(&mut self) {
         self.status.battery_percent = self.hw.battery_percent();
         self.status.charging = self.hw.charging();
-        self.status.brightness_percent = self.hw.brightness_percent();
+        self.status.brightness_percent = self
+            .hw
+            .brightness_percent()
+            .or_else(|| self.serial_backlight.as_ref().and_then(|b| b.level));
+        self.probe_firmware();
+        self.status.pt35_firmware = self.serial_backlight.is_some();
         let (volume, muted) = audio::state(self.audio);
         self.status.volume_percent = volume;
         self.status.muted = muted;
         self.status.network = self.hw.network();
+        self.status.ethernet = self.hw.ethernet();
         self.status.network_signal = self.hw.network_signal();
         // Reap first. Both helpers exit on their own, and whether the menu is
         // still up decides whether an empty desktop needs one: noticing it
@@ -210,12 +377,19 @@ impl Session {
                 self.ensure_focus();
             }
         }
+        self.sync_menu_open();
         if let Some(child) = self.lock_proc.as_mut() {
             if matches!(child.try_wait(), Ok(Some(_))) {
                 self.lock_proc = None;
             }
         }
         self.refresh_windows();
+        // Keep the preview of the window in front fresh, slowly: a shot costs
+        // about 80ms of one core, so once every PREVIEW_EVERY at most.
+        if self.last_preview.elapsed() >= PREVIEW_EVERY {
+            self.capture_preview();
+        }
+        prune_previews(&self.status.windows);
         if !self.mode_applied && self.menu_proc.is_none() {
             // Nothing changes workspace at startup, so the binds have to go
             // out on the first tick or the buttons do nothing until you move.
@@ -373,19 +547,33 @@ impl Session {
             }
 
             Request::Brightness { change } => {
+                // Plugged in or reflashed since startup: look again.
+                if self.hw.backlight.is_none() && self.serial_backlight.is_none() {
+                    self.serial_backlight = crate::backlight::SerialBacklight::find();
+                }
                 let current = self
                     .hw
                     .brightness_percent()
-                    .ok_or_else(|| anyhow::anyhow!("no backlight exposed to Linux on this unit"))?;
+                    .or_else(|| self.serial_backlight.as_ref().and_then(|b| b.level))
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("brightness is Fn - and = until the keyboard is reflashed")
+                    })?;
                 let target = match change {
                     Delta::Absolute(v) => v.min(100) as u8,
                     Delta::Relative(v) => (current as i32 + v).clamp(1, 100) as u8,
                     Delta::Mute => bail!("brightness has no mute"),
                 };
-                if !self.hw.set_brightness_percent(target) {
-                    bail!("could not write the backlight (permission or RP2040-owned)");
-                }
-                self.status.brightness_percent = Some(target);
+                let applied = if self.hw.backlight.is_some() {
+                    self.hw.set_brightness_percent(target).then_some(target)
+                } else {
+                    self.serial_backlight.as_mut().and_then(|b| b.set(target))
+                };
+                self.status.pt35_firmware = self.serial_backlight.is_some();
+                let Some(level) = applied else {
+                    bail!("the keyboard did not take the brightness");
+                };
+                self.status.brightness_percent = Some(level);
+                self.notify(format!("Brightness {level}%"), 0);
                 Ok(Response::Ok)
             }
 
@@ -401,11 +589,21 @@ impl Session {
                 // While the menu is up the keys belong to it. Remember the
                 // choice and let the close put it into effect.
                 if self.menu_proc.is_some() {
+                    // Switched live: the cursor appears or goes over the menu
+                    // now, and the close keeps the choice.
                     self.mode_before_menu = target;
-                    self.status.input_mode = target;
+                    self.set_menu_mode(target)?;
                 } else {
                     self.set_mode(target)?;
                 }
+                // R has no other answer: the bar icon is small, the toast is not.
+                self.notify(
+                    match target {
+                        InputMode::Mouse => "Mouse mode: the D-pad moves the cursor",
+                        InputMode::Buttons => "Buttons mode: the D-pad moves the selection",
+                    },
+                    0,
+                );
                 Ok(Response::Ok)
             }
 
@@ -417,6 +615,39 @@ impl Session {
                 self.sway_command(&format!("output * scale {scale}"))?;
                 self.status.scale = scale;
                 self.notify(format!("Scale {scale:.2}x"), 0);
+                Ok(Response::Ok)
+            }
+
+            Request::SwitcherHover { id } => {
+                self.status.switcher_hover = id;
+                Ok(Response::Ok)
+            }
+
+            Request::MenuScreen {
+                launcher_active,
+                page,
+            } => {
+                self.status.launcher_active = launcher_active && self.menu_proc.is_some();
+                self.menu_page = page;
+                Ok(Response::Ok)
+            }
+
+            Request::Key { key } => {
+                let key = crate::vkbd::Key::parse(&key)
+                    .ok_or_else(|| anyhow::anyhow!("no key {key:?}: enter, escape or tab"))?;
+                self.send_key(key);
+                Ok(Response::Ok)
+            }
+
+            Request::Wheel { down } => {
+                if self.wheel.is_none() {
+                    self.wheel = crate::vkbd::Wheel::open().ok();
+                }
+                let turned = self.wheel.as_mut().map(|w| w.turn(down).is_ok());
+                if turned != Some(true) {
+                    self.wheel = None;
+                    bail!("no wheel: /dev/uinput is not writable");
+                }
                 Ok(Response::Ok)
             }
 
@@ -444,7 +675,14 @@ impl Session {
                             None => return Ok(Response::Ok),
                         }
                     }
-                    WindowAction::Focus(id) => self.focus_window(id)?,
+                    // A dock slot is a window you switch to, launcher or not:
+                    // the menu steps aside rather than stay over it.
+                    WindowAction::Focus(id) => {
+                        if self.menu_proc.is_some() {
+                            let _ = self.toggle_menu(Toggle::Off, None);
+                        }
+                        self.focus_window(id)?
+                    }
                     WindowAction::Close => {
                         // Named, not a bare `kill`: after the menu has been up
                         // nothing is focused, and a bare kill hits nothing.
@@ -527,12 +765,15 @@ impl Session {
             }
 
             Request::Reload => {
-                self.theme = load_or_default("pt35/theme.toml");
+                self.theme = load_theme_or_default();
                 self.menu = load_or_default("pt35/menu.toml");
                 self.apps = load_or_default("pt35/apps.toml");
                 self.menu.validate()?;
                 self.apps.validate()?;
                 self.apply_assignments();
+                self.apply_wallpaper();
+                apply_color_scheme(&self.theme);
+                apply_cursor(&self.theme.pointer);
                 hooks::fire("reload", &[]);
                 self.notify("Config reloaded", 0);
                 Ok(Response::Ok)
@@ -572,17 +813,35 @@ impl Session {
             // The menu reads the same keys itself, and a sway binding beats
             // any surface, so the compositor must let go while it is up.
             self.mode_before_menu = self.status.input_mode;
+            // A page opened over an app is not the launcher until you go down
+            // to it. The menu says so itself from its first frame; this is the
+            // guess until then, so the bar does not flash.
+            self.status.launcher_active = running || page.is_none();
             if !self.status.windows.is_empty() {
                 self.menu_is_desktop = false;
             }
-            let _ = self.unbind_all();
+            // The window you are leaving, as it looks now. Started before the
+            // menu: grim reads the frame in its first ~20ms, the menu draws its
+            // own at ~75ms.
+            if !running {
+                self.capture_preview();
+            }
+            let mode = self.status.input_mode;
+            if let Err(e) = self.set_menu_mode(mode) {
+                log::warn!("menu bindings: {e}");
+                let _ = self.unbind_all();
+            }
             self.release_start();
             let mut cmd = Command::new("pt35-menu");
-            if let Some(page) = page {
+            if let Some(page) = &page {
                 cmd.arg("--page").arg(page);
             }
             self.menu_proc = Some(cmd.stdin(Stdio::null()).spawn()?);
+            // Until the menu says otherwise: a second press can beat its first
+            // frame.
+            self.menu_page = page;
         }
+        self.sync_menu_open();
         Ok(())
     }
 
@@ -592,14 +851,40 @@ impl Session {
     /// cannot, because sway gives `exec` the rest of the line and would swallow
     /// every command after it into the binding.
     fn set_mode(&mut self, mode: InputMode) -> Result<()> {
+        let wanted = crate::modes::binds(mode, &self.theme.pointer);
+        self.bind_mode(mode, wanted)
+    }
+
+    /// The bindings for `mode` while the menu is up: in Mouse mode the cursor
+    /// still moves and clicks over it.
+    fn set_menu_mode(&mut self, mode: InputMode) -> Result<()> {
+        let wanted = crate::modes::menu_binds(mode, &self.theme.pointer);
+        self.bind_mode(mode, wanted)
+    }
+
+    fn bind_mode(&mut self, mode: InputMode, wanted: Vec<crate::modes::Bind>) -> Result<()> {
         let pointer = self.theme.pointer.clone();
         let buttons = self.theme.buttons.clone();
-        let wanted = crate::modes::binds(mode, &pointer);
-        self.unbind_all()?;
+        // Only what changes. Mouse mode's A opens the menu from the bar and is
+        // still down when the menu takes over: rebinding it frees the binding
+        // sway runs on the release, and sway 1.10 segfaults.
+        let gone: Vec<String> = self
+            .bound
+            .iter()
+            .filter(|b| !wanted.contains(b))
+            .map(|b| b.unbind())
+            .collect();
+        if !gone.is_empty() {
+            self.sway_command(&gone.join(", "))?;
+            self.bound.retain(|b| wanted.contains(b));
+        }
         // Record each bind as it lands, not all of them at the end: a failure
         // halfway must still leave `bound` describing what sway actually holds,
         // or `unbind_all` returns early and the bindings are stuck.
         for bind in wanted {
+            if self.bound.contains(&bind) {
+                continue;
+            }
             self.sway_command(&bind.bind())?;
             self.bound.push(bind);
         }
@@ -738,17 +1023,65 @@ impl Session {
     /// A sway binding beats any surface, so with `Pause` bound the menu never
     /// saw the key and could not decide what closing means on the screen you
     /// are actually looking at.
+    /// Start's and Select's keysyms. The pt35 firmware's are always bound:
+    /// stock never sends them, and a keyboard still booting when pt35d asked
+    /// must not be left with dead buttons. Stock's Pause and Print are bound
+    /// too until the pt35 firmware is known, then left to Fn.
+    fn start_select(&self) -> (Vec<&'static str>, Vec<&'static str>) {
+        if self.serial_backlight.is_some() {
+            (vec![PT35_START], vec![PT35_SELECT])
+        } else {
+            (
+                vec![PT35_START, START],
+                [&[PT35_SELECT][..], &SELECT[..]].concat(),
+            )
+        }
+    }
+
     fn release_start(&mut self) {
-        if let Err(e) = self.sway_command(&format!("unbindsym {START}")) {
-            log::warn!("releasing Start: {e}");
+        let (start, select) = self.start_select();
+        let keys: Vec<String> = start
+            .into_iter()
+            .chain(select)
+            .map(|key| format!("unbindsym --no-repeat {key}"))
+            .collect();
+        if let Err(e) = self.sway_command(&keys.join(", ")) {
+            log::warn!("releasing Start and Select: {e}");
         }
     }
 
     /// Take Start back. `$mod+space` stays bound in the sway config throughout,
     /// so the menu is still reachable if this ever fails.
     fn grab_start(&mut self) {
-        if let Err(e) = self.sway_command(&format!("bindsym {START} exec pt35ctl menu toggle")) {
-            log::warn!("taking Start back: {e}");
+        // One message each: sway gives `exec` the rest of the line.
+        //
+        // `--no-repeat`, because Start is still down when `release_start` takes
+        // it off: a repeating binding leaves sway's key-repeat timer holding
+        // the freed binding, and sway 1.10 segfaults when it fires.
+        let (start, select) = self.start_select();
+        let mut binds: Vec<String> = start
+            .iter()
+            .map(|key| format!("bindsym --no-repeat {key} exec pt35ctl menu toggle"))
+            .chain(
+                select
+                    .iter()
+                    .map(|key| format!("bindsym --no-repeat {key} exec pt35ctl menu open windows")),
+            )
+            .collect();
+        if self.serial_backlight.is_some() {
+            // Fn+Select is Print Screen: a screenshot, as on any desktop. The
+            // stock bindings on Print and Pause come off, so Fn+Start reaches
+            // the app as a plain Pause.
+            let _ = self.sway_command(&format!(
+                "unbindsym --no-repeat {START}, unbindsym --no-repeat Sys_Req, \
+                 unbindsym --no-repeat Print"
+            ));
+            binds.push("bindsym --no-repeat Print exec pt35ctl screenshot".into());
+        }
+        for bind in binds {
+            if let Err(e) = self.sway_command(&bind) {
+                log::warn!("{bind}: {e}");
+            }
         }
     }
 
@@ -773,9 +1106,9 @@ impl Session {
 
         // Say what is wrong rather than switching to an empty workspace and
         // leaving a blank screen.
-        if let Some(binary) = command_binary(&app.exec) {
-            if !on_path(&binary) {
-                bail!("{binary} is not installed");
+        for program in pt35_common::apps::command_programs(&app.exec) {
+            if !on_path(&program) {
+                bail!("{program} is not installed");
             }
         }
 
@@ -876,6 +1209,15 @@ impl Session {
 
     fn power(&mut self, action: PowerAction) -> Result<()> {
         match action {
+            // A second press closes it. Reopening it would only flash. With
+            // nothing open, closing means the top screen, as Start does.
+            PowerAction::Menu if self.menu_page.as_deref() == Some("power") => {
+                if self.status.windows.is_empty() {
+                    self.toggle_menu(Toggle::On, None)
+                } else {
+                    self.toggle_menu(Toggle::Off, None)
+                }
+            }
             PowerAction::Menu => self.toggle_menu(Toggle::On, Some("power".into())),
             PowerAction::ScreenOff => self.sway_command("output * dpms off"),
             PowerAction::Lock => {
@@ -954,11 +1296,13 @@ pub fn next_window(
 ///
 /// 640x480 splits into two unusable halves, so one window owns the screen and
 /// the others wait on their own workspace. The focused window keeps its place;
-/// floating windows are dialogs and are left alone.
+/// floating windows are dialogs and are left alone. So is a portal's file
+/// chooser, in case it maps before the sway rule floats it: moved away, the app
+/// that asked for it waits on it where you cannot see.
 pub fn overflow_moves(windows: &[pt35_common::ipc::WindowInfo]) -> Vec<(i64, u8)> {
     let tiled: Vec<&pt35_common::ipc::WindowInfo> = windows
         .iter()
-        .filter(|w| !w.floating && w.workspace > 0)
+        .filter(|w| !w.floating && w.workspace > 0 && !w.app.starts_with("xdg-desktop-portal"))
         .collect();
     let mut occupied: Vec<u8> = Vec::new();
     let mut movers: Vec<i64> = Vec::new();
@@ -1002,13 +1346,126 @@ pub fn next_scale(current: f32) -> f32 {
     STEPS[index]
 }
 
+/// `~/Pictures`, where an image viewer and the file manager look first.
 fn screenshot_path() -> String {
-    let dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    let stamp = std::time::SystemTime::now()
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    let dir = format!("{home}/Pictures");
+    if std::fs::create_dir_all(&dir).is_err() {
+        return format!("{home}/pt35-screenshot-{}.png", now_secs());
+    }
+    format!("{dir}/pt35-screenshot-{}.png", now_secs())
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format!("{dir}/pt35-screenshot-{stamp}.png")
+        .unwrap_or(0)
+}
+
+/// Put GTK, libadwaita and the portal's dialogs in the theme's scheme.
+///
+/// gsettings rather than GTK_THEME: the portal's file chooser is started by
+/// dbus, not by us, and reads only these. Off the main thread, because a first
+/// gsettings call can wait on dconf.
+fn apply_color_scheme(theme: &pt35_common::theme::Theme) {
+    let Some(settings) = color_scheme_settings(&theme.apps) else {
+        return;
+    };
+    std::thread::spawn(move || {
+        for (key, value) in settings {
+            let status = Command::new("gsettings")
+                .args(["set", "org.gnome.desktop.interface", key, &value])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            if !matches!(status, Ok(s) if s.success()) {
+                log::warn!("gsettings set {key} {value} failed");
+                return;
+            }
+        }
+    });
+}
+
+/// The `org.gnome.desktop.interface` keys for a scheme, or `None` for `keep`.
+pub fn color_scheme_settings(
+    apps: &pt35_common::theme::Apps,
+) -> Option<Vec<(&'static str, String)>> {
+    use pt35_common::theme::ColorScheme;
+    let (scheme, gtk) = match apps.color_scheme {
+        ColorScheme::Keep => return None,
+        ColorScheme::Dark => ("prefer-dark", &apps.gtk_dark),
+        ColorScheme::Light => ("prefer-light", &apps.gtk_light),
+    };
+    Some(vec![
+        ("color-scheme", scheme.to_string()),
+        ("gtk-theme", gtk.clone()),
+    ])
+}
+
+/// GTK draws its own cursor over its windows, so it is told too.
+fn apply_cursor(pointer: &pt35_common::theme::Pointer) {
+    let settings = [
+        ("cursor-theme", pointer.cursor_theme.clone()),
+        ("cursor-size", pointer.cursor_size.to_string()),
+    ];
+    std::thread::spawn(move || {
+        for (key, value) in settings {
+            let _ = Command::new("gsettings")
+                .args(["set", "org.gnome.desktop.interface", key, &value])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+    });
+}
+
+/// How often to look for the pt35 keyboard firmware until it answers.
+const PROBE_EVERY: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// How often the window in front is captured while you use it.
+const PREVIEW_EVERY: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// The window a capture of the screen shows: the focused one, or with the
+/// menu holding focus, the tiled one on the current workspace.
+pub fn front_window(status: &pt35_common::ipc::Status) -> Option<i64> {
+    status
+        .windows
+        .iter()
+        .find(|w| w.focused)
+        .or_else(|| {
+            status
+                .windows
+                .iter()
+                .find(|w| w.workspace == status.workspace && !w.floating)
+        })
+        .map(|w| w.id)
+}
+
+/// Drop the pictures of windows that have closed.
+fn prune_previews(windows: &[pt35_common::ipc::WindowInfo]) {
+    let Ok(entries) = std::fs::read_dir(pt35_common::paths::previews_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let id = name
+            .to_str()
+            .and_then(|n| n.strip_suffix(".ppm"))
+            .and_then(|n| n.parse::<i64>().ok());
+        if id.is_some_and(|id| !windows.iter().any(|w| w.id == id)) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+fn load_theme_or_default() -> pt35_common::theme::Theme {
+    pt35_common::load_theme().unwrap_or_else(|e| {
+        log::error!("theme: {e}; falling back to built-in defaults");
+        Default::default()
+    })
 }
 
 fn load_or_default<T: serde::de::DeserializeOwned + Default>(relative: &str) -> T {
@@ -1084,6 +1541,23 @@ mod tests {
         assert_eq!(next_window(&list, 2, true), Some(3));
         assert_eq!(next_window(&list, 2, false), Some(1));
         assert_eq!(next_window(&list, 7, true), Some(1), "nothing to anchor on");
+    }
+
+    #[test]
+    fn dark_apps_ask_gtk_for_dark_and_keep_asks_for_nothing() {
+        let mut apps = pt35_common::theme::Apps::default();
+        let dark = color_scheme_settings(&apps).unwrap();
+        assert!(dark.contains(&("color-scheme", "prefer-dark".into())));
+        assert!(dark.contains(&("gtk-theme", "Adwaita-dark".into())));
+        apps.color_scheme = pt35_common::theme::ColorScheme::Keep;
+        assert!(color_scheme_settings(&apps).is_none());
+    }
+
+    #[test]
+    fn a_file_chooser_stays_with_the_app_that_asked_for_it() {
+        let mut chooser = window(2, 1, true);
+        chooser.app = "xdg-desktop-portal-gtk".into();
+        assert!(overflow_moves(&[window(1, 1, false), chooser]).is_empty());
     }
 
     #[test]

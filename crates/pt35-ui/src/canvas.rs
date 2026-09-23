@@ -49,13 +49,49 @@ impl Canvas {
 
     pub fn rect(&mut self, x: i32, y: i32, w: u32, h: u32, color: Rgb) {
         let argb = color.to_argb8888();
-        let (x0, y0) = (x.max(0) as u32, y.max(0) as u32);
+        // Clamped both ways: a rect that starts past the right edge must come
+        // out empty, not as a start index beyond its end.
+        let (x0, y0) = (
+            (x.max(0) as u32).min(self.width),
+            (y.max(0) as u32).min(self.height),
+        );
         let x1 = ((x + w as i32).max(0) as u32).min(self.width);
         let y1 = ((y + h as i32).max(0) as u32).min(self.height);
+        if x0 >= x1 {
+            return;
+        }
         for row in y0..y1 {
             let start = (row * self.width + x0) as usize;
             let end = (row * self.width + x1) as usize;
             self.pixels[start..end].fill(argb);
+        }
+    }
+
+    /// Draw an RGB image scaled to `w` x `h`, nearest neighbour, clipped to the
+    /// canvas. For window previews: a few thousand pixels, cheap every frame.
+    #[allow(clippy::too_many_arguments)]
+    pub fn blit_rgb(&mut self, x: i32, y: i32, w: u32, h: u32, rgb: &[u8], src_w: u32, src_h: u32) {
+        if src_w == 0 || src_h == 0 || rgb.len() < (src_w * src_h * 3) as usize {
+            return;
+        }
+        for row in 0..h as i32 {
+            let ty = y + row;
+            if ty < 0 || ty >= self.height as i32 {
+                continue;
+            }
+            let sy = (row as u32 * src_h / h.max(1)).min(src_h - 1);
+            for col in 0..w as i32 {
+                let tx = x + col;
+                if tx < 0 || tx >= self.width as i32 {
+                    continue;
+                }
+                let sx = (col as u32 * src_w / w.max(1)).min(src_w - 1);
+                let i = ((sy * src_w + sx) * 3) as usize;
+                self.pixels[(ty as u32 * self.width + tx as u32) as usize] = 0xff00_0000
+                    | (rgb[i] as u32) << 16
+                    | (rgb[i + 1] as u32) << 8
+                    | rgb[i + 2] as u32;
+            }
         }
     }
 
@@ -132,10 +168,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_image_scales_and_clips() {
+        let mut canvas = Canvas::new(4, 4);
+        // 2x1: red, blue.
+        let rgb = [0xff, 0, 0, 0, 0, 0xff];
+        canvas.blit_rgb(-1, 0, 4, 2, &rgb, 2, 1);
+        assert_eq!(canvas.pixel(0, 0), 0xffff_0000, "left half is red");
+        assert_eq!(canvas.pixel(2, 1), 0xff00_00ff, "right half is blue");
+        canvas.blit_rgb(0, 0, 4, 4, &rgb[..3], 2, 1); // too short: ignored
+    }
+
+    #[test]
     fn fills_and_clips_rectangles() {
         let mut canvas = Canvas::new(8, 4);
         canvas.fill(Rgb(0, 0, 0));
         canvas.rect(-2, -2, 4, 4, Rgb(0xff, 0, 0));
+        // Wholly off the right and bottom edges: nothing drawn, no panic.
+        canvas.rect(12, 0, 4, 4, Rgb(0xff, 0, 0));
+        canvas.rect(0, 12, 4, 4, Rgb(0xff, 0, 0));
         assert_eq!(canvas.pixel(0, 0), 0xffff_0000);
         assert_eq!(
             canvas.pixel(2, 2),

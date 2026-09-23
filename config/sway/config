@@ -8,7 +8,7 @@
 
 ### ------------------------------------------------------------------ basics
 set $mod Mod4
-set $term foot
+set $term foot pt35-hello
 set $menu pt35ctl menu toggle
 set $ctl  pt35ctl
 
@@ -16,6 +16,7 @@ set $ctl  pt35ctl
 output * {
     mode 640x480
     scale 1
+    # Until pt35d starts and paints the theme's background.
     background #0a1310 solid_color
 }
 
@@ -32,7 +33,7 @@ smart_borders on
 focus_follows_mouse no
 mouse_warping none
 seat * hide_cursor 1500
-seat * xcursor_theme default 16
+seat * xcursor_theme Bibata-Modern-Classic 20
 
 # X11-only apps still need to work (they follow the output scale and look soft
 # at fractional scales — prefer Wayland-native builds where they exist).
@@ -46,8 +47,6 @@ input type:keyboard {
     # [buttons] and [pointer] tables in theme.toml.
     repeat_delay 500
     repeat_rate 8
-    # No `xkb_options compose:menu`. That turns the Menu keysym into Compose,
-    # and the L shoulder sends Menu so apps get a context menu.
 }
 
 input type:touch {
@@ -62,9 +61,17 @@ input type:touch {
 workspace_layout default
 for_window [shell=".*"] inhibit_idle fullscreen
 
-# Dialogs and anything that insists on floating: centre and clamp on-screen.
+# Dialogs float over the app that opened them. Tiled, pt35d would move one to a
+# workspace of its own, away from the window waiting on it: a "Save On Close"
+# box stranded over the file chooser it is waiting for.
+#
+# A portal's file chooser is a plain toplevel with no parent sway can see, so it
+# is named rather than detected.
+floating_maximum_size 640 x 446
 for_window [floating] move position center
-for_window [window_type="dialog"] resize set 600 420, move position center
+for_window [window_type="dialog"] floating enable, resize set 600 420, move position center
+for_window [window_role="dialog"] floating enable, move position center
+for_window [app_id="^xdg-desktop-portal"] floating enable, resize set 620 430, move position center
 for_window [window_type="menu"] move position center
 no_focus [window_type="notification"]
 
@@ -76,7 +83,7 @@ exec_always --no-startup-id dbus-update-activation-environment --systemd WAYLAND
 
 exec --no-startup-id pt35d
 exec --no-startup-id pt35-bar
-exec --no-startup-id foot
+exec --no-startup-id $term
 
 ### -------------------------------------------------------------- keybindings
 # NOTE: the keyboard has a Super key of its own (row 6 of the matrix, next to
@@ -94,12 +101,8 @@ exec --no-startup-id foot
 # looking at. $mod+space stays bound here throughout as the way back in.
 bindsym $mod+space  exec $menu
 
-# NOT bound: `Menu`. The L shoulder sends that keysym so the focused app opens
-# its own context menu, which is the only right-click there is in Buttons mode.
-# A binding here would eat it first.
-
-bindsym Print       exec $ctl mode toggle
-bindsym Sys_Req     exec $ctl mode toggle
+# Select (Print / Sys_Req) is the window switcher, bound by pt35d like Start:
+# the menu takes it while it is up, so Select on the switcher closes it.
 bindsym $mod+m      exec $ctl mode toggle
 bindsym $mod+w      exec $ctl menu open windows
 

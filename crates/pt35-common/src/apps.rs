@@ -182,6 +182,44 @@ pub fn command_binary(exec: &str) -> Option<String> {
     Some(first.to_string())
 }
 
+/// Every program a command needs: the command itself, and for a terminal the
+/// program it runs. `foot -a pt35-files yazi` needs yazi as much as foot, and a
+/// missing one only shows as a window that flashes shut.
+pub fn command_programs(exec: &str) -> Vec<String> {
+    let mut out: Vec<String> = command_binary(exec).into_iter().collect();
+    let mut words = exec.split_whitespace();
+    if words.next() == Some("foot") {
+        // foot's options that take a value, so the value is not the program.
+        const VALUED: &[&str] = &[
+            "-a",
+            "--app-id",
+            "-T",
+            "--title",
+            "-c",
+            "--config",
+            "-w",
+            "--window-size-pixels",
+            "-W",
+            "--window-size-chars",
+            "-o",
+            "--override",
+            "-D",
+            "--working-directory",
+            "-f",
+            "--font",
+        ];
+        while let Some(word) = words.next() {
+            if VALUED.contains(&word) {
+                words.next();
+            } else if !word.starts_with('-') {
+                out.push(word.to_string());
+                break;
+            }
+        }
+    }
+    out
+}
+
 /// Whether a command is actually installed.
 ///
 /// `sh -c` succeeds whatever you give it, so this is the only check standing
@@ -224,6 +262,22 @@ pub fn initials(app: &str) -> String {
         "??".into()
     } else {
         text.to_uppercase()
+    }
+}
+
+#[cfg(test)]
+mod program_tests {
+    use super::*;
+
+    #[test]
+    fn a_terminal_app_needs_its_program_too() {
+        assert_eq!(
+            command_programs("foot -a pt35-files yazi"),
+            ["foot", "yazi"]
+        );
+        assert_eq!(command_programs("foot pt35-hello"), ["foot", "pt35-hello"]);
+        assert_eq!(command_programs("foot"), ["foot"]);
+        assert_eq!(command_programs("mousepad"), ["mousepad"]);
     }
 }
 

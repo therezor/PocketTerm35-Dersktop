@@ -1,0 +1,35 @@
+// pt35-desktop fastfetch, shown when a terminal opens on the device.
+// Installed as the system default, /etc/xdg/fastfetch/config.jsonc.
+// About 76 columns by 23 rows at foot's size 10, so: a 17-column logo and the
+// dozen lines that are worth reading on a handheld.
+// Your own ~/.config/fastfetch/config.jsonc is used instead when it exists.
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+  "logo": {
+    "type": "file",
+    "source": "/usr/share/pt35-desktop/fastfetch/skull.txt",
+    "color": { "1": "green" },
+    "padding": { "top": 1, "left": 1, "right": 2 }
+  },
+  "display": {
+    "separator": "  ",
+    "color": { "keys": "green", "title": "green" },
+    // 1024-based, labelled GB: what the board is sold as and what the menu's
+    // System screen shows. "si" turns 16 GB of RAM into 17.
+    "size": { "binaryPrefix": "jedec", "ndigits": 1 }
+  },
+  "modules": [
+    "title",
+    "separator",
+    { "type": "os", "key": "os    " },
+    { "type": "host", "key": "board " },
+    { "type": "kernel", "key": "kernel" },
+    { "type": "uptime", "key": "up    " },
+    { "type": "cpu", "key": "cpu   ", "showPeCoreCount": false },
+    { "type": "memory", "key": "mem   " },
+    { "type": "disk", "key": "disk  ", "folders": "/" },
+    { "type": "localip", "key": "ip    ", "showIpv6": false, "compact": true },
+    "break",
+    "colors"
+  ]
+}

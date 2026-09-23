@@ -6,8 +6,8 @@ Twelve physical controls. Six of them are letters, so the shell is modal.
 |---|---|
 | D-pad | arrows |
 | A B X Y L R | `F18 F17 F15 F16 F13 F14` (`XF86Launch9`, `XF86Launch8`, `XF86Launch6`, `XF86Launch7`, `XF86Tools`, `XF86Launch5`) |
-| Start | `KEY_PAUSE` |
-| Select | `KEY_SYSRQ` |
+| Start | `KEY_F22` (`XF86TouchpadOn`); Fn+Start is `KEY_PAUSE` |
+| Select | `KEY_F21` (`XF86TouchpadToggle`); Fn+Select is `KEY_SYSRQ`, a screenshot |
 
 That is with the patched keyboard firmware in [`firmware/`](../firmware/).
 Stock, the six face buttons send the letters `l r x y b a` and the shell has to
@@ -16,7 +16,14 @@ grab them, which is what "button mode" below is for.
 ## Two modes
 
 Buttons mode is the default. Mouse mode exists because some GUI controls only
-answer a cursor. Select switches between them and the bar says which you are in.
+answer a cursor. R switches between them, a toast says which, and so does the
+bar.
+
+The menu works like any desktop with a mouse, in either mode and with an
+external mouse too: pointing at a row selects it, a click opens it, a right
+click opens its menu (Open and Pin on a launcher app, Switch to, Close and
+Close all on a switcher card) and the wheel scrolls. The header is the way
+back: `PT35 < SETTINGS < SYSTEM`, and every name before the last is a link.
 
 | control | Buttons | Mouse |
 |---|---|---|
@@ -24,23 +31,22 @@ answer a cursor. Select switches between them and the bar says which you are in.
 | A | Enter | left click |
 | B | Escape | right click |
 | X | Tab | scroll up |
-| Y | fullscreen toggle | scroll down |
-| L | context menu | context menu |
-| R | window picker | window picker |
+| Y | F10: the app's menu bar | scroll down |
+| L | close window | close window |
+| R | switch mode | switch mode |
 | Start | menu | menu |
-| Select | switch mode | switch mode |
+| Select | window switcher | window switcher |
 
-L sends the keyboard **Menu** key, so the focused app opens its own context
-menu. In Buttons mode that is the only right-click there is. sway must not bind
-`Menu` itself, and `xkb_options compose:menu` must stay off, or the keysym never
-reaches the app.
+L closes the focused window and R switches mode, in both modes and in the
+menu. On the window switcher L closes the card under the cursor; on other menu
+screens it does nothing, because the window is hidden behind the menu.
 
-Nothing closes a window from a shoulder. A button under your index finger is too
-easy to catch by accident: closing is `Super`+`q`, the `x` at the right of the
-bar, or Y on the window picker.
+Closing is L, `Super`+`q`, the `x` at the right of the bar, or Y on the window
+switcher. L does not repeat, so holding it closes one window, not a row.
 
-Holding A in Mouse mode drags: the press and the release are sent separately.
-The D-pad repeats faster there (40/s against 8/s) so the cursor crosses the
+Holding A and pressing the D-pad does not drag: sway holds back the cursor's
+motion while a button is down. A real mouse or a finger drags. The D-pad
+repeats faster in Mouse mode (40/s against 8/s) so the cursor crosses the
 screen in about a second.
 
 Both modes are sway bindings on the keysyms the patched firmware sends, so
@@ -73,17 +79,18 @@ workspace: pt35d moves a second window off a workspace that already has one.
 | D-pad up/down | move |
 | D-pad left/right | change a quick setting, or move in a grid |
 | A, Enter | open |
-| B, Backspace | back, and at the top screen, close |
-| X, `/` | search, then letters type |
-| Y | back to the top menu |
-| L / R | page |
+| B, Backspace | back; on the screen the menu opened on, back to your app |
+| X, `/`, or just type (launcher) | search, then letters type |
+| Y | back to the top menu; on a launcher row, pin or unpin |
+| Select | window switcher; on the switcher, close it |
+| R | switch Buttons / Mouse mode |
 | 1-9 | pick that visible row |
 | Start, Escape | close |
 | touch | tap a tile, a row, a side button or a legend pill |
 
-B is the way out: back one screen, and out of the menu from the top one. Start
-does the same in one press from any depth, so the legend names only B. On the
-window picker, X closes every window and asks first.
+B is the way out: back one screen. The launcher itself is never closed from
+inside: you leave it by picking something, or with Start. On the window
+switcher, X closes every window and asks first, and L or Y closes one.
 
 Left and Right never navigate. Back is B.
 
@@ -100,11 +107,14 @@ something and it goes.
 
 The top bar is a taskbar: one slot per open window, with its icon and its name,
 the focused one filled. Names shrink as windows are added and drop to icons when
-there is no room left, but a window never loses its slot. Tap a slot to switch,
-the `=` button opens the menu, the `x` button closes the focused window.
+there is no room left, but a window never loses its slot. Tap a slot to switch, even with
+the menu up. The skull brings the launcher to the front and never closes it,
+the `x` button closes the focused window.
 
 The right-hand side is the input mode, the volume and the signal, as icons. A
-wired connection draws a full meter rather than an empty Wi-Fi one.
+cable in wins over Wi-Fi and draws the wired icon rather than an empty Wi-Fi
+meter. Each one is a button: the mode icon switches mode, volume opens Audio,
+the signal opens Network, and the clock opens Quick settings.
 
 The taskbar is also where a confirmation lands. A key binding has no other way
 to answer you, so anything worth knowing ("Saved shot.png", "no audio backend on

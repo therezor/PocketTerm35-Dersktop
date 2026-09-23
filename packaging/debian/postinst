@@ -80,6 +80,10 @@ if [ ! -e "$USER_HOME/.config/foot/foot.ini" ]; then
 fi
 
 usermod -aG input,video,render,audio "$USER_NAME" 2>/dev/null || true
+# The uinput rule applies at once, not at the next boot.
+modprobe uinput 2>/dev/null || true
+udevadm control --reload 2>/dev/null || true
+udevadm trigger --name-match=uinput 2>/dev/null || true
 
 # ---------------------------------------------------------------- services
 install -d /etc/systemd/logind.conf.d

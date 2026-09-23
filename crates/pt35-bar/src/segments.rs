@@ -12,6 +12,28 @@ pub struct Segment {
     pub color: Rgb,
     /// Drawn to the left of the text. A segment may be icon only.
     pub icon: Option<Icon>,
+    pub tap: Option<Tap>,
+}
+
+/// What a tap on a status segment opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tap {
+    Mode,
+    Volume,
+    Network,
+    Clock,
+}
+
+impl Tap {
+    /// The `pt35ctl` arguments it runs.
+    pub fn command(self) -> &'static [&'static str] {
+        match self {
+            Tap::Mode => &["mode", "toggle"],
+            Tap::Volume => &["menu", "open", "audio"],
+            Tap::Network => &["menu", "open", "wifi"],
+            Tap::Clock => &["menu", "open", "quick"],
+        }
+    }
 }
 
 impl Segment {
@@ -20,6 +42,7 @@ impl Segment {
             text: text.into(),
             color,
             icon: None,
+            tap: None,
         }
     }
 
@@ -28,6 +51,14 @@ impl Segment {
             text: String::new(),
             color,
             icon: Some(icon),
+            tap: None,
+        }
+    }
+
+    fn tap(self, tap: Tap) -> Self {
+        Self {
+            tap: Some(tap),
+            ..self
         }
     }
 }
@@ -116,43 +147,52 @@ pub fn right(status: Option<&Status>, theme: &Theme, clock: &str) -> Vec<Segment
         // The D-pad either navigates or moves a cursor, and the same buttons
         // either confirm or click. Nothing else on screen says which.
         let mouse = status.input_mode == pt35_common::ipc::InputMode::Mouse;
-        out.push(Segment {
-            text: status.input_mode.label().into(),
-            color: if mouse {
-                theme.color.warning
-            } else {
-                theme.color.accent
-            },
-            icon: Some(Icon::Mode { mouse }),
-        });
+        if theme.bar.show_mode {
+            out.push(Segment {
+                text: status.input_mode.label().into(),
+                color: if mouse {
+                    theme.color.warning
+                } else {
+                    theme.color.accent
+                },
+                icon: Some(Icon::Mode { mouse }),
+                tap: Some(Tap::Mode),
+            });
+        }
         if (status.scale - 1.0).abs() > 0.01 {
             out.push(Segment::text(
                 format!("{:.2}x", status.scale),
                 theme.color.muted,
             ));
         }
-        if let Some(volume) = status.volume_percent {
-            out.push(Segment::icon(
-                Icon::Volume {
-                    level: volume.min(100),
-                    muted: status.muted.unwrap_or(false),
-                },
-                theme.color.foreground,
-            ));
+        if let Some(volume) = status.volume_percent.filter(|_| theme.bar.show_volume) {
+            out.push(
+                Segment::icon(
+                    Icon::Volume {
+                        level: volume.min(100),
+                        muted: status.muted.unwrap_or(false),
+                    },
+                    theme.color.foreground,
+                )
+                .tap(Tap::Volume),
+            );
         }
         // An interface name is not news. Whether there is signal is.
         //
-        // No signal reading with a link up means a cable: /proc/net/wireless
-        // only knows about radios. Four empty bars would say the opposite of
-        // the truth.
+        // A cable carries the traffic whenever it is in, so it wins over the
+        // radio. A link with no signal reading is not a radio either: four
+        // empty bars would say the opposite of the truth.
         if theme.bar.show_network && status.network.is_some() {
-            out.push(Segment::icon(
-                match status.network_signal {
-                    Some(signal) => Icon::Wifi { signal },
-                    None => Icon::Wired,
-                },
-                theme.color.foreground,
-            ));
+            out.push(
+                Segment::icon(
+                    match (&status.ethernet, status.network_signal) {
+                        (None, Some(signal)) => Icon::Wifi { signal },
+                        _ => Icon::Wired,
+                    },
+                    theme.color.foreground,
+                )
+                .tap(Tap::Network),
+            );
         }
         match (theme.bar.show_battery, status.battery_percent) {
             (Visibility::Never, _) => {}
@@ -173,7 +213,9 @@ pub fn right(status: Option<&Status>, theme: &Theme, clock: &str) -> Vec<Segment
             }
         }
     }
-    out.push(Segment::text(clock, theme.color.foreground));
+    if theme.bar.show_clock {
+        out.push(Segment::text(clock, theme.color.foreground).tap(Tap::Clock));
+    }
     out
 }
 
@@ -191,6 +233,22 @@ mod tests {
     }
 
     #[test]
+    fn status_icons_open_what_they_show() {
+        let theme = Theme::default();
+        let s = Status {
+            volume_percent: Some(40),
+            network: Some("wlan0".into()),
+            network_signal: Some(70),
+            ..status()
+        };
+        let taps: Vec<Tap> = right(Some(&s), &theme, "12:34")
+            .iter()
+            .filter_map(|s| s.tap)
+            .collect();
+        assert_eq!(taps, [Tap::Mode, Tap::Volume, Tap::Network, Tap::Clock]);
+    }
+
+    #[test]
     fn a_cable_is_not_a_dead_radio() {
         let theme = Theme::default();
         let wired = Status {
@@ -202,12 +260,21 @@ mod tests {
             .iter()
             .any(|s| s.icon == Some(Icon::Wired)));
         let wifi = Status {
+            network: Some("wlan0".into()),
             network_signal: Some(70),
             ..wired
         };
         assert!(right(Some(&wifi), &theme, "12:34")
             .iter()
             .any(|s| s.icon == Some(Icon::Wifi { signal: 70 })));
+        let both = Status {
+            network: Some("eth0".into()),
+            ethernet: Some("eth0".into()),
+            ..wifi
+        };
+        assert!(right(Some(&both), &theme, "12:34")
+            .iter()
+            .any(|s| s.icon == Some(Icon::Wired)));
     }
 
     #[test]
@@ -289,6 +356,19 @@ mod tests {
         assert!(right(Some(&s), &theme, "12:34")
             .iter()
             .any(|seg| seg.text == "MOUSE"));
+    }
+
+    #[test]
+    fn every_readout_can_be_switched_off() {
+        let mut theme = Theme::default();
+        theme.bar.show_mode = false;
+        theme.bar.show_clock = false;
+        theme.bar.show_volume = false;
+        let status = Status {
+            volume_percent: Some(40),
+            ..status()
+        };
+        assert!(right(Some(&status), &theme, "12:34").is_empty());
     }
 
     #[test]

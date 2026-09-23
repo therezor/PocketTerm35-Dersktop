@@ -20,6 +20,7 @@ use smithay_client_toolkit::{
     registry_handlers,
     seat::{
         keyboard::{KeyEvent, KeyboardHandler, Modifiers},
+        pointer::cursor_shape::CursorShapeManager,
         pointer::{PointerEvent, PointerEventKind, PointerHandler},
         touch::TouchHandler,
         Capability, SeatHandler, SeatState,
@@ -32,6 +33,9 @@ use smithay_client_toolkit::{
         WaylandSurface,
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
+};
+use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::{
+    Shape, WpCursorShapeDeviceV1,
 };
 use std::time::Duration;
 use wayland_client::{
@@ -112,6 +116,27 @@ pub trait App {
         true
     }
 
+    /// The pointer moved to surface coordinates. Return true to repaint.
+    fn hover(&mut self, _x: f64, _y: f64) -> bool {
+        false
+    }
+
+    /// The pointer moved with a button held, or a finger moved. Hover unless
+    /// the app has something to drag.
+    fn drag(&mut self, x: f64, y: f64) -> bool {
+        self.hover(x, y)
+    }
+
+    /// A right click at surface coordinates.
+    fn back_click(&mut self, _x: f64, _y: f64) -> bool {
+        true
+    }
+
+    /// One wheel step, `down` or up.
+    fn scroll(&mut self, _down: bool) -> bool {
+        true
+    }
+
     /// Draw onto a fully transparent surface instead of [`App::background`].
     fn transparent(&self) -> bool {
         false
@@ -129,6 +154,20 @@ pub trait App {
         None
     }
 
+    /// True while something on screen is moving. The loop then draws at about
+    /// 60 frames a second; otherwise it sleeps until an event, so an idle
+    /// surface costs nothing.
+    fn animating(&self) -> bool {
+        false
+    }
+
+    /// Move to the overlay layer, above a fullscreen window. Sway hides the
+    /// top layer under one, which would leave the menu under a strip of app
+    /// where the bar belongs.
+    fn raised(&self) -> bool {
+        false
+    }
+
     /// Background colour used before the first draw.
     fn background(&self) -> Rgb {
         Rgb(0x10, 0x14, 0x18)
@@ -144,6 +183,10 @@ struct State<A: App + 'static> {
     layer: LayerSurface,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     pointer: Option<wl_pointer::WlPointer>,
+    /// A surface that never names a cursor keeps the last client's, and over
+    /// the bar that is foot's text beam.
+    cursor_shapes: Option<CursorShapeManager>,
+    cursor_shape: Option<WpCursorShapeDeviceV1>,
     touch: Option<wl_touch::WlTouch>,
     cursor: (f64, f64),
     modifiers: Modifiers,
@@ -152,6 +195,10 @@ struct State<A: App + 'static> {
     configured: bool,
     dirty: bool,
     running: bool,
+    base_layer: Layer,
+    raised: bool,
+    /// Buttons and fingers down on this surface.
+    held: u32,
     app: A,
 }
 
@@ -201,6 +248,8 @@ pub fn run<A: App + 'static>(app: A, spec: SurfaceSpec) -> Result<()> {
         layer,
         keyboard: None,
         pointer: None,
+        cursor_shapes: CursorShapeManager::bind(&globals, &qh).ok(),
+        cursor_shape: None,
         touch: None,
         cursor: (0.0, 0.0),
         modifiers: Modifiers::default(),
@@ -209,6 +258,9 @@ pub fn run<A: App + 'static>(app: A, spec: SurfaceSpec) -> Result<()> {
         configured: false,
         dirty: true,
         running: true,
+        base_layer: spec.layer,
+        raised: false,
+        held: 0,
         app,
     };
 
@@ -235,7 +287,29 @@ pub fn run<A: App + 'static>(app: A, spec: SurfaceSpec) -> Result<()> {
     }
 
     while state.running {
-        event_loop.dispatch(Duration::from_millis(500), &mut state)?;
+        let wait = if state.app.animating() {
+            Duration::from_millis(16)
+        } else {
+            Duration::from_millis(500)
+        };
+        event_loop.dispatch(wait, &mut state)?;
+        if state.app.animating() {
+            state.dirty = true;
+        }
+        // Never while a button or finger is down: sway 1.10 segfaults when a
+        // surface changes layer under its own pointer grab, and a click on
+        // the skull is what opens the menu that raises the bar.
+        let raised = state.app.raised();
+        if raised != state.raised && state.held == 0 {
+            state.raised = raised;
+            // Takes effect on the next commit, which the redraw makes.
+            state.layer.set_layer(if raised {
+                Layer::Overlay
+            } else {
+                state.base_layer
+            });
+            state.dirty = true;
+        }
         if state.configured && state.dirty {
             state.draw(&qh);
         }
@@ -385,7 +459,13 @@ impl<A: App + 'static> SeatHandler for State<A> {
         }
         if capability == Capability::Pointer && self.pointer.is_none() {
             match self.seats.get_pointer(qh, &seat) {
-                Ok(pointer) => self.pointer = Some(pointer),
+                Ok(pointer) => {
+                    self.cursor_shape = self
+                        .cursor_shapes
+                        .as_ref()
+                        .map(|shapes| shapes.get_shape_device(&pointer, qh));
+                    self.pointer = Some(pointer);
+                }
                 Err(e) => log::debug!("no pointer on this seat: {e}"),
             }
         }
@@ -515,15 +595,63 @@ impl<A: App + 'static> PointerHandler for State<A> {
     ) {
         for event in events {
             match event.kind {
-                PointerEventKind::Motion { .. } | PointerEventKind::Enter { .. } => {
+                PointerEventKind::Press { .. } => self.held += 1,
+                PointerEventKind::Release { .. } => self.held = self.held.saturating_sub(1),
+                PointerEventKind::Leave { .. } => self.held = 0,
+                _ => {}
+            }
+            if let (PointerEventKind::Enter { serial }, Some(device)) =
+                (&event.kind, &self.cursor_shape)
+            {
+                device.set_shape(*serial, Shape::Default);
+            }
+            match event.kind {
+                // Only motion: a surface that maps under a resting cursor gets
+                // an enter, and that is not the user pointing at anything.
+                PointerEventKind::Enter { .. } => self.cursor = event.position,
+                PointerEventKind::Motion { .. } => {
                     self.cursor = event.position;
+                    let (x, y) = event.position;
+                    let moved = if self.held > 0 {
+                        self.app.drag(x, y)
+                    } else {
+                        self.app.hover(x, y)
+                    };
+                    if moved {
+                        self.dirty = true;
+                    }
                 }
-                PointerEventKind::Press { .. } => {
+                // A click acts on release. In Mouse mode a click is a held A,
+                // and what it starts may rebind A: sway 1.10 segfaults on the
+                // release if its binding went while the key was down.
+                //
+                // linux/input-event-codes.h: BTN_RIGHT.
+                PointerEventKind::Release { button: 0x111, .. } => {
+                    let (x, y) = event.position;
+                    if !self.app.back_click(x, y) {
+                        self.running = false;
+                    }
+                    self.dirty = true;
+                }
+                PointerEventKind::Release { .. } => {
                     let (x, y) = event.position;
                     if !self.app.touch(x, y) {
                         self.running = false;
                     }
                     self.dirty = true;
+                }
+                PointerEventKind::Axis { vertical, .. } => {
+                    let step = if vertical.discrete != 0 {
+                        vertical.discrete as f64
+                    } else {
+                        vertical.absolute
+                    };
+                    if step != 0.0 {
+                        if !self.app.scroll(step > 0.0) {
+                            self.running = false;
+                        }
+                        self.dirty = true;
+                    }
                 }
                 _ => {}
             }
@@ -543,6 +671,7 @@ impl<A: App + 'static> TouchHandler for State<A> {
         _: i32,
         position: (f64, f64),
     ) {
+        self.held += 1;
         if !self.app.touch(position.0, position.1) {
             self.running = false;
         }
@@ -558,6 +687,7 @@ impl<A: App + 'static> TouchHandler for State<A> {
         _: u32,
         _: i32,
     ) {
+        self.held = self.held.saturating_sub(1);
     }
 
     fn motion(
@@ -567,8 +697,11 @@ impl<A: App + 'static> TouchHandler for State<A> {
         _: &wl_touch::WlTouch,
         _: u32,
         _: i32,
-        _: (f64, f64),
+        position: (f64, f64),
     ) {
+        if self.app.drag(position.0, position.1) {
+            self.dirty = true;
+        }
     }
 
     fn shape(
@@ -592,7 +725,9 @@ impl<A: App + 'static> TouchHandler for State<A> {
     ) {
     }
 
-    fn cancel(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch) {}
+    fn cancel(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch) {
+        self.held = 0;
+    }
 }
 
 impl<A: App + 'static> OutputHandler for State<A> {

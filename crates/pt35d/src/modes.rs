@@ -2,17 +2,13 @@
 //!
 //! Twelve controls, two things to do with them. In Buttons mode the D-pad is
 //! the arrow keys and A is Enter; in Mouse mode the D-pad moves the cursor and
-//! A is a left click. L is the keyboard Menu key and R is the window picker, in
-//! both. Start (the menu) and Select (the mode switch) are bound in the sway
-//! config, so neither mode can lose them.
-//!
-//! Nothing closes a window from a shoulder. A button you hit by accident should
-//! not throw away what is on screen: closing is `$mod+q`, the bar's `x`, and Y
-//! on the window picker.
+//! A is a left click. In both, R switches mode and L closes the window. Start
+//! (the menu) and Select (the window switcher) are bound by pt35d outside the
+//! modes, so neither mode can lose them.
 //!
 //! Both modes are plain sway bindings on the keysyms the patched firmware
 //! sends, so nothing runs in the background and the letters keep typing. Enter,
-//! Escape and Tab go through `wtype`, because sway has no "send key" command;
+//! Escape and Tab go through `pt35ctl key`, because sway has no "send key" command;
 //! the clicks and the cursor moves are sway's own `seat cursor` commands.
 
 use pt35_common::ipc::InputMode;
@@ -59,26 +55,23 @@ const R: &str = "XF86Launch5";
 
 /// What both modes share.
 ///
-/// L is the Menu key, the one a keyboard puts next to the right Ctrl: it opens
-/// whatever the focused app calls a context menu. That is the only way to reach
-/// a right-click menu in Buttons mode. sway must not bind `Menu` itself, or the
-/// binding would eat the keysym before the app saw it.
-///
-/// R is the window picker. Neither repeats: holding a shoulder should do one
-/// thing, not a hundred.
+/// R switches between Buttons and Mouse, L closes the focused window. The
+/// window switcher moved to Select. Neither repeats: holding a shoulder must
+/// not close a row of windows one after another.
 fn common() -> Vec<Bind> {
     vec![
-        Bind::new("--no-repeat", L, "exec wtype -k Menu"),
-        Bind::new("--no-repeat", R, "exec pt35ctl menu open windows"),
+        Bind::new("--no-repeat", L, "exec pt35ctl window close"),
+        Bind::new("--no-repeat", R, "exec pt35ctl mode toggle"),
     ]
 }
 
 fn buttons() -> Vec<Bind> {
     vec![
-        Bind::new("", A, "exec wtype -k Return"),
-        Bind::new("", B, "exec wtype -k Escape"),
-        Bind::new("", X, "exec wtype -k Tab"),
-        Bind::new("--no-repeat", Y, "exec pt35ctl window fullscreen"),
+        Bind::new("", A, "exec pt35ctl key enter"),
+        Bind::new("", B, "exec pt35ctl key escape"),
+        Bind::new("", X, "exec pt35ctl key tab"),
+        // The app's own menu bar. Fullscreen stays on $mod+f.
+        Bind::new("--no-repeat", Y, "exec pt35ctl key f10"),
     ]
 }
 
@@ -96,8 +89,8 @@ fn mouse(step: i32) -> Vec<Bind> {
             &format!("seat {SEAT} cursor move {dx} {dy}"),
         ));
     }
-    // Press and release separately, so holding A drags and holding X scrolls.
-    for (key, button) in [(A, 1), (B, 3), (X, 4), (Y, 5)] {
+    // Press and release separately, so holding A drags.
+    for (key, button) in [(A, 1), (B, 3)] {
         out.push(Bind::new(
             "--no-repeat",
             key,
@@ -109,6 +102,10 @@ fn mouse(step: i32) -> Vec<Bind> {
             &format!("seat {SEAT} cursor release button{button}"),
         ));
     }
+    // The wheel through pt35d's uinput mouse: sway's `cursor press button4`
+    // sends no scroll. Repeating, so holding X or Y keeps scrolling.
+    out.push(Bind::new("", X, "exec pt35ctl wheel up"));
+    out.push(Bind::new("", Y, "exec pt35ctl wheel down"));
     out
 }
 
@@ -120,6 +117,17 @@ pub fn binds(mode: InputMode, pointer: &Pointer) -> Vec<Bind> {
         InputMode::Mouse => out.extend(mouse(pointer.step)),
     }
     out
+}
+
+/// What stays bound while the menu is up. In Mouse mode the cursor keeps
+/// working over the menu, so the D-pad, the clicks and the wheel stay; the
+/// shoulders go to the menu, which does their job itself. In Buttons mode
+/// everything goes to the menu.
+pub fn menu_binds(mode: InputMode, pointer: &Pointer) -> Vec<Bind> {
+    match mode {
+        InputMode::Buttons => Vec::new(),
+        InputMode::Mouse => mouse(pointer.step),
+    }
 }
 
 /// Everything else a mode needs from sway, after the bindings.
@@ -156,7 +164,7 @@ mod tests {
     }
 
     #[test]
-    fn the_shoulders_are_the_context_menu_and_the_picker_in_both_modes() {
+    fn the_shoulders_close_and_switch_mode_in_both_modes() {
         for mode in [InputMode::Buttons, InputMode::Mouse] {
             let binds = binds(mode, &Pointer::default());
             let find = |key: &str| {
@@ -165,25 +173,20 @@ mod tests {
                     .find(|b| b.key == key)
                     .unwrap_or_else(|| panic!("{key} is not bound in {mode:?}"))
             };
-            assert_eq!(find(L).action, "exec wtype -k Menu");
-            assert_eq!(find(R).action, "exec pt35ctl menu open windows");
+            assert_eq!(find(L).action, "exec pt35ctl window close");
+            assert_eq!(find(R).action, "exec pt35ctl mode toggle");
             assert_eq!(find(L).flags, "--no-repeat");
             assert_eq!(find(R).flags, "--no-repeat");
         }
     }
 
     #[test]
-    fn no_shoulder_closes_a_window() {
-        // A button under the index finger is too easy to catch by accident.
-        for mode in [InputMode::Buttons, InputMode::Mouse] {
-            for bind in binds(mode, &Pointer::default()) {
-                assert!(
-                    !bind.action.contains("window close"),
-                    "{} closes a window",
-                    bind.key
-                );
-            }
-        }
+    fn the_menu_keeps_the_cursor_in_mouse_mode_but_not_the_shoulders() {
+        let pointer = Pointer::default();
+        assert!(menu_binds(InputMode::Buttons, &pointer).is_empty());
+        let mouse = menu_binds(InputMode::Mouse, &pointer);
+        assert!(mouse.iter().any(|b| b.key == "Up"));
+        assert!(mouse.iter().all(|b| b.key != L && b.key != R));
     }
 
     #[test]
@@ -209,5 +212,8 @@ mod tests {
         assert!(mouse
             .iter()
             .any(|b| b.key == B && b.action == "seat seat0 cursor release button3"));
+        assert!(mouse
+            .iter()
+            .any(|b| b.key == Y && b.action == "exec pt35ctl wheel down"));
     }
 }

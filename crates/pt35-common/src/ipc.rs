@@ -42,6 +42,26 @@ pub enum Request {
     },
     /// Force the focused window back inside 640x480.
     WindowFit,
+    /// Send a key to the focused window: `enter`, `escape` or `tab`. What the
+    /// face buttons mean in Buttons mode.
+    Key {
+        key: String,
+    },
+    /// One notch of the wheel: X and Y in Mouse mode.
+    Wheel {
+        down: bool,
+    },
+    /// The switcher's cursor moved onto this window, or off every window.
+    SwitcherHover {
+        id: Option<i64>,
+    },
+    /// Whether the launcher, rather than a screen over an app, is in front.
+    MenuScreen {
+        launcher_active: bool,
+        /// The menu.toml page in front, so a key that opened it can close it.
+        #[serde(default)]
+        page: Option<String>,
+    },
     /// Close the focused window, or move focus between windows.
     Window {
         action: WindowAction,
@@ -123,6 +143,11 @@ impl Request {
             },
 
             ["window", "fit"] => Request::WindowFit,
+            ["key", key] => Request::Key {
+                key: key.to_string(),
+            },
+            ["wheel", "up"] => Request::Wheel { down: false },
+            ["wheel", "down"] => Request::Wheel { down: true },
             ["window", "closeall"] => Request::Window {
                 action: WindowAction::CloseAll,
             },
@@ -326,10 +351,15 @@ pub struct Status {
     pub brightness_percent: Option<u8>,
     pub volume_percent: Option<u8>,
     pub muted: Option<bool>,
+    /// The interface carrying traffic. A cable wins over Wi-Fi.
     pub network: Option<String>,
-    /// Wi-Fi link quality, 0-100. `None` on a wired or offline machine.
+    /// Wi-Fi link quality, 0-100, even while a cable carries the traffic.
+    /// `None` with no Wi-Fi link.
     #[serde(default)]
     pub network_signal: Option<u8>,
+    /// The Ethernet interface with a cable in.
+    #[serde(default)]
+    pub ethernet: Option<String>,
     /// Whether the touchscreen is accepted. Off is for when a palm on the panel
     /// keeps tapping things.
     #[serde(default = "yes")]
@@ -341,6 +371,24 @@ pub struct Status {
     /// Open windows, for the dock in the bar.
     #[serde(default)]
     pub windows: Vec<WindowInfo>,
+    /// The launcher is on screen. The bar's close button is off meanwhile: it
+    /// would close an app you cannot see.
+    #[serde(default)]
+    pub menu_open: bool,
+    /// The launcher is what is in front, not a screen opened over an app (the
+    /// switcher from Select, the power menu). The bar fills the skull slot
+    /// only then, and keeps the app's slot filled otherwise.
+    #[serde(default)]
+    pub launcher_active: bool,
+    /// The keyboard runs the pt35 firmware: the face buttons send F13-F18,
+    /// so letters are only letters. Known because that firmware answers the
+    /// backlight command.
+    #[serde(default)]
+    pub pt35_firmware: bool,
+    /// The window the switcher's cursor is on, so the taskbar can mark the
+    /// same slot. `Some(0)` is the Launcher card: no sway container has id 0.
+    #[serde(default)]
+    pub switcher_hover: Option<i64>,
 }
 
 fn yes() -> bool {

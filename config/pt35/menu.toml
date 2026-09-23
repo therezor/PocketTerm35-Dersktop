@@ -10,7 +10,7 @@
 #   action  = "<pt35ctl args>" ask pt35d to do something
 #   builtin = "<screen>"       a screen pt35-menu builds itself
 #                              (windows | wifi | bluetooth | audio | display |
-#                               desktop_entries | about)
+#                               desktop_entries | appearance | about)
 #
 # Tiles also take `icon` (a freedesktop name from the installed theme),
 # `glyph` (1-2 characters, drawn when the theme has no such icon), `tint`
@@ -19,6 +19,7 @@
 #
 # `state = "mode" | "volume" | "brightness" | "network" | "scale"`
 # draws that value at the end of the row, so a toggle says which way it is set.
+# `stay = true` keeps the menu open after the row runs, to watch it take effect.
 
 # The root is the launcher: the screens that are not apps, then every app with
 # a profile, then everything else with a .desktop file. X searches all of it.
@@ -30,29 +31,30 @@ root = "launcher"
 [menu.settings]
 title = "Settings"
 entries = [
-  { label = "Wi-Fi",        builtin = "wifi",   state = "network" },
-  { label = "Bluetooth",    builtin = "bluetooth" },
-  { label = "System",       builtin = "system" },
-  { label = "CPU profile",  goto = "cpu" },
-  { label = "Screenshot",   action = "screenshot" },
-  { label = "Reload shell", action = "reload" },
-  { label = "About",        builtin = "about" },
+  { label = "Network",      builtin = "wifi",   state = "network", icon = "network-wireless" },
+  { label = "Bluetooth",    builtin = "bluetooth", icon = "bluetooth" },
+  { label = "Appearance",   builtin = "appearance", icon = "preferences-desktop-appearance" },
+  { label = "System",       builtin = "system", icon = "utilities-system-monitor" },
+  { label = "CPU profile",  goto = "cpu", icon = "cpu" },
+  { label = "Screenshot",   action = "screenshot", icon = "camera-photo" },
+  { label = "Reload shell", action = "reload", icon = "view-refresh" },
+  { label = "About",        builtin = "about", icon = "help-about" },
 ]
 
 [menu.cpu]
 title = "CPU profile"
 entries = [
-  { label = "Powersave (battery)",   action = "cpu powersave" },
-  { label = "Balanced (default)",    action = "cpu balanced" },
-  { label = "Performance (27W PSU)", action = "cpu performance" },
+  { label = "Powersave (battery)",   action = "cpu powersave", stay = true, icon = "power-profile-power-saver" },
+  { label = "Balanced",              action = "cpu balanced", stay = true, icon = "power-profile-balanced" },
+  { label = "Performance (27W PSU)", action = "cpu performance", stay = true, icon = "power-profile-performance" },
 ]
 
 [menu.power]
 title = "Power"
 entries = [
-  { label = "Screen off", action = "power screenoff" },
-  { label = "Lock",       action = "power lock" },
-  { label = "Log out",    action = "power logout", confirm = true },
-  { label = "Reboot",     action = "power reboot", confirm = true },
-  { label = "Shut down",  action = "power poweroff", confirm = true },
+  { label = "Screen off", action = "power screenoff", icon = "video-display" },
+  { label = "Lock",       action = "power lock", icon = "system-lock-screen" },
+  { label = "Log out",    action = "power logout", confirm = true, icon = "system-log-out" },
+  { label = "Reboot",     action = "power reboot", confirm = true, icon = "system-reboot" },
+  { label = "Shut down",  action = "power poweroff", confirm = true, icon = "system-shutdown" },
 ]
