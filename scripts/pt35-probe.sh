@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pt35-probe.sh — Phase 0 hardware probe for the Waveshare PocketTerm35.
+# pt35-probe.sh: Phase 0 hardware probe for the Waveshare PocketTerm35.
 #
 # Run ON THE DEVICE (Raspberry Pi inside the PocketTerm35), as your normal user:
 #     bash scripts/pt35-probe.sh > docs/hardware-facts.md 2>&1
@@ -37,7 +37,7 @@ run 'dmesg | grep -i -E "drm|hdmi|vc4" | tail -n 25'
 note 'Wanted: confirm the native 640x480 mode, the connector name (HDMI-A-1 / HDMI-A-2) and whether hdmi_cvt/framebuffer_* lines are still required under KMS.'
 
 say 'Backlight / LEDs'
-run 'ls -l /sys/class/backlight/ 2>/dev/null || echo "NO /sys/class/backlight — brightness is RP2040-owned"'
+run 'ls -l /sys/class/backlight/ 2>/dev/null || echo "NO /sys/class/backlight: brightness is RP2040-owned"'
 run 'ls -l /sys/class/leds/ 2>/dev/null || true'
 
 say 'I2C bus'
@@ -56,7 +56,7 @@ run 'ls -l /dev/input/by-id/ /dev/input/by-path/ 2>/dev/null'
 run 'lsusb'
 note '[MANUAL] For every keyboard-ish event node run:  sudo evtest /dev/input/eventN'
 note '[MANUAL] Press, one at a time, and record the emitted code: every Fn combination, each D-pad direction, each gaming button, the shoulder buttons, volume and brightness keys.'
-note 'CRITICAL: if the D-pad/gaming buttons emit ABS_HAT0X / BTN_SOUTH (a HID gamepad) rather than KEY_UP / KEY_ENTER, sway and keyd cannot see them and pt35-pad (evdev->uinput) is required.'
+note 'Expected: the D-pad and buttons arrive as keys (KEY_UP, F13-F18) on the keyboard device. A gamepad device here would be a different board revision.'
 
 say 'Touchscreen'
 run 'dmesg | grep -i -E "goodix|gt911|touch" | tail -n 15'
@@ -75,7 +75,7 @@ for p in sway swaybg xwayland foot seatd greetd keyd pipewire wireplumber xdg-de
 done
 printf '\n'
 note 'sway MUST show an +rpt version (Raspberry Pi rebuild against their patched libwlroots-0.18) or it will not start.'
-note 'Anything showing (none) has to ship as a static aarch64 binary in the pt35-apps .deb.'
+note 'Anything showing (none) is not packaged for this release: install it by hand or leave its menu entry unused.'
 
 say 'Memory baseline'
 run 'free -m'

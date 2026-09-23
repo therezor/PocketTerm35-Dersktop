@@ -1,10 +1,7 @@
-# pt35-desktop — sway configuration for the Waveshare PocketTerm35 (640x480).
+# pt35-desktop: sway configuration for the Waveshare PocketTerm35 (640x480).
 #
 # Installed to /usr/share/pt35-desktop/sway/config and included from
 # ~/.config/sway/config, so user overrides go after the include and win.
-#
-# VERIFY ON DEVICE (Phase 1): every directive here against `man 5 sway` for the
-# installed sway version, and the output name against `swaymsg -t get_outputs`.
 
 ### ------------------------------------------------------------------ basics
 set $mod Mod4
@@ -28,15 +25,15 @@ gaps inner 0
 gaps outer 0
 smart_borders on
 
-# No mouse on this device. The cursor only exists in Mouse mode, where pt35d
-# lifts the hide timeout.
+# The cursor hides after 1.5s still. Mouse mode lifts the timeout, and an
+# external mouse brings it back as soon as it moves.
 focus_follows_mouse no
 mouse_warping none
 seat * hide_cursor 1500
 seat * xcursor_theme Bibata-Modern-Classic 20
 
 # X11-only apps still need to work (they follow the output scale and look soft
-# at fractional scales — prefer Wayland-native builds where they exist).
+# at fractional scales: prefer Wayland-native builds where they exist).
 xwayland enable
 
 font pango:DejaVu Sans 9

@@ -501,10 +501,22 @@ fn switch(on: bool) -> String {
 }
 
 /// The network you are on, which is worth more than the interface name.
+/// From nmcli, which the Network screen needs anyway: iwgetid is not installed
+/// on Raspberry Pi OS Lite.
 fn wifi_name() -> Option<String> {
-    run("iwgetid", &["-r"])
-        .map(|out| out.trim().to_string())
-        .filter(|name| !name.is_empty())
+    let out = run(
+        "nmcli",
+        &["-t", "-f", "NAME,TYPE", "connection", "show", "--active"],
+    )?;
+    active_wifi(&out)
+}
+
+/// nmcli terse lines are `NAME:TYPE`, with a `:` in the name escaped as `\:`.
+pub fn active_wifi(out: &str) -> Option<String> {
+    out.lines().find_map(|line| {
+        let name = line.strip_suffix(":802-11-wireless")?;
+        Some(name.replace("\\:", ":")).filter(|name| !name.is_empty())
+    })
 }
 
 fn bluetooth_on() -> bool {
@@ -1155,6 +1167,13 @@ mod provider_tests {
         assert_eq!(pretty_app(""), "Window");
         assert_eq!(initials("pcmanfm"), "PC");
         assert_eq!(initials("pt35-monitor"), "MO");
+    }
+
+    #[test]
+    fn the_wifi_name_comes_from_the_active_connection() {
+        let out = "Wired connection 1:802-3-ethernet\nCafe\\: 5G:802-11-wireless\nlo:loopback\n";
+        assert_eq!(active_wifi(out).as_deref(), Some("Cafe: 5G"));
+        assert_eq!(active_wifi("lo:loopback\n"), None);
     }
 
     #[test]

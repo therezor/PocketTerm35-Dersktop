@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pt35-desktop — keyboard-driven desktop for the Waveshare PocketTerm35.
+# pt35-desktop: a pocket desktop for the Waveshare PocketTerm35.
 #
 #   curl -fsSL https://raw.githubusercontent.com/therezor/PocketTerm35-Dersktop/main/install.sh | sudo bash
 #
@@ -24,7 +24,35 @@ warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 run()  { if [ "$DRY" = 1 ]; then printf '    would run: %s\n' "$*"; else eval "$*"; fi; }
 
-usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+# The help is a heredoc, not a read of "$0": through `curl | bash` there is no
+# script file to read.
+usage() {
+  cat <<'HELP'
+pt35-desktop installer
+
+  curl -fsSL https://raw.githubusercontent.com/therezor/PocketTerm35-Dersktop/main/install.sh | sudo bash
+  curl -fsSL .../install.sh | sudo bash -s -- --uninstall
+  sudo ./install.sh [flags]            from a checkout
+
+Flags:
+  --dry-run          print what would happen, change nothing
+  --uninstall        remove pt35-desktop and restore the previous session
+  --from-source      build the binaries here instead of downloading a release
+  --flash-keyboard   also flash the keyboard firmware (see firmware/)
+  --user NAME        set up the session for this user (default: $SUDO_USER)
+  --version          print the installer version
+HELP
+  exit 0
+}
+
+# How to run this installer again, the way it was run this time.
+again() {
+  if [ -n "$(source_dir)" ]; then
+    echo "sudo ./install.sh $*"
+  else
+    echo "curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | sudo bash -s -- $*"
+  fi
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -40,7 +68,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-[ "$(id -u)" = 0 ] || die "run as root (sudo $0)"
+[ "$(id -u)" = 0 ] || die "run as root: $(again)"
 
 TARGET_USER="${TARGET_USER:-${SUDO_USER:-}}"
 if [ -z "$TARGET_USER" ] || [ "$TARGET_USER" = root ]; then
@@ -59,7 +87,7 @@ check_platform() {
     trixie) ;;
     bookworm)
       die "Bookworm is not supported: its sway is not built against the Raspberry Pi wlroots.
-     Use Raspberry Pi OS (Trixie) 64-bit — Lite is the intended base." ;;
+     Use Raspberry Pi OS (Trixie) 64-bit. Lite is the intended base." ;;
     *) warn "untested Debian release '$codename'; continuing, but expect breakage" ;;
   esac
 
@@ -103,7 +131,7 @@ install_from_release() {
 
   msg "downloading the latest release from $REPO"
   if ! curl -fsSL -o "$deb" "$url/pt35-desktop_arm64.deb"; then
-    warn "no published release yet — falling back to building from source"
+    warn "no published release yet: building from source instead"
     clone_and_build "$tmp"
     return
   fi
@@ -178,7 +206,7 @@ install_from_source() {
     [ -f "$src/boot/SHA256SUMS" ] && run "(cd '$src/boot' && sha256sum -c SHA256SUMS)"
     run "install -m644 '$src/boot/waveshare-35dpi-5b.dtbo' '$SHARE/boot/'"
   else
-    warn "no device-tree overlay in boot/ — the touchscreen will not work.
+    warn "no device-tree overlay in boot/: the touchscreen will not work.
      Fetch it: see boot/README.md"
   fi
 
@@ -240,7 +268,7 @@ do_install() {
   pt35-desktop $VERSION is installed for '$TARGET_USER'.
 
   Reboot to start it:   sudo reboot
-  Uninstall:            sudo $0 --uninstall
+  Uninstall:            $(again --uninstall)
 EOF
   [ "$FLASH_KEYBOARD" = 1 ] || cat <<EOF
 
@@ -273,7 +301,7 @@ do_uninstall() {
         /etc/sudoers.d/pt35-cpu-profile /etc/udev/rules.d/70-pt35-uinput.rules /etc/xdg/fastfetch/config.jsonc \
         /usr/share/wayland-sessions/pt35-session.desktop"
   run "rm -rf '$SHARE' /usr/lib/pt35"
-  msg "done — your ~/.config/{sway,pt35,foot} were left untouched. Reboot."
+  msg "done. Your ~/.config/{sway,pt35,foot} were left untouched. Reboot."
 }
 
 if [ "$UNINSTALL" = 1 ]; then do_uninstall; else do_install; fi

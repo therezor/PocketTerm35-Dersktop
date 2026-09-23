@@ -1,5 +1,5 @@
 #!/bin/sh
-# pt35-desktop prerm — undo what postinst did, in the order that keeps the
+# pt35-desktop prerm: undo what postinst did, in the order that keeps the
 # machine bootable if anything fails half way.
 set -e
 
@@ -11,13 +11,16 @@ esac
 BOOTCFG=/boot/firmware/config.txt
 [ -f "$BOOTCFG" ] || BOOTCFG=/boot/config.txt
 
-if [ -f "$BOOTCFG.pt35.bak" ]; then
-  mv "$BOOTCFG.pt35.bak" "$BOOTCFG"
-elif [ -f "$BOOTCFG" ]; then
+# Only our block comes out: restoring the old backup would undo every edit
+# made since the install.
+if [ -f "$BOOTCFG" ]; then
   sed -i "/pt35-desktop >>>/,/pt35-desktop <<</d" "$BOOTCFG"
 fi
+rm -f /etc/systemd/logind.conf.d/pt35.conf \
+  /etc/systemd/system/greetd.service.d/pt35-vt1.conf
 
 if [ -d /run/systemd/system ]; then
+  systemctl daemon-reload >/dev/null 2>&1 || true
   systemctl disable greetd.service >/dev/null 2>&1 || true
   systemctl enable lightdm.service >/dev/null 2>&1 || true
 fi

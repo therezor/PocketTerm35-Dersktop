@@ -2,8 +2,9 @@
 
 Vendored from Waveshare's `3.5HDMI_E_DTBO.zip`
 (<https://files.waveshare.com/wiki/common/3.5HDMI_E_DTBO.zip>), unmodified.
-`SHA256SUMS` pins exactly what was downloaded; the installer verifies it before
-copying anything into `/boot/firmware/overlays/`.
+`SHA256SUMS` pins exactly what was downloaded. A source install
+(`install.sh --from-source`) checks it; the release package ships the `5b`
+overlay as it was built.
 
 ## Which one to use
 
@@ -21,9 +22,9 @@ PocketTerm35 units answer at `0x5d`, so the `4b` overlay leaves the driver
 probing an address with nothing on it and the touchscreen fails with I/O errors.
 This matches what the community Kali port found on hardware.
 
-All three overlays contain **only** the touchscreen node — there is no display
+All three overlays contain **only** the touchscreen node. There is no display
 node, because the panel is driven over plain HDMI at 640×480 and needs no
-overlay at all. Both declare a 640×480 touch area (`touchscreen-size-x = 0x280`,
+overlay at all. All three declare a 640×480 touch area (`touchscreen-size-x = 0x280`,
 `touchscreen-size-y = 0x1e0`).
 
 ## Refreshing them

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pt35-session — launched by greetd; sets the environment a 640x480 keyboard-only
+# pt35-session: launched by greetd; sets the environment a 640x480 keyboard-only
 # Wayland session needs, then execs sway.
 set -u
 

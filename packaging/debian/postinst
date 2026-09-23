@@ -1,5 +1,5 @@
 #!/bin/sh
-# pt35-desktop postinst — wires the session into the system.
+# pt35-desktop postinst: wires the session into the system.
 #
 # Everything here is idempotent and reversible: the boot config is edited inside
 # a marked block with a backup alongside, and prerm puts it all back.
@@ -50,8 +50,9 @@ if [ -f "$BOOTCFG" ]; then
   fi
   cat >> "$BOOTCFG" <<EOF
 $MARK_BEGIN
+[all]
 # PocketTerm35: touchscreen (Goodix GT911 @0x5d) and USB host for the RP2040
-# keyboard. The '5b' overlay is right on BOTH Pi 4B and Pi 5 — the two Waveshare
+# keyboard. The '5b' overlay is right on BOTH Pi 4B and Pi 5: the Waveshare
 # overlays differ by touch I2C address, not by board.
 dtparam=i2c_arm=on
 dtoverlay=waveshare-35dpi-5b
@@ -79,7 +80,8 @@ if [ ! -e "$USER_HOME/.config/foot/foot.ini" ]; then
   install -m644 -o "$USER_NAME" -g "$USER_NAME" "$SHARE/foot/foot.ini" "$USER_HOME/.config/foot/foot.ini"
 fi
 
-usermod -aG input,video,render,audio "$USER_NAME" 2>/dev/null || true
+# dialout: the keyboard's serial port, for brightness and the firmware check.
+usermod -aG input,video,render,audio,dialout "$USER_NAME" 2>/dev/null || true
 # The uinput rule applies at once, not at the next boot.
 modprobe uinput 2>/dev/null || true
 udevadm control --reload 2>/dev/null || true

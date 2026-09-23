@@ -1,5 +1,5 @@
 #!/bin/sh
-# pt35-quick — the radio switches behind the quick panel.
+# pt35-quick: the radio switches behind the quick panel.
 #
 # nmcli and bluetoothctl have no "toggle", and the menu has no shell: it runs
 # one command and shows what it prints on failure.

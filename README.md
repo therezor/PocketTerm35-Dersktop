@@ -1,118 +1,188 @@
+<div align="center">
+
 # pt35-desktop
 
-A desktop environment for the [Waveshare PocketTerm35](https://www.waveshare.com/pocketterm35.htm):
-a Raspberry Pi 4B/5 handheld with a 3.5" **640×480** panel, a 67-key thumb
-keyboard and a D-pad, and no mouse.
+**A pocket desktop for the Waveshare PocketTerm35.**
 
-Stock Raspberry Pi OS Desktop is unusable at that size — it assumes a pointer,
-1000-pixel-wide windows and title bars that eat a tenth of the screen.
-pt35-desktop replaces it with one fullscreen app per workspace, a hierarchical
-menu you drive with the D-pad, and a keyboard-driven cursor for the GUI
-controls that still insist on a mouse.
+Built for a 640x480 screen, a thumb keyboard and a D-pad.<br>
+Real Linux apps, one per screen, no tiny windows.
 
-It is a **real graphical shell**: sway does the compositing, with XWayland, so
-GTK, Qt and X11 applications run as normal windows. Terminal apps are the
-default where a good one exists, because they are lighter and read better on a
-3.5" screen — not because that is all this can run.
+[![CI](https://github.com/therezor/PocketTerm35-Dersktop/actions/workflows/ci.yml/badge.svg)](https://github.com/therezor/PocketTerm35-Dersktop/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/therezor/PocketTerm35-Dersktop)](https://github.com/therezor/PocketTerm35-Dersktop/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-```
-                sway (Wayland + XWayland, Raspberry Pi wlroots)
-                 │
-    pt35d ───────┼─ session daemon: sway IPC and events, battery, backlight,
-                 │  volume, CPU profile, hooks, status feed
-    pt35-bar ────┤  34px taskbar and status strip (layer-shell, software-rendered)
-    pt35-menu ───┤  fullscreen launcher / window switcher / settings / power
-    pt35ctl ─────┘  the CLI every key binding and hook calls
-```
+<img src="docs/screenshots/launcher.png" width="640" alt="The launcher">
 
-Everything pt35-desktop adds is Rust, software-rendered, and sized for a 2 GB
-Pi: no GTK, no Qt, no GL, no async runtime.
+</div>
+
+## Why
+
+Raspberry Pi OS Desktop expects a big screen and a mouse. On a 3.5" panel its
+windows do not fit and its title bars eat the screen.
+
+pt35-desktop gives every app the whole screen, and puts everything else in one
+menu you drive with the D-pad. A mouse works too, built in or plugged in.
+
+<table>
+<tr>
+<td><img src="docs/screenshots/switcher.png" width="300" alt="Window switcher"></td>
+<td><img src="docs/screenshots/app.png" width="300" alt="An app with the taskbar"></td>
+</tr>
+<tr>
+<td align="center">Window switcher, with a picture of each window</td>
+<td align="center">One app owns the screen. The taskbar stays on top.</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/context.png" width="300" alt="Right-click menu"></td>
+<td><img src="docs/screenshots/appearance.png" width="300" alt="Appearance settings"></td>
+</tr>
+<tr>
+<td align="center">Right click a row for more</td>
+<td align="center">Six colour palettes, applied to GTK and Qt apps too</td>
+</tr>
+</table>
+
+## Features
+
+- **Launcher.** Every installed app, recents and pins on top. Type to search.*
+- **Taskbar.** One icon per open window. Tap one to switch.
+- **Window switcher.** Cards with a live picture of each window.
+- **Two input modes.** Buttons mode drives menus and apps with the D-pad.
+  Mouse mode turns the D-pad into a cursor. R switches.
+- **Mouse and touch.** Hover, click, right click, wheel, and breadcrumbs to go back.
+- **Quick settings.** Wi-Fi, Bluetooth, volume, brightness*, input mode, touch.
+- **Network.** Wi-Fi list and Ethernet.
+- **CPU profiles.** Powersave, balanced and performance.
+- **Fast.** Plain Rust, drawn in software. The menu opens in about 75ms on a Pi 5.
+
+\* With the patched keyboard firmware (install step 2).
+
+It is a real graphical desktop. sway draws the screen and XWayland runs X11
+apps, so GTK, Qt and X11 programs work as normal.
 
 ## Install
 
-Raspberry Pi OS **(Trixie) 64-bit**, Lite recommended:
+You need a PocketTerm35 with a Pi 4B or Pi 5, and **Raspberry Pi OS (Trixie)
+64-bit**. Lite is best. Bookworm is not supported.
+
+**1. Install.** On the device:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/therezor/PocketTerm35-Dersktop/main/install.sh | sudo bash
+```
+
+This downloads the latest release and installs it with all its dependencies.
+It also sets up the screen, touch, login and the udev rules.
+
+**2. Flash the keyboard firmware.** Recommended.
+
+```sh
+sudo pt35-kbd flash
+```
+
+Stock firmware makes A B X Y L R send the letters `a b x y l r`, so the shell
+cannot tell a button from a key. The new keymap gives the buttons keys of their
+own, and adds screen brightness control. Undo it with `sudo pt35-kbd restore`.
+See [firmware/README.md](firmware/README.md).
+
+**3. Reboot.**
+
+```sh
 sudo reboot
 ```
 
-Until the first release is tagged there is nothing to download, so the script
-clones the repo and builds it on the device instead (10–40 minutes on a Pi 4);
-once a `v*` tag exists, CI publishes `pt35-desktop_arm64.deb` and the same
-command installs it in seconds.
+You log in straight to the desktop.
 
-The installer refuses Bookworm (its `sway` is not rebuilt against the Raspberry
-Pi `libwlroots`), warns if the `sway` candidate is not an `+rpt` build, and
-keeps a backup of `config.txt`. To undo everything:
+### Update, remove, build
 
-```sh
-sudo ./install.sh --uninstall
+| to | run |
+|---|---|
+| update | the install command again |
+| remove | `curl -fsSL https://raw.githubusercontent.com/therezor/PocketTerm35-Dersktop/main/install.sh \| sudo bash -s -- --uninstall` |
+| build from a checkout | `sudo ./install.sh --from-source` (needs rustup) |
+| see what it would do | add `--dry-run` |
+
+Removing puts the old login back and leaves your files in `~/.config` alone.
+Reboot after.
+
+The installer also sets up the Files app (yazi) and its icon font. Installing
+the `.deb` by hand skips that.
+
+## Controls
+
+| button | Buttons mode | Mouse mode |
+|---|---|---|
+| D-pad | arrows | move the cursor |
+| A | Enter | left click |
+| B | Escape | right click |
+| X | Tab | scroll up |
+| Y | F10 (the app's menu bar) | scroll down |
+| L | close the window | close the window |
+| R | switch to Mouse mode | switch to Buttons mode |
+| Start | menu | menu |
+| Select | window switcher | window switcher |
+
+In the menu: A opens, B goes back, X searches, Y pins an app or goes home.
+With a mouse: hover selects, click opens, right click shows more, the wheel
+scrolls, and the path in the header takes you back.
+
+| keys | what it does |
+|---|---|
+| `Super`+`Space` | menu |
+| `Super`+`Enter` | new terminal |
+| `Super`+`1`...`9` | go to that workspace |
+| `Super`+`q` | close the window |
+| `Super`+`f` | fullscreen (hides the bar) |
+| `Super`+`s` | screenshot |
+| Fn+Select | screenshot (patched firmware) |
+
+All keys: [docs/KEYS.md](docs/KEYS.md).
+
+## Configure
+
+Defaults live in `/usr/share/pt35-desktop/pt35/`. Put your own copy in
+`~/.config/pt35/`: it is merged over the defaults, table by table.
+
+| file | controls |
+|---|---|
+| `menu.toml` | the menu: pages, apps, commands |
+| `apps.toml` | each app: command, workspace, scale, environment |
+| `theme.toml` | colours, fonts, sizes, icons |
+| `hooks/hook_*` | scripts run at startup, app launch, shutdown |
+
+Settings > Appearance writes `~/.config/pt35/appearance.toml` for you.
+
+An app that is too big for 640x480 gets `scale = 0.75` in `apps.toml`. The app
+draws smaller. The desktop does not.
+
+More: [GUI apps](docs/gui-apps.md), [hardware facts](docs/hardware-facts.md).
+
+## If something goes wrong
+
+| problem | try |
+|---|---|
+| the menu will not open | `Super`+`Space` |
+| the buttons do nothing | flash the firmware (install step 2), or touch the screen |
+| the whole desktop is stuck | `sudo systemctl restart greetd` over SSH |
+| you want the logs | `/run/user/1000/pt35/sway.log` |
+
+The CPU profiles in Settings are tuned for the Pi 5. Performance needs a 27W
+supply: the Pi browns out under load on a small one.
+
+## How it works
+
+```
+sway (Wayland + XWayland)
+ |
+ +-- pt35d       session daemon: windows, input modes, hardware, status
+ +-- pt35-bar    the 34px taskbar
+ +-- pt35-menu   launcher, switcher, settings, power
+ +-- pt35ctl     the command every key binding calls
 ```
 
-From a checkout, `sudo ./install.sh` builds and installs from source instead of
-downloading a release.
-
-## Using it
-
-The keyboard has its own `Super`, next to the right Alt. `keyd` is installed but
-its service is left disabled: the firmware already sends standard keysyms.
-
-| key | what it does |
-|---|---|
-| `Start` | open or close the menu, the hub for everything |
-| `Select` | open the window switcher |
-| `L` | close the focused window |
-| `R` | switch between Buttons mode and Mouse mode |
-| `Super`+`Space` | open the menu |
-| `Super`+`m` | switch between Buttons mode and Mouse mode |
-| `Super`+`Enter` | new terminal |
-| `Super`+`1`…`9` | go to that workspace (one app each) |
-| `Super`+`Tab` | next workspace |
-| `Super`+`q` | close the window |
-| `Super`+`f` | true fullscreen (hides the bar) |
-| `Super`+`r` | drag an oversized window back on screen |
-| `Super`+`s` | screenshot |
-
-Closing a window is `L`, `Super`+`q`, the `x` at the right of the bar, or `Y` on
-the window switcher.
-
-Close the last window and the menu takes the screen. It is the desktop, so it
-stays until something is open behind it.
-
-In the menu: D-pad or arrows move, `A` or `Enter` activates, `1`–`9` jump
-straight to a row, `X` or typing filters, `B`/`Backspace` goes up a level, `Esc`
-closes. Left and Right change a quick setting in place and never navigate. See
-[docs/KEYS.md](docs/KEYS.md) for the full map.
-
-## Configuring it
-
-System defaults live in `/usr/share/pt35-desktop/pt35/`; anything you drop in
-`~/.config/pt35/` is merged over them, table by table.
-
-| file | what it controls |
-|---|---|
-| `menu.toml` | the whole menu tree: submenus, apps, commands, `pt35ctl` actions |
-| `apps.toml` | per-app profile: command, workspace, toolkit scale, env |
-| `theme.toml` | colours, font sizes, bar height, menu row height, icon theme |
-| `~/.config/pt35/hooks/hook_*` | run on startup, low battery, app launch, shutdown |
-
-The one knob that matters most is `scale` in `apps.toml`. At `1.0` the panel is
-640×480; at `0.75` clients see an ~853×640 logical surface, which is what makes
-GTK4 and Qt dialogs fit. It is handed to the app as `GDK_DPI_SCALE` and
-`QT_SCALE_FACTOR`, so the shell does not shrink with it. The output itself stays
-at scale 1; `pt35ctl scale` changes that, and the shell shrinks with it.
-
-## Status
-
-Written against the hardware facts in [docs/hardware-facts.md](docs/hardware-facts.md).
-Phases 0 and 1 of the plan (probe, boot config, session, keymap) and the Rust
-shell (daemon, bar, menu) are implemented; the on-device verification
-pass is what turns the placeholders in `keyd/pocketterm35.conf` into real key
-codes. Run `sudo /usr/share/pt35-desktop/pt35-probe.sh > hardware-facts.md` on
-the unit and the rest follows from there.
+No GTK, Qt or GL in the shell itself. It fits a 2 GB Pi.
 
 ## Licence
 
-MIT. The device-tree overlays under `boot/` are Waveshare's, redistributed
-unmodified; see [boot/README.md](boot/README.md).
+MIT. The device-tree overlays in `boot/` are Waveshare's, unchanged. See
+[boot/README.md](boot/README.md).

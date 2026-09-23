@@ -89,7 +89,8 @@ fn mouse(step: i32) -> Vec<Bind> {
             &format!("seat {SEAT} cursor move {dx} {dy}"),
         ));
     }
-    // Press and release separately, so holding A drags.
+    // Press and release separately: a held A is a held button. sway holds back
+    // `cursor move` while one is down, so the D-pad still cannot drag.
     for (key, button) in [(A, 1), (B, 3)] {
         out.push(Bind::new(
             "--no-repeat",

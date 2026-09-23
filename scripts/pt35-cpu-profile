@@ -1,5 +1,5 @@
 #!/bin/sh
-# pt35-cpu-profile — apply a CPU frequency profile.
+# pt35-cpu-profile: apply a CPU frequency profile.
 #
 # cpufreq is root-owned, so pt35d calls this through the single NOPASSWD rule in
 # /etc/sudoers.d/pt35-cpu-profile. It takes one fixed argument and writes two
