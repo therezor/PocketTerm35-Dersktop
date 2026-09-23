@@ -7,8 +7,8 @@
 Built for a 640x480 screen, a thumb keyboard and a D-pad.<br>
 Real Linux apps, one per screen, no tiny windows.
 
-[![CI](https://github.com/therezor/PocketTerm35-Dersktop/actions/workflows/ci.yml/badge.svg)](https://github.com/therezor/PocketTerm35-Dersktop/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/therezor/PocketTerm35-Dersktop)](https://github.com/therezor/PocketTerm35-Dersktop/releases/latest)
+[![CI](https://github.com/therezor/PocketTerm35-OS/actions/workflows/ci.yml/badge.svg)](https://github.com/therezor/PocketTerm35-OS/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/therezor/PocketTerm35-OS)](https://github.com/therezor/PocketTerm35-OS/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 <img src="docs/screenshots/launcher.png" width="640" alt="The launcher">
@@ -68,7 +68,7 @@ You need a PocketTerm35 with a Pi 4B or Pi 5, and **Raspberry Pi OS (Trixie)
 **1. Install.** On the device:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/therezor/PocketTerm35-Dersktop/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/therezor/PocketTerm35-OS/main/install.sh | sudo bash
 ```
 
 This downloads the latest release and installs it with all its dependencies.
@@ -98,7 +98,7 @@ You log in straight to the desktop.
 | to | run |
 |---|---|
 | update | the install command again |
-| remove | `curl -fsSL https://raw.githubusercontent.com/therezor/PocketTerm35-Dersktop/main/install.sh \| sudo bash -s -- --uninstall` |
+| remove | `curl -fsSL https://raw.githubusercontent.com/therezor/PocketTerm35-OS/main/install.sh \| sudo bash -s -- --uninstall` |
 | build from a checkout | `sudo ./install.sh --from-source` (needs rustup) |
 | see what it would do | add `--dry-run` |
 

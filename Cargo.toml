@@ -15,7 +15,7 @@ version = "0.3.0"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT"
-repository = "https://github.com/therezor/PocketTerm35-Dersktop"
+repository = "https://github.com/therezor/PocketTerm35-OS"
 description = "Keyboard-driven desktop environment for the Waveshare PocketTerm35"
 
 [workspace.dependencies]

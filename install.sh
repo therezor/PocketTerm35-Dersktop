@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # pt35-desktop: a pocket desktop for the Waveshare PocketTerm35.
 #
-#   curl -fsSL https://raw.githubusercontent.com/therezor/PocketTerm35-Dersktop/main/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/therezor/PocketTerm35-OS/main/install.sh | sudo bash
 #
 # or, from a checkout:   sudo ./install.sh
 #
@@ -15,7 +15,7 @@
 set -euo pipefail
 
 VERSION="0.3.0"
-REPO="${PT35_REPO:-therezor/PocketTerm35-Dersktop}"
+REPO="${PT35_REPO:-therezor/PocketTerm35-OS}"
 SHARE=/usr/share/pt35-desktop
 DRY=0; UNINSTALL=0; FROM_SOURCE=0; FLASH_KEYBOARD=0; TARGET_USER=""
 
@@ -30,7 +30,7 @@ usage() {
   cat <<'HELP'
 pt35-desktop installer
 
-  curl -fsSL https://raw.githubusercontent.com/therezor/PocketTerm35-Dersktop/main/install.sh | sudo bash
+  curl -fsSL https://raw.githubusercontent.com/therezor/PocketTerm35-OS/main/install.sh | sudo bash
   curl -fsSL .../install.sh | sudo bash -s -- --uninstall
   sudo ./install.sh [flags]            from a checkout
 
