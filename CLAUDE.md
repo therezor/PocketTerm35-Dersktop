@@ -219,6 +219,9 @@ PKG_CONFIG_ALLOW_CROSS=1 cargo clippy --target aarch64-unknown-linux-gnu \
 
 CI runs on arm64: fmt, clippy with `-D warnings`, tests, shellcheck, overlay checksums.
 
+A release is a `v*` tag. Give it a section in `CHANGELOG.md` first: the release
+notes are cut from it, and the release fails without one.
+
 ## Device loop
 
 The board is a Pi 5 at `rezor@192.168.1.10` with passwordless sudo and the repo in

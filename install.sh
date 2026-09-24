@@ -16,7 +16,7 @@
 #   --version          print the installer version
 set -euo pipefail
 
-VERSION="0.3.1"
+VERSION="0.3.2"
 REPO="${PT35_REPO:-therezor/PocketTerm35-OS}"
 SHARE=/usr/share/pt35-desktop
 DRY=0; UNINSTALL=0; FROM_SOURCE=0; FLASH_KEYBOARD=0; TARGET_USER=""

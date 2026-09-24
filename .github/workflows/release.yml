@@ -36,9 +36,18 @@ jobs:
           # The installer only ever fetches these two names.
           test -f pt35-desktop_arm64.deb && test -f SHA256SUMS
 
+      - name: Release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '/^## /{p = index($0, "## " v " ") == 1; next} p' \
+            CHANGELOG.md > notes.md
+          test -s notes.md
+
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
+          body_path: notes.md
           files: |
             pt35-desktop_arm64.deb
             SHA256SUMS
