@@ -122,9 +122,12 @@ poll is for hardware only.
 So closing drops the window from the list locally and lets the `window::close`
 event confirm it. An app that refuses to close reappears, which is correct.
 
-With nothing open the menu is the desktop: it opens on its own and refuses to
-close. A launch suppresses that for five seconds, until the window maps, and the
-menu steps aside the moment any window appears.
+With nothing open on the workspace in front, the menu is the desktop, like a
+phone's home screen (`Status::workspace_empty`): it opens on its own and refuses
+to close. Windows on other workspaces do not count, so an app that exits leaves
+you on the launcher, not on an empty workspace. A launch suppresses that for
+five seconds, until the window maps, and the menu steps aside the moment a
+window appears in front.
 
 ## Layout
 
@@ -171,6 +174,41 @@ menu steps aside the moment any window appears.
 - The output stays at scale 1. A profile's `scale` goes to the app as
   `GDK_DPI_SCALE` / `QT_SCALE_FACTOR`, so the shell never shrinks with it.
 
+## Local AI agent
+
+Optional, and all in `scripts/pt35-ai`. darkwire (`darkwire chat -p llamacpp`)
+talks to llama-swap on `127.0.0.1:8080` (`pt35-ai.service`), which runs the
+prebuilt llama.cpp in `/opt/pt35-ai`. Models are in `/var/lib/pt35-ai/models`.
+
+- llama.cpp, llama-swap and each model file are pinned by version and sha256.
+  darkwire is in development and is not pinned: its own installer decides.
+- The quants were picked by measurement on the Pi 5, not by reputation: tool
+  calls, perplexity, prompt and generation speed. Measure again before
+  changing one. Q4_0 repacks for the A76 and reads prompts 65% faster than
+  Q4_K_M on the 2B, but at Q4_0 Qwen3 0.6B stops calling tools.
+- The KV cache is f16. q8_0 halves it, but 3000 tokens deep it reads prompts
+  2-5x slower on the Pi 5, so only a 1 GB board gets it.
+- No speculative draft model. MiniCPM5's DSpark draft ships as BF16, which the
+  A76 cannot run fast, and even quantized it slowed prose by a quarter. The
+  n-gram draft costs nothing when it misses.
+- The installer asks on `/dev/tty` before the build, and does the download
+  last. Its RAM limits match `recommend` in `pt35-ai`.
+- The DarkWire tile runs `darkwire chat` itself, on the Default agent. The
+  five agents in `config/ai/darkwire-agents.yaml` go into
+  `~/.darkwire/config.yaml` at setup and at every model switch (`pt35-ai
+  agents`, run as the desktop user), with a `llamacpp` provider: darkwire
+  lists models only from the providers its config names.
+- The context is the longest whose KV cache fits in a fifth of RAM
+  (`model_ctx`), and darkwire's `contextWindowTokens` is set to match.
+- An agent's prompt is its speed. darkwire's default agent sends 3,350 tokens,
+  about 85 s to read cold on the 2B. Give an agent only the tools its job
+  needs, shorten `toolPrompts`, and keep `{{tag}}` and `{{time}}` out of the
+  cached half of the prompt.
+- The lead has no tools of its own: given file tools, the 2B used them rather
+  than delegate. It starts each hand-off with the user's own words.
+- Small models copy what the prompt shows: write commands as argv arrays,
+  `["df","-h"]`. Written as `df -h`, the model sends it as one string.
+
 ## Build and test
 
 ```sh
@@ -183,14 +221,14 @@ CI runs on arm64: fmt, clippy with `-D warnings`, tests, shellcheck, overlay che
 
 ## Device loop
 
-The board is a Pi 5 at `rezor@192.168.1.9` with passwordless sudo and the repo in
+The board is a Pi 5 at `rezor@192.168.1.10` with passwordless sudo and the repo in
 `~/pt35-desktop`.
 
 ```sh
-ssh rezor@192.168.1.9 'cd ~/pt35-desktop && git pull -q && \
+ssh rezor@192.168.1.10 'cd ~/pt35-desktop && git pull -q && \
   su -l rezor -c "cd ~/pt35-desktop && cargo build --release --workspace" && \
   sudo install -m755 target/release/pt35-menu /usr/bin/'
-ssh rezor@192.168.1.9 'export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1; \
+ssh rezor@192.168.1.10 'export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1; \
   pt35ctl menu toggle; grim /tmp/shot.png'
 ```
 

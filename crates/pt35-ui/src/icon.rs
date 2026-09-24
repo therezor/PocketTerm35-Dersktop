@@ -16,7 +16,10 @@ const ROOTS: &[&str] = &["/usr/share/icons", "/usr/local/share/icons"];
 
 /// Sizes to try, nearest first: an SVG scales, but starting from the artwork
 /// drawn for roughly the right size keeps the hinting Papirus puts in.
-const SIZES: &[&str] = &["24x24", "32x32", "22x22", "48x48", "16x16", "64x64"];
+/// `scalable` is last: it is where an app that ships one SVG puts it.
+const SIZES: &[&str] = &[
+    "24x24", "32x32", "22x22", "48x48", "16x16", "64x64", "scalable",
+];
 
 /// One rasterised icon, premultiplied RGBA, square.
 pub struct Icon {

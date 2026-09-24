@@ -20,6 +20,7 @@ rm -f /etc/systemd/logind.conf.d/pt35.conf \
   /etc/systemd/system/greetd.service.d/pt35-vt1.conf
 
 if [ -d /run/systemd/system ]; then
+  systemctl disable --now pt35-ai.service >/dev/null 2>&1 || true
   systemctl daemon-reload >/dev/null 2>&1 || true
   systemctl disable greetd.service >/dev/null 2>&1 || true
   systemctl enable lightdm.service >/dev/null 2>&1 || true

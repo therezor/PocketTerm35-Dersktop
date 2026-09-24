@@ -10,6 +10,8 @@
 #   --uninstall        remove pt35-desktop and restore the previous session
 #   --from-source      build the binaries here instead of downloading a release
 #   --flash-keyboard   also put the face buttons on F13-F18 (see firmware/)
+#   --ai[=MODEL]       also set up the local AI agent, without asking
+#   --no-ai            do not ask about the AI agent
 #   --user NAME        set up the session for this user (default: $SUDO_USER)
 #   --version          print the installer version
 set -euo pipefail
@@ -18,6 +20,7 @@ VERSION="0.3.0"
 REPO="${PT35_REPO:-therezor/PocketTerm35-OS}"
 SHARE=/usr/share/pt35-desktop
 DRY=0; UNINSTALL=0; FROM_SOURCE=0; FLASH_KEYBOARD=0; TARGET_USER=""
+AI=ask; AI_MODEL=""
 
 msg()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*" >&2; }
@@ -39,6 +42,9 @@ Flags:
   --uninstall        remove pt35-desktop and restore the previous session
   --from-source      build the binaries here instead of downloading a release
   --flash-keyboard   also flash the keyboard firmware (see firmware/)
+  --ai[=MODEL]       also set up the local AI agent (MODEL: minicpm5-2b,
+                     minicpm5-1b or qwen3-0.6b; default: the one for this RAM)
+  --no-ai            do not ask about the AI agent
   --user NAME        set up the session for this user (default: $SUDO_USER)
   --version          print the installer version
 HELP
@@ -60,6 +66,9 @@ while [ $# -gt 0 ]; do
     --uninstall) UNINSTALL=1 ;;
     --from-source) FROM_SOURCE=1 ;;
     --flash-keyboard) FLASH_KEYBOARD=1 ;;
+    --ai) AI=yes ;;
+    --ai=*) AI=yes; AI_MODEL="${1#--ai=}" ;;
+    --no-ai) AI=no ;;
     --user) TARGET_USER="${2:?--user needs a name}"; shift ;;
     --version) echo "pt35-desktop installer $VERSION"; exit 0 ;;
     -h|--help) usage ;;
@@ -184,6 +193,10 @@ install_from_source() {
   run "install -m755 '$src/scripts/pt35-kbd' /usr/bin/pt35-kbd"
   run "install -m755 '$src/scripts/pt35-quick' /usr/bin/pt35-quick"
   run "install -m755 '$src/scripts/pt35-hello' /usr/bin/pt35-hello"
+  run "install -m755 '$src/scripts/pt35-ai' /usr/bin/pt35-ai"
+  run "install -m644 '$src/config/systemd/pt35-ai.service' /usr/lib/systemd/system/pt35-ai.service"
+  run "install -d '$SHARE/ai' && install -m644 '$src/config/ai/darkwire-agents.yaml' '$SHARE/ai/'"
+  run "install -Dm644 '$src/config/icons/darkwire.svg' /usr/share/icons/hicolor/scalable/apps/darkwire.svg"
   run "install -d /usr/lib/pt35 && install -m755 '$src/scripts/pt35-cpu-profile' /usr/lib/pt35/pt35-cpu-profile"
   run "install -d '$SHARE/sway' '$SHARE/pt35' '$SHARE/foot' '$SHARE/boot' '$SHARE/fastfetch'"
   run "install -m644 '$src/config/fastfetch/skull.txt' '$SHARE/fastfetch/'"
@@ -243,8 +256,58 @@ install_yazi() {
   run "install -m755 '$tmp/yazi-aarch64-unknown-linux-musl/yazi' '$tmp/yazi-aarch64-unknown-linux-musl/ya' /usr/local/bin/"
 }
 
+# The AI agent is optional and asked about before the long build, so nobody
+# comes back to a prompt. Through `curl | bash` stdin is the script: ask on
+# the terminal. The limits match `recommend` in scripts/pt35-ai.
+ask_ai() {
+  local ram rec answer
+  [ "$AI" = ask ] || return 0
+  if ! { : </dev/tty; } 2>/dev/null; then
+    AI=no
+    return
+  fi
+  ram=$(awk '/^MemTotal:/ { print int($2 / 1024) }' /proc/meminfo)
+  if [ "$ram" -ge 3200 ]; then rec=1; elif [ "$ram" -ge 1600 ]; then rec=2; else rec=3; fi
+  cat >/dev/tty <<EOF
+
+  Optional: a local AI agent. darkwire runs in a terminal, on a model this Pi
+  runs itself. Nothing leaves the device.
+
+    1) MiniCPM5 2B   1.5 GB   best answers and tool use, 4 GB RAM or more
+    2) MiniCPM5 1B   0.7 GB   2 GB RAM
+    3) Qwen3 0.6B    0.4 GB   1 GB RAM
+    n) no AI agent
+
+  This Pi has $ram MB of RAM: $rec is the one for it.
+EOF
+  case "$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)" in
+    *"Raspberry Pi 4"*) printf '  A Pi 4 reads prompts slower than a Pi 5: 2 is quicker to answer.\n' >/dev/tty ;;
+  esac
+  printf '\n  Choice [%s]: ' "$rec" >/dev/tty
+  read -r answer </dev/tty || answer=n
+  case "${answer:-$rec}" in
+    1) AI=yes; AI_MODEL=minicpm5-2b ;;
+    2) AI=yes; AI_MODEL=minicpm5-1b ;;
+    3) AI=yes; AI_MODEL=qwen3-0.6b ;;
+    *) AI=no ;;
+  esac
+}
+
+setup_ai() {
+  [ "$AI" = yes ] || return 0
+  if [ "$DRY" = 0 ] && ! command -v pt35-ai >/dev/null; then
+    warn "this release has no AI agent yet; it comes with the next one"
+    AI=no
+    return
+  fi
+  msg "setting up the AI agent"
+  run "PT35_USER='$TARGET_USER' pt35-ai setup $AI_MODEL" \
+    || warn "the AI agent is not set up. Try again with: sudo pt35-ai setup $AI_MODEL"
+}
+
 do_install() {
   check_platform
+  ask_ai
   check_sway_build
 
   local src
@@ -257,6 +320,7 @@ do_install() {
     install_from_release
   fi
   install_yazi
+  setup_ai
 
   if [ "$FLASH_KEYBOARD" = 1 ]; then
     msg "putting the face buttons on F13-F18"
@@ -269,6 +333,9 @@ do_install() {
 
   Reboot to start it:   sudo reboot
   Uninstall:            $(again --uninstall)
+EOF
+  [ "$AI" = yes ] || ! command -v pt35-ai >/dev/null || cat <<EOF
+  Local AI agent:       sudo pt35-ai setup   (see: pt35-ai models)
 EOF
   [ "$FLASH_KEYBOARD" = 1 ] || cat <<EOF
 
@@ -283,6 +350,10 @@ EOF
 }
 
 do_uninstall() {
+  if command -v pt35-ai >/dev/null; then
+    msg "removing the AI agent and its models"
+    run "pt35-ai remove"
+  fi
   if dpkg -s pt35-desktop >/dev/null 2>&1; then
     msg "removing the pt35-desktop package"
     run "DEBIAN_FRONTEND=noninteractive apt-get remove -y pt35-desktop"
@@ -297,6 +368,8 @@ do_uninstall() {
   fi
   run "rm -f /usr/bin/pt35d /usr/bin/pt35ctl /usr/bin/pt35-bar /usr/bin/pt35-menu \
         /usr/bin/pt35-session /usr/bin/pt35-kbd /usr/bin/pt35-quick /usr/bin/pt35-hello \
+        /usr/bin/pt35-ai /usr/lib/systemd/system/pt35-ai.service \
+        /usr/share/icons/hicolor/scalable/apps/darkwire.svg \
         /etc/keyd/pocketterm35.conf \
         /etc/sudoers.d/pt35-cpu-profile /etc/udev/rules.d/70-pt35-uinput.rules /etc/xdg/fastfetch/config.jsonc \
         /usr/share/wayland-sessions/pt35-session.desktop"

@@ -791,10 +791,10 @@ impl Session {
             Toggle::Off => false,
             Toggle::Toggle => !running,
         };
-        // With nothing open the menu is the desktop, so it cannot be dismissed:
-        // closing it would leave a blank screen, and the next sway event would
-        // reopen it anyway.
-        if !want_open && self.status.windows.is_empty() && self.launch_pending.is_none() {
+        // With nothing on this workspace the menu is the desktop, so it cannot
+        // be dismissed: closing it would leave a blank screen, and the next
+        // sway event would reopen it anyway.
+        if !want_open && self.status.workspace_empty() && self.launch_pending.is_none() {
             want_open = true;
         }
         if running && want_open && action != Toggle::On {
@@ -817,7 +817,7 @@ impl Session {
             // to it. The menu says so itself from its first frame; this is the
             // guess until then, so the bar does not flash.
             self.status.launcher_active = running || page.is_none();
-            if !self.status.windows.is_empty() {
+            if !self.status.workspace_empty() {
                 self.menu_is_desktop = false;
             }
             // The window you are leaving, as it looks now. Started before the
@@ -924,17 +924,23 @@ impl Session {
             let _ = self.sway_command(&format!("[con_id={next}] focus"));
             for window in &mut self.status.windows {
                 window.focused = window.id == next;
+                // Focus took us there: the workspace left behind is not the
+                // one in front any more.
+                if window.focused {
+                    self.status.workspace = window.workspace;
+                }
             }
         }
         self.open_menu_on_empty_desktop();
         Ok(())
     }
 
-    /// With nothing open the menu is the desktop. Anything else is a charcoal
-    /// rectangle with a dock that has no slots in it.
+    /// With nothing on this workspace the menu is the desktop. Anything else
+    /// is a charcoal rectangle: an app that exits leaves its workspace empty,
+    /// and sway stays on it.
     fn open_menu_on_empty_desktop(&mut self) {
         // A window appearing is what ends the wait for one.
-        if !self.status.windows.is_empty() {
+        if !self.status.workspace_empty() {
             self.launch_pending = None;
             // The menu was only there because nothing else was. Something else
             // is there now, and it is behind a full screen overlay.

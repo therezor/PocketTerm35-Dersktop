@@ -1,0 +1,18 @@
+[Unit]
+Description=pt35 local AI models (llama-swap)
+After=network.target
+# Nothing to serve until 'pt35-ai setup' has run.
+ConditionPathExists=/var/lib/pt35-ai/llama-swap.yaml
+
+[Service]
+ExecStart=/opt/pt35-ai/bin/llama-swap --config /var/lib/pt35-ai/llama-swap.yaml --listen 127.0.0.1:8080
+DynamicUser=yes
+# The model gives way to the desktop: the shell stays smooth while it works,
+# and under memory pressure the kernel kills the model, not sway.
+Nice=10
+OOMScoreAdjust=500
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

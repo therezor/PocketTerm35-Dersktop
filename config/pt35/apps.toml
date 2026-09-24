@@ -106,3 +106,12 @@ exec      = "galculator"
 match     = { app_id = "galculator", class = "Galculator" }
 workspace = 9
 scale     = 0.75
+
+# The optional local AI agent, on a model the Pi runs itself. `sudo pt35-ai
+# setup` installs it and its agents; /agent switches between them.
+[app.darkwire]
+label     = "DarkWire"
+glyph     = "DW"
+icon      = "darkwire"
+exec      = "foot -a darkwire darkwire chat"
+match     = { app_id = "darkwire" }

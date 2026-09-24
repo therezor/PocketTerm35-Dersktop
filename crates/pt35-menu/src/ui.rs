@@ -201,6 +201,8 @@ pub struct Menu {
     /// are a list and these three are not, so they are tracked apart.
     side: Option<usize>,
     windows: usize,
+    /// Nothing is open on the workspace behind the menu.
+    desktop: bool,
     /// Hit boxes recorded by the last draw, so touch never has to re-derive
     /// the layout and drift from it.
     /// `(left, top, right, bottom, row index)`. The index is carried rather
@@ -372,6 +374,7 @@ impl Menu {
             mono_bold,
             model,
             windows: status.as_ref().map(|s| s.windows.len()).unwrap_or(0),
+            desktop: status.as_ref().is_none_or(|s| s.workspace_empty()),
             status,
             row_hits: Vec::new(),
             strip_scroll: None,
@@ -420,10 +423,10 @@ impl Menu {
             .any(|w| w.app.to_lowercase() == binary)
     }
 
-    /// True when this menu is standing in for a desktop, because nothing else
-    /// is open. It cannot be closed then: there would be nothing behind it.
+    /// True when this menu is standing in for a desktop, because nothing is
+    /// open behind it. It cannot be closed then: there would be nothing there.
     fn is_desktop(&self) -> bool {
-        self.windows == 0 && self.model.depth() == 1
+        self.desktop && self.model.depth() == 1
     }
 
     /// A screen you read and do not press: System, About.
@@ -614,6 +617,7 @@ impl Menu {
     fn resync(&mut self) {
         self.status = crate::live::status();
         self.windows = self.status.as_ref().map_or(0, |s| s.windows.len());
+        self.desktop = self.status.as_ref().is_none_or(|s| s.workspace_empty());
         let Some(builtin) = self.model.dynamic_builtin() else {
             return;
         };
@@ -645,6 +649,13 @@ impl Menu {
                         let request = pt35_common::ipc::Request::Window {
                             action: pt35_common::ipc::WindowAction::CloseId(id),
                         };
+                        // Counted now, not at the next poll: closing the last
+                        // window here makes this menu the desktop, and B must
+                        // not leave it.
+                        if let Some(status) = self.status.as_mut() {
+                            status.windows.retain(|w| w.id != id);
+                            self.desktop = status.workspace_empty();
+                        }
                         match crate::live::request(&request) {
                             Ok(pt35_common::ipc::Response::Error { message }) => {
                                 self.error = Some(message)
@@ -695,7 +706,7 @@ impl Menu {
             }
             // The menu is the desktop, so closing it means going back to the
             // top screen. There is nothing behind it to close onto.
-            Step::Quit if self.windows == 0 => {
+            Step::Quit if self.desktop => {
                 let step = self.model.go_home();
                 self.apply(step)
             }
@@ -2111,6 +2122,7 @@ impl App for Menu {
         }
         self.status = status;
         self.windows = self.status.as_ref().map_or(0, |s| s.windows.len());
+        self.desktop = self.status.as_ref().is_none_or(|s| s.workspace_empty());
         // A dynamic screen's rows were built by its provider and are frozen, so
         // a fresh Status is not enough on its own.
         if let Some(builtin) = self.model.dynamic_builtin() {

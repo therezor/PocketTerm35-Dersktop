@@ -80,7 +80,6 @@ exec_always --no-startup-id dbus-update-activation-environment --systemd WAYLAND
 
 exec --no-startup-id pt35d
 exec --no-startup-id pt35-bar
-exec --no-startup-id $term
 
 ### -------------------------------------------------------------- keybindings
 # NOTE: the keyboard has a Super key of its own (row 6 of the matrix, next to

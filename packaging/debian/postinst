@@ -78,6 +78,10 @@ fi
 
 if [ ! -e "$USER_HOME/.config/foot/foot.ini" ]; then
   install -m644 -o "$USER_NAME" -g "$USER_NAME" "$SHARE/foot/foot.ini" "$USER_HOME/.config/foot/foot.ini"
+else
+  # A copy of an older default: move only the values still at the old default.
+  sed -i -e 's/^font=DejaVu Sans Mono:size=10$/font=DejaVu Sans Mono:size=11/' \
+    -e 's/^bright0=254236$/bright0=7aa48e/' "$USER_HOME/.config/foot/foot.ini"
 fi
 
 # dialout: the keyboard's serial port, for brightness and the firmware check.

@@ -391,6 +391,15 @@ pub struct Status {
     pub switcher_hover: Option<i64>,
 }
 
+impl Status {
+    /// Nothing is open on the workspace in front, whatever is open elsewhere.
+    /// The launcher stands in then, as a phone's home screen does: an app that
+    /// exits leaves you on it, not on an empty workspace.
+    pub fn workspace_empty(&self) -> bool {
+        !self.windows.iter().any(|w| w.workspace == self.workspace)
+    }
+}
+
 fn yes() -> bool {
     true
 }
@@ -427,6 +436,25 @@ pub enum Event {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_workspace_is_empty_when_its_windows_are_elsewhere() {
+        let window = |workspace| WindowInfo {
+            workspace,
+            ..WindowInfo::default()
+        };
+        let mut status = Status {
+            workspace: 2,
+            windows: vec![window(1)],
+            ..Status::default()
+        };
+        assert!(
+            status.workspace_empty(),
+            "the window is on another workspace"
+        );
+        status.windows.push(window(2));
+        assert!(!status.workspace_empty());
+    }
 
     fn roundtrip(req: Request) {
         let line = serde_json::to_string(&req).unwrap();

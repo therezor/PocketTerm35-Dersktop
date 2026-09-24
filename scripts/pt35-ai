@@ -1,0 +1,425 @@
+#!/usr/bin/env bash
+# pt35-ai: the optional local AI agent. darkwire runs in a terminal and talks
+# to llama-swap, which starts llama-server with the model on the first request
+# and stops it when idle.
+#
+#   pt35-ai agents [--reset]      add the Pi agents to ~/.darkwire/config.yaml
+#   pt35-ai models                the models, and which one suits this board
+#   pt35-ai status
+#   sudo pt35-ai setup [MODEL]    runtime, model and agent (default: recommended)
+#   sudo pt35-ai model MODEL      download another model and make it the default
+#   sudo pt35-ai agent            install or update darkwire
+#   sudo pt35-ai remove           remove the runtime, the models and darkwire
+set -euo pipefail
+
+# Pinned: a model file and the llama.cpp that runs it are tested as a pair.
+LLAMA_CPP_TAG=b11126
+LLAMA_CPP_SHA256=d788be76cc44a58e9f0aae41afd6207721bdd03fd9b18ce5ec992e5f5dab0476
+LLAMA_SWAP_VERSION=257
+LLAMA_SWAP_SHA256=8fb15ff81108064eaedf95af58212be9d7f43775841e1099387dfa823e5ca2b1
+# darkwire is in development, so it is not pinned: its own installer decides.
+DARKWIRE_INSTALLER=https://raw.githubusercontent.com/therezor/darkwire/main/install.sh
+
+PREFIX=/opt/pt35-ai
+STATE=/var/lib/pt35-ai
+MODELS="$STATE/models"
+CONF="$STATE/llama-swap.yaml"
+DEFAULT="$STATE/default"
+# darkwire's llamacpp provider looks here by default, so it needs no config.
+LISTEN=127.0.0.1:8080
+SERVICE=pt35-ai.service
+PRESETS=/usr/share/pt35-desktop/ai/darkwire-agents.yaml
+
+MODEL_IDS="minicpm5-2b minicpm5-1b qwen3-0.6b"
+
+msg()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*" >&2; }
+die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
+need_root() { [ "$(id -u)" = 0 ] || die "run as root: sudo pt35-ai $*"; }
+
+# Picked by measurement on a Pi 5: tool-call accuracy, perplexity, speed.
+# The 2B is an imatrix Q4_0: it reads prompts 65% faster than Q4_K_M (58 vs 35
+# tokens/s, both repacked for the A76) and called tools as well. The small ones
+# are Q4_K_M: at Q4_0 Qwen3 0.6B stopped calling tools at all.
+# Sampling is each model card's no-think setting; min-p 0 because llama.cpp's
+# 0.05 default makes these models loop.
+model_info() {
+  case "$1" in
+    minicpm5-2b)
+      M_LABEL="MiniCPM5 2B"
+      M_REPO=bartowski/MiniCPM5-2B-GGUF
+      M_REV=31fee0334c4ed9f1e079afe586ba30cb83e0f883
+      M_FILE=MiniCPM5-2B-Q4_0.gguf
+      M_SHA256=5f6870f31c6d8bb814865cceb5ed01c4945006e1477622c6426b10c31d477d10
+      M_SIZE=1516997856
+      M_KV=43008
+      M_CTX_MAX=131072
+      M_CACHE_RAM=256
+      M_SAMPLING="--temp 1.0 --top-p 0.95 --min-p 0"
+      M_NOTE="best answers, 4 GB RAM or more" ;;
+    minicpm5-1b)
+      M_LABEL="MiniCPM5 1B"
+      M_REPO=openbmb/MiniCPM5-1B-GGUF
+      M_REV=3d55fac80935ae6456986ad2384b5cbcc4d6c948
+      M_FILE=MiniCPM5-1B-Q4_K_M.gguf
+      M_SHA256=81b64d05a23b17b34c475f42b3e72fbde62d4b92cc34541f7a8031d0752deafa
+      M_SIZE=688065920
+      M_KV=24576
+      M_CTX_MAX=131072
+      M_CACHE_RAM=128
+      M_SAMPLING="--temp 0.7 --top-p 0.95 --min-p 0"
+      M_NOTE="2 GB RAM, or faster replies on a Pi 4" ;;
+    qwen3-0.6b)
+      M_LABEL="Qwen3 0.6B"
+      M_REPO=unsloth/Qwen3-0.6B-GGUF
+      M_REV=50968a4468ef4233ed78cd7c3de230dd1d61a56b
+      M_FILE=Qwen3-0.6B-Q4_K_M.gguf
+      M_SHA256=ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a
+      M_SIZE=396705472
+      # 8 KV heads: per token its cache is larger than the 2B's.
+      M_KV=114688
+      M_CTX_MAX=40960
+      M_CACHE_RAM=0
+      M_SAMPLING="--temp 0.7 --top-p 0.8 --top-k 20 --min-p 0"
+      M_NOTE="1 GB RAM" ;;
+    *) return 1 ;;
+  esac
+}
+
+ram_mb() { awk '/^MemTotal:/ { print int($2 / 1024) }' /proc/meminfo; }
+
+# MemTotal reads below the label: a 4 GB board shows about 3.7 GB.
+# install.sh asks the same question with the same limits.
+recommend() {
+  local ram; ram=$(ram_mb)
+  if [ "$ram" -ge 3200 ]; then echo minicpm5-2b
+  elif [ "$ram" -ge 1600 ]; then echo minicpm5-1b
+  else echo qwen3-0.6b
+  fi
+}
+
+# A q8_0 cache is half the size, but 3000 tokens in it reads prompts 2-5x
+# slower. Only a 1 GB board needs the room.
+kv_type() { if [ "$(ram_mb)" -ge 1600 ]; then echo f16; else echo q8_0; fi; }
+
+# The longest context whose cache fits in a fifth of RAM, never under 4096:
+# 16k for the 2B on a 4 GB board, 64k on 16 GB. Call after model_info.
+model_ctx() {
+  local budget ctx=4096 kv="$M_KV"
+  [ "$(kv_type)" = f16 ] || kv=$((kv / 2))
+  budget=$(( $(ram_mb) * 1048576 / 5 ))
+  while [ $((ctx * 2)) -le "$M_CTX_MAX" ] && [ $((ctx * 2 * kv)) -le "$budget" ]; do
+    ctx=$((ctx * 2))
+  done
+  echo "$ctx"
+}
+
+board() { tr -d '\0' < /proc/device-tree/model 2>/dev/null || echo unknown; }
+
+gb() { awk -v b="$1" 'BEGIN { printf "%.1f GB", b / 1e9 }'; }
+
+installed() { model_info "$1" && [ -f "$MODELS/$M_FILE" ]; }
+
+default_model() { cat "$DEFAULT" 2>/dev/null || true; }
+
+# --------------------------------------------------------------- runtime
+fetch_verified() {
+  local url="$1" sha="$2" out="$3"
+  curl -fsSL --retry 3 -o "$out" "$url" || die "could not download $url"
+  echo "$sha  $out" | sha256sum -c --quiet - || die "checksum mismatch: $url"
+}
+
+install_runtime() {
+  local tmp
+  msg "installing runtime libraries"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    curl ca-certificates libgomp1 libssl3t64 python3-yaml >/dev/null
+
+  tmp=$(mktemp -d)
+  install -d "$PREFIX/bin" "$MODELS"
+
+  if [ "$(cat "$PREFIX/llama.cpp/VERSION" 2>/dev/null)" != "$LLAMA_CPP_TAG" ]; then
+    msg "installing llama.cpp $LLAMA_CPP_TAG"
+    fetch_verified "https://github.com/ggml-org/llama.cpp/releases/download/$LLAMA_CPP_TAG/llama-$LLAMA_CPP_TAG-bin-ubuntu-arm64.tar.gz" \
+      "$LLAMA_CPP_SHA256" "$tmp/llama.tar.gz"
+    tar -xzf "$tmp/llama.tar.gz" -C "$tmp"
+    echo "$LLAMA_CPP_TAG" > "$tmp/llama-$LLAMA_CPP_TAG/VERSION"
+    rm -rf "$PREFIX/llama.cpp"
+    mv "$tmp/llama-$LLAMA_CPP_TAG" "$PREFIX/llama.cpp"
+  fi
+
+  if [ "$(cat "$PREFIX/bin/llama-swap.version" 2>/dev/null)" != "$LLAMA_SWAP_VERSION" ]; then
+    msg "installing llama-swap $LLAMA_SWAP_VERSION"
+    fetch_verified "https://github.com/mostlygeek/llama-swap/releases/download/v$LLAMA_SWAP_VERSION/llama-swap_${LLAMA_SWAP_VERSION}_linux_arm64.tar.gz" \
+      "$LLAMA_SWAP_SHA256" "$tmp/swap.tar.gz"
+    tar -xzf "$tmp/swap.tar.gz" -C "$tmp" llama-swap
+    install -m755 "$tmp/llama-swap" "$PREFIX/bin/llama-swap"
+    echo "$LLAMA_SWAP_VERSION" > "$PREFIX/bin/llama-swap.version"
+  fi
+  rm -rf "$tmp"
+}
+
+# ---------------------------------------------------------------- models
+fetch_model() {
+  model_info "$1" || die "unknown model '$1'; one of: $MODEL_IDS"
+  local dest="$MODELS/$M_FILE" part="$MODELS/$M_FILE.part" have=0 avail bar=-sS
+  [ -t 2 ] && bar=-#
+  [ -f "$dest" ] && { msg "$M_LABEL is already downloaded"; return; }
+
+  install -d "$MODELS"
+  [ -f "$part" ] && have=$(stat -c %s "$part")
+  avail=$(df -B1 --output=avail "$MODELS" | tail -n1)
+  [ "$avail" -gt $((M_SIZE - have + 200000000)) ] \
+    || die "not enough disk for $M_LABEL: it needs $(gb "$M_SIZE"), $(gb "$avail") is free"
+
+  msg "downloading $M_LABEL ($(gb "$M_SIZE"))"
+  # Resumes a download that was cut off, which on Wi-Fi is the common case.
+  if [ "$have" -lt "$M_SIZE" ]; then
+    curl -fL --retry 5 --retry-delay 3 -C - "$bar" -o "$part" \
+      "https://huggingface.co/$M_REPO/resolve/$M_REV/$M_FILE" \
+      || die "download stopped; run the same command again to resume"
+  fi
+  msg "verifying $M_FILE"
+  if ! echo "$M_SHA256  $part" | sha256sum -c --quiet -; then
+    rm -f "$part"
+    die "checksum mismatch for $M_FILE; run the same command again"
+  fi
+  chmod 644 "$part"
+  mv "$part" "$dest"
+}
+
+# Only models on disk go in, so /v1/models (and darkwire's list) shows what
+# will actually load. Thinking is the agent's to choose: darkwire sends
+# reasoning_effort "none" for an agent set to off, and llama.cpp then skips it.
+write_config() {
+  local id tmp="$CONF.tmp" kv
+  kv=$(kv_type)
+  {
+    cat <<EOF
+# Written by pt35-ai. Rewritten on every 'pt35-ai model', so edits are lost.
+healthCheckTimeout: 300
+logLevel: warn
+startPort: 10001
+# A model loads from the SD card in tens of seconds: say so rather than hang.
+sendLoadingState: true
+# Idle models give their RAM back to the desktop.
+globalTTL: 900
+# Three threads generate faster than four (memory bound) and leave a core to
+# the desktop; prompts are compute bound and take all four. The n-gram draft
+# costs nothing unless the reply repeats the context, as a file rewrite does.
+macros:
+  server: >-
+    $PREFIX/llama.cpp/llama-server --host 127.0.0.1 --port \${PORT}
+    --threads 3 --threads-batch 4 --parallel 1 --jinja --no-webui --flash-attn on --cache-type-k $kv --cache-type-v $kv
+    --spec-type ngram-mod
+models:
+EOF
+    for id in $MODEL_IDS; do
+      installed "$id" || continue
+      cat <<EOF
+  $id:
+    name: "$M_LABEL"
+    cmd: >-
+      \${server} --alias $id --model $MODELS/$M_FILE
+      --ctx-size $(model_ctx) --cache-ram $M_CACHE_RAM $M_SAMPLING
+EOF
+    done
+  } > "$tmp"
+  chmod 644 "$tmp"
+  mv "$tmp" "$CONF"
+}
+
+set_default() {
+  echo "$1" > "$DEFAULT"
+  chmod 644 "$DEFAULT"
+  write_config
+  systemctl daemon-reload
+  systemctl enable "$SERVICE" >/dev/null 2>&1
+  systemctl restart "$SERVICE"
+  for _ in $(seq 20); do
+    curl -fs -o /dev/null "http://$LISTEN/v1/models" && return
+    sleep 0.5
+  done
+  warn "the model server did not answer: journalctl -u $SERVICE"
+}
+
+# ----------------------------------------------------------------- agent
+install_agent() {
+  msg "installing darkwire"
+  local had=0
+  command -v darkwire >/dev/null && had=1
+  if curl -fsSL "$DARKWIRE_INSTALLER" | DARKWIRE_INSTALL_DIR=/usr/local/bin sh; then
+    # Only a darkwire this script put there is removed with it.
+    [ "$had" = 1 ] || touch "$STATE/darkwire-by-pt35"
+  else
+    warn "darkwire did not install. It is in development and may have no release yet.
+     Try again later: sudo pt35-ai agent"
+    return 1
+  fi
+}
+
+# ------------------------------------------------------------- commands
+cmd_models() {
+  local rec def id mark
+  rec=$(recommend); def=$(default_model)
+  printf 'This board: %s, %s MB RAM\n\n' "$(board)" "$(ram_mb)"
+  for id in $MODEL_IDS; do
+    model_info "$id"
+    mark=""
+    [ "$id" = "$rec" ] && mark="recommended"
+    installed "$id" && mark="$mark${mark:+, }downloaded"
+    [ "$id" = "$def" ] && mark="$mark${mark:+, }default"
+    printf '  %-12s %-12s %7s  %s\n' "$id" "$M_LABEL" "$(gb "$M_SIZE")" "$M_NOTE"
+    [ -n "$mark" ] && printf '  %-12s %s\n' "" "($mark)"
+  done
+  case "$(board)" in
+    *"Raspberry Pi 4"*)
+      printf '\nA Pi 4 has no dot-product instructions, so it reads prompts\n'
+      printf 'slower than a Pi 5. The 1B model answers sooner.\n' ;;
+  esac
+}
+
+cmd_status() {
+  local def; def=$(default_model)
+  printf 'model server  %s\n' "$(systemctl is-active "$SERVICE" 2>/dev/null || true)"
+  printf 'default model %s\n' "${def:-none}"
+  printf 'llama.cpp     %s\n' "$(cat "$PREFIX/llama.cpp/VERSION" 2>/dev/null || echo 'not installed')"
+  printf 'darkwire      %s\n' "$(darkwire --version 2>/dev/null || echo 'not installed')"
+  printf 'endpoint      http://%s/v1\n' "$LISTEN"
+}
+
+cmd_setup() {
+  need_root setup
+  local id="${1:-$(recommend)}"
+  model_info "$id" || die "unknown model '$id'; one of: $MODEL_IDS"
+  install_runtime
+  fetch_model "$id"
+  set_default "$id"
+  command -v darkwire >/dev/null || install_agent || true
+  sync_agents
+  msg "ready. Open DarkWire in the launcher"
+}
+
+cmd_model() {
+  need_root model
+  local id="${1:?which model? one of: $MODEL_IDS}"
+  [ -x "$PREFIX/llama.cpp/llama-server" ] || die "no runtime yet: sudo pt35-ai setup $id"
+  fetch_model "$id"
+  local label="$M_LABEL"
+  set_default "$id"
+  sync_agents
+  msg "$label is the default"
+}
+
+cmd_remove() {
+  need_root remove
+  systemctl disable --now "$SERVICE" >/dev/null 2>&1 || true
+  if [ -f "$STATE/darkwire-by-pt35" ]; then
+    rm -f /usr/local/bin/darkwire
+  fi
+  rm -rf "$PREFIX" "$STATE"
+  msg "removed the AI runtime and models. ~/.darkwire was left alone."
+}
+
+# Adds each preset whose id is missing, and points every preset (and an
+# unconfigured default agent) at the local model. The rest of an agent is the
+# user's once it is written, unless --reset.
+cmd_agents() {
+  local def reset=0
+  [ "${1:-}" = --reset ] && reset=1
+  [ "$(id -u)" != 0 ] || die "run as the desktop user, not root"
+  def=$(default_model)
+  [ -n "$def" ] || die "no local model yet: sudo pt35-ai setup"
+  model_info "$def"
+  python3 - "$PRESETS" "$HOME/.darkwire/config.yaml" "$def" "$(model_ctx)" "$reset" <<'PY'
+import copy, os, sys, yaml
+
+presets_path, cfg_path, model, ctx, reset = sys.argv[1:]
+presets = yaml.safe_load(open(presets_path))
+try:
+    cfg = yaml.safe_load(open(cfg_path)) or {}
+except FileNotFoundError:
+    cfg = {}
+agents = cfg.setdefault("agents", {}).setdefault("list", {})
+local = {"provider": "llamacpp", "model": model, "contextWindowTokens": int(ctx)}
+changed = False
+
+# darkwire lists models only from the endpoints named here: without an entry,
+# /model has nothing to ask.
+providers = cfg.setdefault("providers", {})
+if "llamacpp" not in providers:
+    providers["llamacpp"] = {"type": "llamacpp", "label": "This Pi", "apiBase": "http://127.0.0.1:8080/v1"}
+    changed = True
+
+for name, preset in presets.items():
+    # darkwire makes `default` itself: an entry holding only what this script
+    # wrote is not the user's yet.
+    untouched = set(agents.get(name, {})) <= set(local)
+    if name not in agents or untouched or reset == "1":
+        # A copy each, so the dump writes no YAML aliases.
+        agent = copy.deepcopy(preset)
+        tools = agent.get("tools", {})
+        if "toolPrompts" in agent:
+            agent["toolPrompts"] = {k: v for k, v in agent["toolPrompts"].items() if k in tools}
+        agents[name] = agent
+        changed = True
+    for key, value in local.items():
+        if agents[name].get(key) != value:
+            agents[name][key] = value
+            changed = True
+
+# Prompts as block text, so the file stays readable to edit by hand.
+def text(dumper, value):
+    style = "|" if "\n" in value else None
+    return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
+
+yaml.SafeDumper.add_representer(str, text)
+
+if changed:
+    os.makedirs(os.path.dirname(cfg_path), mode=0o700, exist_ok=True)
+    tmp = cfg_path + ".tmp"
+    with open(tmp, "w") as out:
+        yaml.safe_dump(cfg, out, sort_keys=False, allow_unicode=True, width=1000)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, cfg_path)
+PY
+}
+
+# The session's user, whose ~/.darkwire the agents go in.
+desktop_user() {
+  local user
+  for user in "${PT35_USER:-}" "${SUDO_USER:-}"; do
+    if [ -n "$user" ] && [ "$user" != root ] && id "$user" >/dev/null 2>&1; then
+      echo "$user"
+      return
+    fi
+  done
+  getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /nologin|false/ { print $1; exit }'
+}
+
+sync_agents() {
+  local user
+  user=$(desktop_user)
+  if [ -z "$user" ]; then
+    warn "no desktop user: run 'pt35-ai agents' as that user"
+  elif ! runuser -u "$user" -- "$0" agents; then
+    warn "could not write the darkwire agents: run 'pt35-ai agents' as $user"
+  fi
+}
+
+usage() {
+  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+  exit "${1:-0}"
+}
+
+case "${1:-}" in
+  agents) shift; cmd_agents "$@" ;;
+  models) cmd_models ;;
+  status) cmd_status ;;
+  setup) shift; cmd_setup "$@" ;;
+  model) shift; cmd_model "$@" ;;
+  agent) need_root agent; install -d "$STATE"; install_agent; [ -z "$(default_model)" ] || sync_agents ;;
+  remove) cmd_remove ;;
+  -h|--help|help|"") usage ;;
+  *) usage 1 >&2 ;;
+esac
