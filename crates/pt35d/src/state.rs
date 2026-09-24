@@ -833,6 +833,7 @@ impl Session {
             // own at ~75ms.
             if !running {
                 self.capture_preview();
+                self.close_popups();
             }
             let mode = self.status.input_mode;
             if let Err(e) = self.set_menu_mode(mode) {
@@ -995,6 +996,19 @@ impl Session {
     /// Give focus back to a window. A layer surface that took the keyboard
     /// leaves sway with no focused view when it goes, and then every command
     /// that acts on "the focused window" does nothing.
+    /// An app's context menu draws above the overlay layer and keeps the
+    /// keyboard, so the menu would open under it and get no keys. sway closes
+    /// a view's popups when focus leaves the view, not when a layer surface
+    /// takes the keyboard. So focus steps off the window and straight back.
+    fn close_popups(&mut self) {
+        let Some(id) = self.status.windows.iter().find(|w| w.focused).map(|w| w.id) else {
+            return;
+        };
+        if let Err(e) = self.sway_command(&format!("focus parent; [con_id={id}] focus")) {
+            log::warn!("closing popups: {e}");
+        }
+    }
+
     fn ensure_focus(&mut self) {
         self.sync_windows();
         if self.status.windows.iter().any(|w| w.focused) {
