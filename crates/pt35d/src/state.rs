@@ -42,6 +42,8 @@ pub struct Session {
     /// swaylock, while it is up. It is a layer surface and not in the tree, so
     /// the desktop reads as empty under it.
     lock_proc: Option<Child>,
+    /// swayidle, while Screen off waits for a key or a touch to wake it.
+    wake_proc: Option<Child>,
     /// The backlight through the keyboard, when its firmware answers.
     serial_backlight: Option<crate::backlight::SerialBacklight>,
     /// A background look for the pt35 firmware, while it has not answered:
@@ -107,6 +109,7 @@ impl Session {
             mode_before_menu: InputMode::Buttons,
             bound: Vec::new(),
             lock_proc: None,
+            wake_proc: None,
             last_preview: std::time::Instant::now(),
             serial_backlight: crate::backlight::SerialBacklight::find(),
             backlight_probe: None,
@@ -381,6 +384,11 @@ impl Session {
         if let Some(child) = self.lock_proc.as_mut() {
             if matches!(child.try_wait(), Ok(Some(_))) {
                 self.lock_proc = None;
+            }
+        }
+        if let Some(child) = self.wake_proc.as_mut() {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                self.wake_proc = None;
             }
         }
         self.refresh_windows();
@@ -1213,8 +1221,28 @@ impl Session {
         Ok(())
     }
 
+    /// Blank the panel until the next key or touch. sway has no wake of its
+    /// own, so a one-shot swayidle turns the output back on and then exits.
+    fn screen_off(&mut self) -> Result<()> {
+        if let Some(mut old) = self.wake_proc.take() {
+            let _ = old.kill();
+            let _ = old.wait();
+        }
+        let child = Command::new("sh")
+            .args(["-c", SCREEN_OFF])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+        self.wake_proc = Some(child);
+        Ok(())
+    }
+
     fn power(&mut self, action: PowerAction) -> Result<()> {
         match action {
+            // Under swaylock the menu is out of sight, and it would still be
+            // there after the unlock with Screen off selected.
+            PowerAction::Menu if self.lock_proc.is_some() => Ok(()),
             // A second press closes it. Reopening it would only flash. With
             // nothing open, closing means the top screen, as Start does.
             PowerAction::Menu if self.menu_page.as_deref() == Some("power") => {
@@ -1225,16 +1253,21 @@ impl Session {
                 }
             }
             PowerAction::Menu => self.toggle_menu(Toggle::On, Some("power".into())),
-            PowerAction::ScreenOff => self.sway_command("output * dpms off"),
+            PowerAction::ScreenOff => self.screen_off(),
             PowerAction::Lock => {
                 // The Pi cannot suspend; "lock" is a blank screen plus swaylock
                 // when it is installed.
-                match Command::new("swaylock").spawn() {
+                let args = if swaylock_configured() {
+                    Vec::new()
+                } else {
+                    swaylock_args(&self.theme)
+                };
+                match Command::new("swaylock").args(args).spawn() {
                     Ok(child) => {
                         self.lock_proc = Some(child);
                         Ok(())
                     }
-                    Err(_) => self.sway_command("output * dpms off"),
+                    Err(_) => self.screen_off(),
                 }
             }
             PowerAction::Logout => self.sway_command("exit"),
@@ -1250,6 +1283,10 @@ impl Session {
     }
 }
 
+/// `$$` is the shell, which `exec` makes swayidle, so the resume ends it.
+const SCREEN_OFF: &str = r#"command -v swayidle >/dev/null || exit 1
+exec swayidle timeout 1 'swaymsg "output * power off"' resume "swaymsg 'output * power on'; kill $$""#;
+
 /// Whether an empty desktop should bring the menu up.
 ///
 /// Four ways it should not: something is open, the menu is already there,
@@ -1257,6 +1294,66 @@ impl Session {
 /// something was asked to start and its window has not mapped yet.
 pub fn should_open_menu(empty: bool, menu_up: bool, locked: bool, launch_pending: bool) -> bool {
     empty && !menu_up && !locked && !launch_pending
+}
+
+/// Whether the user has a swaylock config of their own. Flags beat the config
+/// file, so the theme's flags would override it.
+fn swaylock_configured() -> bool {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let xdg = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| home.as_ref().map(|h| h.join(".config")));
+    [
+        home.map(|h| h.join(".swaylock/config")),
+        xdg.map(|x| x.join("swaylock/config")),
+        Some("/etc/swaylock/config".into()),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|p| p.exists())
+}
+
+/// swaylock in the theme's colours. With no config it paints the screen white,
+/// and a white screen does not read as a lock.
+pub fn swaylock_args(theme: &Theme) -> Vec<String> {
+    let c = &theme.color;
+    let hex = |rgb: pt35_common::theme::Rgb| format!("{:02x}{:02x}{:02x}", rgb.0, rgb.1, rgb.2);
+    let clear = "00000000".to_string();
+    let mut args = vec![
+        "--ignore-empty-password".to_string(),
+        "--show-failed-attempts".to_string(),
+        "--indicator-idle-visible".to_string(),
+        "--font".to_string(),
+        theme.font.family.clone(),
+    ];
+    let colors = [
+        ("--color", hex(c.background)),
+        ("--inside-color", hex(c.background_alt)),
+        ("--inside-clear-color", hex(c.background_alt)),
+        ("--inside-ver-color", hex(c.background_alt)),
+        ("--inside-wrong-color", hex(c.background_alt)),
+        ("--ring-color", hex(c.border)),
+        ("--ring-clear-color", hex(c.warning)),
+        ("--ring-ver-color", hex(c.accent)),
+        ("--ring-wrong-color", hex(c.critical)),
+        ("--key-hl-color", hex(c.accent)),
+        ("--bs-hl-color", hex(c.critical)),
+        ("--caps-lock-key-hl-color", hex(c.warning)),
+        ("--line-color", clear.clone()),
+        ("--line-clear-color", clear.clone()),
+        ("--line-ver-color", clear.clone()),
+        ("--line-wrong-color", clear.clone()),
+        ("--separator-color", clear),
+        ("--text-color", hex(c.foreground)),
+        ("--text-clear-color", hex(c.foreground)),
+        ("--text-ver-color", hex(c.foreground)),
+        ("--text-wrong-color", hex(c.critical)),
+    ];
+    for (flag, value) in colors {
+        args.push(flag.to_string());
+        args.push(value);
+    }
+    args
 }
 
 fn run_or_fail(argv: &[&str]) -> Result<()> {
@@ -1501,6 +1598,19 @@ mod tests {
             !should_open_menu(true, false, false, true),
             "a launch is on its way; do not land on top of it"
         );
+    }
+
+    #[test]
+    fn the_lock_screen_is_the_theme_background_not_white() {
+        let theme = Theme::default();
+        let args = swaylock_args(&theme);
+        let color = args.iter().position(|a| a == "--color").unwrap();
+        let bg = theme.color.background;
+        assert_eq!(
+            args[color + 1],
+            format!("{:02x}{:02x}{:02x}", bg.0, bg.1, bg.2)
+        );
+        assert_ne!(args[color + 1], "ffffff");
     }
 
     #[test]
