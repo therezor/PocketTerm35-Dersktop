@@ -637,7 +637,7 @@ dependencies = [
 
 [[package]]
 name = "pt35-bar"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -650,7 +650,7 @@ dependencies = [
 
 [[package]]
 name = "pt35-common"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "log",
@@ -662,11 +662,11 @@ dependencies = [
 
 [[package]]
 name = "pt35-desktop"
-version = "0.3.0"
+version = "0.3.1"
 
 [[package]]
 name = "pt35-menu"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -679,7 +679,7 @@ dependencies = [
 
 [[package]]
 name = "pt35-ui"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "fontdue",
@@ -692,7 +692,7 @@ dependencies = [
 
 [[package]]
 name = "pt35ctl"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "pt35-common",
@@ -701,7 +701,7 @@ dependencies = [
 
 [[package]]
 name = "pt35d"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "env_logger",
