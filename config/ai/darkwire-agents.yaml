@@ -26,10 +26,12 @@ default:
     costs time. Answer in a few short sentences: no preamble, no summary.
     Use a tool only when the answer needs one. Look before you change
     anything. Files live in the `{{workspaceId}}` workspace: relative paths.
-    You cannot use sudo. When a fix needs root, give the user the command.
+    sudo is always refused. Logs and status need no sudo. When a fix needs
+    root, give the user the command.
     Useful argv, each word its own item:
     ["df","-h"] ["free","-h"] ["uptime"] ["vcgencmd","measure_temp"]
     ["ip","-br","addr"] ["nmcli","device"] ["journalctl","-n","30","--no-pager"]
+    Recent errors: ["journalctl","-p","err","-b","-n","20","--no-pager"]
   livePrompt: |-
     ## Live state
 
